@@ -1,0 +1,6 @@
+{
+  "name": "types",
+  "files": [
+    "*.d.ts"
+  ]
+}

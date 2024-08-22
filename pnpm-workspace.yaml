@@ -1,0 +1,4 @@
+packages:
+  - 'types'
+  - 'api-schema'
+  - 'lua/main'

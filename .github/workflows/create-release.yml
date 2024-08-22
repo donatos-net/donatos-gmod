@@ -1,0 +1,66 @@
+on:
+  push:
+    branches: [ 'main' ]
+
+permissions:
+  contents: write
+
+env:
+  DONATOS_ADDON_VERSION: 'v1.0-dev${{ github.run_number }}'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Git repo
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 9
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        working-directory: ./lua/main
+        run: pnpm run build
+
+      - name: Pack addon ZIP
+        working-directory: ./addon
+        run: zip -r donatos-addon.zip .
+
+      - name: Create release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              draft: false,
+              prerelease: false,
+              tag_name: '${{ env.DONATOS_ADDON_VERSION }}'
+            });
+
+            const uploadAsset = (name, path) => github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              origin: release.data.upload_url,
+              release_id: release.data.id,
+              name: name,
+              data: fs.readFileSync(path)
+            });
+
+            await uploadAsset('bundle.lua', 'lua/main/dist/bundle.lua');
+            await uploadAsset('donatos-addon.zip', 'addon/donatos-addon.zip');

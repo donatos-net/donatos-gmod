@@ -1,0 +1,11 @@
+{
+  "name": "main",
+  "scripts": {
+    "build": "tstl",
+    "postbuild": "node postbuild.js",
+    "dev": "tstl --watch"
+  },
+  "dependencies": {
+    "api-schema": "workspace:*"
+  }
+}
