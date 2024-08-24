@@ -12,6 +12,7 @@ declare global {
     config?: {
       apiEndpoint?: string
       apiToken?: string
+      autoUpdate?: boolean
       menuKeyBind?: KEY
       igsCompat?: boolean
     }
