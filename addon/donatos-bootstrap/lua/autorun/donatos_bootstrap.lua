@@ -5,11 +5,11 @@ if !donatosBootstrap then
 		version = 1,
 		localRelease = nil,
 		releaseConVar = CreateConVar("donatos_release_id", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE}),
-		releaseApiUrl = "https://donatos.net/api/game-server/gmod/addon"
+		addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
 	}
 end
 
-local LOCAL_RELEASE_JSON = "donatos/release.json"
+local LOCAL_RELEASE_JSON_PATH = "donatos/release.json"
 local LOCAL_BUNDLE_PATH = "donatos/bundle.txt"
 
 local function log(patt, ...)
@@ -48,7 +48,7 @@ local function asyncHttp(opts)
 end
 
 local function asyncRemoteReleases()
-	local success, data = asyncHttp({ url = donatosBootstrap.releaseApiUrl })
+	local success, data = asyncHttp({ url = donatosBootstrap.addonApiUrl })
 	if success then
 		return true, util.JSONToTable(data)
 	end
@@ -56,7 +56,7 @@ local function asyncRemoteReleases()
 end
 
 local function getLocalRelease()
-	local data = file.Read(LOCAL_RELEASE_JSON, "DATA")
+	local data = file.Read(LOCAL_RELEASE_JSON_PATH, "DATA")
 	if data then
 		return util.JSONToTable(data)
 	end
@@ -120,7 +120,7 @@ local function asyncLoadBundle(id)
 	end
 
 	file.CreateDir("donatos")
-	file.Write(LOCAL_RELEASE_JSON, util.TableToJSON(latestRemoteRelease))
+	file.Write(LOCAL_RELEASE_JSON_PATH, util.TableToJSON(latestRemoteRelease))
 	file.Write(LOCAL_BUNDLE_PATH, remoteBundle)
 
 	donatosBootstrap.localRelease = latestRemoteRelease
@@ -165,9 +165,3 @@ function donatosBootstrap.bootstrap()
 end
 
 donatosBootstrap.bootstrap()
-
-if CLIENT then
-	cvars.AddChangeCallback(donatosBootstrap.releaseConVar:GetName(), function(convar_name, value_old, value_new)
-		print(convar_name, value_old, value_new)
-	end)
-end

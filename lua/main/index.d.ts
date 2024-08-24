@@ -24,6 +24,15 @@ declare global {
     }
   }
 
+  declare let donatosBootstrap:
+    | {
+        version?: number
+        localRelease?: { id?: number }
+        releaseConVar?: ConVar
+        addonApiUrl?: string
+      }
+    | undefined
+
   declare let _donatos: {
     _timersUuid?: string
     _persistedVars: Record<string, unknown>

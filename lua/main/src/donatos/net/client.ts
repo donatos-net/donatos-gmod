@@ -1,7 +1,9 @@
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
+import { downloadRelease, fetchAddonReleases } from '@/donatos/releases'
 import { remoteConfig } from '@/donatos/remote-config'
 import { donatosUi } from '@/ui/main'
 import colors from '@/utils/colors'
+import { log } from '@/utils/log'
 import type { serverApiSchema } from 'api-schema/src'
 
 // server -> client
@@ -9,6 +11,32 @@ export const handleClientMessage = {
   resultFromServer: (input: [number, unknown]) => {
     clientNonce.handlers[input[0]]?.(input[1])
     delete clientNonce.handlers[input[0]]
+  },
+
+  updateAddon: async (releaseId: number) => {
+    const response = await fetchAddonReleases()
+
+    if (response.isError) {
+      log.error(`Не удалось получить список релизов: ${response.error}`)
+      return
+    }
+
+    const release = response.data.releases.find((r) => r.id === releaseId)
+
+    if (!release) {
+      log.error(`Релиз ${releaseId} не найден.`)
+      return
+    }
+
+    const dlResult = await downloadRelease(release)
+
+    if (dlResult.isError) {
+      log.error(`Не удалось скачать релиз ${release.name}: ${dlResult.error}`)
+      return
+    }
+
+    log.info('Подгружаю bundle.lua')
+    RunString(dlResult.data, 'donatos/bundle.lua')
   },
 
   openUi: () => donatosUi(),

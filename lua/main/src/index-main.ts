@@ -1,5 +1,7 @@
 import { donatosItem } from '@/donatos/item'
+import { meta } from '@/meta'
 import { DonatosPlayer } from '@/player'
+import { log } from '@/utils/log'
 
 if (!donatos) {
   donatos = {}
@@ -58,3 +60,5 @@ if (SERVER) {
 }
 
 import('@/ents/gift')
+
+log.debug(`Аддон запущен. Версия ${meta.VERSION}, номер сборки ${meta.BUILD_NUMBER}, коммит ${meta.COMMIT_HASH}`)

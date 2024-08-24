@@ -1,2 +1,2 @@
-AddCSLuaFile("main/dist/index.lua")
-include("main/dist/index.lua")
+AddCSLuaFile("main/dist/bundle.lua")
+include("main/dist/bundle.lua")
