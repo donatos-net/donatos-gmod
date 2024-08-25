@@ -1,5 +1,5 @@
 import { netMessageToClient } from '@/donatos/net'
-import { downloadRelease, fetchAddonReleases } from '@/donatos/releases'
+import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { meta } from '@/meta'
 import { donatosHookId } from '@/utils/addon'
@@ -52,16 +52,61 @@ concommand.Add('donatos_update', async (ply: Player) => {
     return
   }*/
 
-  const dlResult = await downloadRelease(latestRelease)
+  const dlResult = await installRelease(latestRelease)
 
   if (dlResult.isError) {
     log.error(`Не удалось скачать релиз ${latestRelease.name}: ${dlResult.error}`)
     return
   }
 
-  donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.id.toString())
-  netMessageToClient(undefined, 'updateAddon', latestRelease.id)
+  donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.name)
+  netMessageToClient(undefined, 'updateAddon', latestRelease.name)
 
   log.info('Подгружаю bundle.lua')
   RunString(dlResult.data, 'donatos/bundle.lua')
 })
+
+async function checkForAddonUpdates() {
+  const runningVersion = meta.VERSION
+  if (runningVersion === '$VERSION$') {
+    return
+  }
+
+  log.info('Проверка обновлений аддона...')
+
+  const result = await fetchAddonReleases()
+  if (result.isError) {
+    log.error(`Не удалось проверить обновления аддона: ${result.error}`)
+    return
+  }
+
+  const latestRelease = result.data.releases[0]
+  if (!latestRelease) {
+    return
+  }
+
+  if (latestRelease.name === runningVersion) {
+    log.info('Обновлений нет.')
+    return
+  }
+
+  log.info(`Доступно обновление аддона: ${latestRelease.name}`)
+
+  if (donatos.config?.autoUpdate) {
+    log.info('Устанавливаю обновление аддона, так как включено авто-обновление.')
+    const result = await installRelease(latestRelease)
+
+    if (result.isError) {
+      log.error(`Не удалось установить обновления аддона: ${result.error}`)
+      return
+    }
+
+    donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.name)
+    netMessageToClient(undefined, 'updateAddon', latestRelease.name)
+
+    log.info('Подгружаю bundle.lua')
+    RunString(result.data, 'donatos/bundle.lua')
+  }
+}
+
+checkForAddonUpdates()

@@ -1,5 +1,5 @@
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
-import { downloadRelease, fetchAddonReleases } from '@/donatos/releases'
+import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { remoteConfig } from '@/donatos/remote-config'
 import { donatosUi } from '@/ui/main'
 import colors from '@/utils/colors'
@@ -13,7 +13,7 @@ export const handleClientMessage = {
     delete clientNonce.handlers[input[0]]
   },
 
-  updateAddon: async (releaseId: number) => {
+  updateAddon: async (releaseName: string) => {
     const response = await fetchAddonReleases()
 
     if (response.isError) {
@@ -21,14 +21,14 @@ export const handleClientMessage = {
       return
     }
 
-    const release = response.data.releases.find((r) => r.id === releaseId)
+    const release = response.data.releases.find((r) => r.name === releaseName)
 
     if (!release) {
-      log.error(`Релиз ${releaseId} не найден.`)
+      log.error(`Релиз ${releaseName} не найден.`)
       return
     }
 
-    const dlResult = await downloadRelease(release)
+    const dlResult = await installRelease(release)
 
     if (dlResult.isError) {
       log.error(`Не удалось скачать релиз ${release.name}: ${dlResult.error}`)

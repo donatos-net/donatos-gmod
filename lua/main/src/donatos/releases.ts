@@ -28,12 +28,12 @@ export async function fetchAddonReleases(): Promise<Result<AddonApiResponse>> {
   return result.ok(util.JSONToTable(res.data.body))
 }
 
-export function getLocalAddonRelease(): AddonApiResponse['releases'][0] {
+export function getOfflineAddonRelease(): AddonApiResponse['releases'][0] {
   const text = file.Read(localReleaseJson, 'DATA') as string | undefined
   return text ? util.JSONToTable(text) : undefined
 }
 
-export async function downloadRelease(release: AddonRelease): Promise<Result<string, string>> {
+export async function installRelease(release: AddonRelease): Promise<Result<string, string>> {
   const asset = release.assets.find((a) => a.name === 'bundle.lua')
 
   if (!asset) {
