@@ -18,12 +18,14 @@ export function donatosUi() {
   frame.MakePopup()
   frame.SetTitle('')
   frame.Center()
+  frame.ShowCloseButton(false)
+  frame.DockPadding(px(5), px(5), px(5), px(5))
 
   uiPersistedVar.frame = frame
 
   const mainPan = themedUi().panel({ parent: frame, color: Color(0, 0, 0, 0) })
   mainPan.Dock(DOCK.FILL)
-  mainPan.DockPadding(px(5), 0, px(5), px(5))
+  // mainPan.DockPadding(px(5), 0, px(5), px(5))
 
   frame.InvalidateLayout(true)
 
@@ -50,6 +52,14 @@ export function donatosUi() {
     navBtn('inventory', 'Инвентарь')
     navBtn('activeItems', 'Активные предметы')
     // navBtn('profile', 'Профиль')
+
+    {
+      const close = themedUi().btn({ parent: navbar, variant: 'secondary' })
+      close.Dock(DOCK.RIGHT)
+      close.SetText('x')
+      close.SizeToContentsX(px(15))
+      close.DoClick = () => frame.Close()
+    }
 
     const container = themedUi().panel({ parent: mainPan, color: Color(0, 0, 0, 0) })
     container.Dock(DOCK.FILL)

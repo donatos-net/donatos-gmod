@@ -70,8 +70,8 @@ export function tabActiveItems(container: DPanel) {
 
       const r = px(3)
       const ratio = i.expires.inS / i.expires.durationS
-      const bg = themedUi().theme.colors.primaryForeground
-      const bgFill = themedUi().theme.colors.primary
+      const bg = themedUi().theme.colors.muted
+      const bgFill = themedUi().theme.colors.mutedForeground
       progressBar.Paint = function (this, w, h) {
         draw.RoundedBox(r, 0, 0, w, h, bg)
         draw.RoundedBox(r, 0, 0, w * ratio, h, bgFill)

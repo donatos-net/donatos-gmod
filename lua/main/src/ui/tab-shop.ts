@@ -9,6 +9,23 @@ import px = ui.px
 export function tabShop(container: DPanel, selectedCategoryId: number | undefined) {
   container.Clear()
 
+  const allCategories: { id: number; name: string; goods: NonNullable<(typeof remoteConfig)['value']>['goods'] }[] =
+    remoteConfig.value?.goodsCategories.map((c) => ({ id: c.id, name: c.name, goods: [] })) ?? []
+  allCategories.push({ id: -1, name: 'Разное', goods: [] })
+
+  for (const item of remoteConfig.value?.goods || []) {
+    allCategories.find((c) => c.id === (item.categoryId ?? -1))?.goods.push(item)
+  }
+
+  const filteredCategories = allCategories.filter((c) => (selectedCategoryId ? selectedCategoryId === c.id : true))
+
+  if ((remoteConfig.value?.goods?.length ?? 0) === 0) {
+    const empty = themedUi().label({ parent: container, text: 'Владелец сервера ещё не добавил товары.', size: 'md' })
+    empty.Dock(DOCK.FILL)
+    empty.SetContentAlignment(5)
+    return
+  }
+
   {
     const navbarContainer = themedUi().panel({ parent: container, color: Color(0, 0, 0, 0) })
     navbarContainer.Dock(DOCK.TOP)
@@ -32,7 +49,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
 
     navBtn(undefined, 'Все товары')
 
-    for (const c of remoteConfig.value?.goodsCategories || []) {
+    for (const c of allCategories) {
       navBtn(c.id, c.name)
     }
   }
@@ -42,25 +59,13 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
 
   container.InvalidateLayout(true)
 
-  const allCategories: { id?: number; name: string }[] = [...(remoteConfig.value?.goodsCategories || [])]
-  allCategories.push({ name: 'Разное' })
-
-  const filteredCategories: {
-    categoryId?: number
-    categoryName?: string
-    goods: NonNullable<(typeof remoteConfig)['value']>['goods']
-  }[] =
-    allCategories
-      .filter((c) => (selectedCategoryId ? selectedCategoryId === c.id : true))
-      .map((c) => ({ categoryId: c.id, categoryName: c.name, goods: [] })) || []
-
-  for (const item of remoteConfig.value?.goods || []) {
-    filteredCategories.find((c) => c.categoryId === item.categoryId)?.goods.push(item)
-  }
-
   const itemCols: DPanel[] = []
 
   for (const group of filteredCategories) {
+    if (group.goods.length === 0) {
+      continue
+    }
+
     {
       const headerContainer = themedUi().panel({
         parent: scrollContainer,
@@ -72,7 +77,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
 
       const label = themedUi().label({
         parent: headerContainer,
-        text: group.categoryName || 'Без категории',
+        text: group.name,
         size: 'md',
         color: themedUi().theme.colors.secondaryForeground,
       })
