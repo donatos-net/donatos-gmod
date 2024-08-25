@@ -56,7 +56,7 @@ concommand.Add('donatos_update', async (ply: Player) => {
     return
   }
 
-  donatosBootstrap?.releaseConVar?.SetString(latestRelease.id.toString())
+  donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.id.toString())
   netMessageToClient(undefined, 'updateAddon', latestRelease.id)
 
   log.info('Подгружаю bundle.lua')

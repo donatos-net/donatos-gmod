@@ -4,7 +4,7 @@ if !donatosBootstrap then
 	donatosBootstrap = {
 		version = 1,
 		localRelease = nil,
-		releaseConVar = CreateConVar("donatos_release_id", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE}),
+		addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE}),
 		addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
 	}
 end
@@ -62,16 +62,22 @@ local function getLocalRelease()
 	end
 end
 
-local function asyncLoadBundle(id)
+local function asyncLoadBundle(name)
 	if !donatosBootstrap.localRelease then
 		donatosBootstrap.localRelease = getLocalRelease()
 	end
 
 	local offlineBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 
-	if donatosBootstrap.localRelease && offlineBundle && id && tostring(donatosBootstrap.localRelease.id) == tostring(id) then
-		log("Загружаю локальный билд...")
-		return true, offlineBundle
+	if offlineBundle then
+		if name == nil then
+			log("Загружаю локальный билд...")
+			return true, offlineBundle
+		end
+		if donatosBootstrap.localRelease && donatosBootstrap.localRelease.name == name then
+			log("Загружаю локальный билд...")
+			return true, offlineBundle
+		end
 	end
 
 	log("Загружаю список доступных релизов...")
@@ -124,7 +130,7 @@ local function asyncLoadBundle(id)
 	file.Write(LOCAL_BUNDLE_PATH, remoteBundle)
 
 	donatosBootstrap.localRelease = latestRemoteRelease
-	donatosBootstrap.releaseConVar:SetString(latestRemoteRelease.id)
+	donatosBootstrap.addonVersionConVar:SetString(latestRemoteRelease.name)
 
 	log("Последняя версия загружена на диск.")
 
@@ -136,11 +142,11 @@ function donatosBootstrap.bootstrap()
 		donatosBootstrap.localRelease = getLocalRelease()
 
 		if donatosBootstrap.localRelease then
-			donatosBootstrap.releaseConVar:SetString(donatosBootstrap.localRelease.id)
+			donatosBootstrap.addonVersionConVar:SetString(donatosBootstrap.localRelease.name)
 		end
 
 		coroutine.wrap(function ()
-			local success, bundle = asyncLoadBundle(donatosBootstrap.localRelease && donatosBootstrap.localRelease.id)
+			local success, bundle = asyncLoadBundle(donatosBootstrap.localRelease && donatosBootstrap.localRelease.name)
 			if success then
 				RunString(bundle, "donatos/bundle.lua")
 				log("Готово.")
@@ -148,18 +154,18 @@ function donatosBootstrap.bootstrap()
 		end)()
 	else
 		donatosBootstrap.localRelease = getLocalRelease()
-		local preferredReleaseId = donatosBootstrap.releaseConVar:GetString()
+		local preferredReleaseName = donatosBootstrap.addonVersionConVar:GetString()
 
-		if preferredReleaseId == "" && donatosBootstrap.localRelease or preferredReleaseId != "" then
+		if preferredReleaseName == "" && donatosBootstrap.localRelease or preferredReleaseName != "" then
 			coroutine.wrap(function ()
-				local success, bundle = asyncLoadBundle(preferredReleaseId)
+				local success, bundle = asyncLoadBundle(preferredReleaseName)
 				if success then
 					RunString(bundle, "donatos/bundle.lua")
 					log("Готово.")
 				end
 			end)()
 		else
-			log("Сервер не передал версию релиза в %s", donatosBootstrap.releaseConVar:GetName())
+			log("Сервер не передал версию релиза в %s", donatosBootstrap.addonVersionConVar:GetName())
 		end
 	end
 end

@@ -29,7 +29,7 @@ declare global {
     | {
         version?: number
         localRelease?: { id?: number }
-        releaseConVar?: ConVar
+        addonVersionConVar?: ConVar
         addonApiUrl?: string
       }
     | undefined
