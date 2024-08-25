@@ -63,4 +63,4 @@ jobs:
             });
 
             await uploadAsset('bundle.lua', 'lua/main/dist/bundle.lua');
-            await uploadAsset('donatos-addon.zip', 'addon/donatos-addon.zip');
+            await uploadAsset('donatos-addon.zip', 'bootstrap/donatos-addon.zip');
