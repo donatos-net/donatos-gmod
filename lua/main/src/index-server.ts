@@ -1,8 +1,11 @@
 import { netMessageToClient } from '@/donatos/net'
 import { downloadRelease, fetchAddonReleases } from '@/donatos/releases'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
+import { meta } from '@/meta'
 import { donatosHookId } from '@/utils/addon'
 import { log } from '@/utils/log'
+
+donatosBootstrap?.addonVersionConVar?.SetString(meta.VERSION)
 
 loadRemoteConfig()
 

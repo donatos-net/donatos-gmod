@@ -61,5 +61,4 @@ if (SERVER) {
 
 import('@/ents/gift')
 
-donatosBootstrap?.addonVersionConVar?.SetString(meta.VERSION)
 log.debug(`Аддон запущен. Версия ${meta.VERSION}, номер сборки ${meta.BUILD_NUMBER}, коммит ${meta.COMMIT_HASH}`)
