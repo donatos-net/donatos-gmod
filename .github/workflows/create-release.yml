@@ -36,7 +36,7 @@ jobs:
         run: pnpm run build
 
       - name: Pack addon ZIP
-        working-directory: ./addon
+        working-directory: ./bootstrap
         run: zip -r donatos-addon.zip .
 
       - name: Create release
