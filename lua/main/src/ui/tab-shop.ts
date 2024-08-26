@@ -1,6 +1,6 @@
+import { descriptionMarkup } from '@/donatos/client-utils'
 import { netMessageToServer } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
-import { descriptionMarkup } from '@/donatos/utils'
 import { customizedColor, themedUi } from '@/ui/ui-utils'
 import { cluster } from '@/utils/lang'
 import { type PaintExt, cAlpha, ui } from '@/utils/ui'

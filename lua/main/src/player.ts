@@ -1,7 +1,7 @@
 import { donatosItems, invokeDonatosItem, knownSamRanks } from '@/donatos/item'
 import { netMessageToClient } from '@/donatos/net'
-import { sendDonatosMessage } from '@/donatos/print'
 import { serverApiRequest } from '@/donatos/server-api'
+import { sendDonatosMessage } from '@/donatos/server-utils'
 import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
 import type { serverApiSchema } from 'api-schema/src'

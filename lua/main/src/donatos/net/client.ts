@@ -1,8 +1,8 @@
+import { donatosAddText } from '@/donatos/client-utils'
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { remoteConfig } from '@/donatos/remote-config'
-import { donatosUi } from '@/ui/main'
-import colors from '@/utils/colors'
+import { type DonatosUiTab, donatosUi } from '@/ui/main'
 import { log } from '@/utils/log'
 import type { serverApiSchema } from 'api-schema/src'
 
@@ -39,7 +39,7 @@ export const handleClientMessage = {
     RunString(dlResult.data, 'donatos/bundle.lua')
   },
 
-  openUi: () => donatosUi(),
+  openUi: (tab?: DonatosUiTab) => donatosUi(tab),
   print: (input: [number, unknown][]) => {
     const deserialized: (string | Player | Color)[] = []
 
@@ -53,7 +53,7 @@ export const handleClientMessage = {
       }
     }
 
-    chat.AddText(colors.BLUE_6, '[Donatos] ', colors.BLUE_1, ...deserialized)
+    donatosAddText(...deserialized)
   },
   syncConfig: async (input: serverApiSchema['server:get-config']['output']) => {
     remoteConfig.value = input

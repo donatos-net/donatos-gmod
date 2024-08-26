@@ -1,8 +1,8 @@
 import { invokeDonatosItem } from '@/donatos/item'
 import { type ServerNetHandler, netMessageToClient } from '@/donatos/net'
-import { sendDonatosMessage } from '@/donatos/print'
 import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
+import { sendDonatosMessage } from '@/donatos/server-utils'
 import { createGiftEnt } from '@/ents/gift'
 import colors from '@/utils/colors'
 

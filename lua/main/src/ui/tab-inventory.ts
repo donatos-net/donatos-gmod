@@ -1,5 +1,5 @@
+import { descriptionMarkup } from '@/donatos/client-utils'
 import { netMessageToServer } from '@/donatos/net'
-import { descriptionMarkup } from '@/donatos/utils'
 import { customizedColor, destroyUi, themedUi } from '@/ui/ui-utils'
 import { cluster } from '@/utils/lang'
 import { type PaintExt, cAlpha, ui } from '@/utils/ui'

@@ -1,3 +1,4 @@
+import colors from '@/utils/colors'
 import { ui } from '@/utils/ui'
 
 /*export function formatVariantDuration(duration: number | undefined): string {
@@ -9,4 +10,8 @@ export function descriptionMarkup(text: string, width: number, color: Color) {
     `<color=${markup.Color(color)}><font=${ui.fonts.roboto.xs}>${markup.Escape(text) || ''}</font></color>`,
     width,
   )
+}
+
+export function donatosAddText(...args: unknown[]) {
+  chat.AddText(colors.BLUE_6, '[Donatos] ', colors.BLUE_1, ...args)
 }

@@ -1,6 +1,7 @@
-import { sendDonatosMessage } from '@/donatos/print'
+import { netMessageToClient } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
+import { sendDonatosMessage } from '@/donatos/server-utils'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { donatosHookId } from '@/utils/addon'
 
@@ -33,11 +34,12 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
     sendDonatosMessage({ args: [ply, ` задонатил серверу ${order.total} р.`] })
     sendDonatosMessage({
       receiver: ply,
-      args: [`Вы оплатили заказ #${order.id} на ${order.total} р. Для активации предметов откройте донат-меню.`],
+      args: [`Вы оплатили заказ #${order.id} на ${order.total} р.`],
     })
 
     if (IsValid(ply)) {
       ply.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
+      netMessageToClient(ply, 'openUi', 'inventory')
     }
   }
 
