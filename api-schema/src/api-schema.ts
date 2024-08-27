@@ -166,7 +166,7 @@ export const serverApiSchema = {
   },
   'player:claim-item': {
     input: z.object({
-      playerId: z.number(),
+      playerExternalId: z.string(),
       itemId: z.number(),
       token: z.string().min(1),
     }),

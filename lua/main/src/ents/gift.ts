@@ -41,16 +41,12 @@ const ent = {
         }
 
         const ply = ent as Player
-        const donatosId = ply.Donatos().ID
-        if (!donatosId) {
-          return
-        }
 
         serverApiRequest('player:claim-item', {
-          playerId: donatosId,
+          playerExternalId: ply.SteamID64(),
           itemId: this._itemId,
           token: this._giftToken,
-        }).then(({ isError, data, error }) => {
+        }).then(({ isError, error }) => {
           if (isError) {
             ply.Donatos()._sPrint(`Произошла ошибка: ${error}`)
             return
