@@ -26,7 +26,7 @@ hook.Add('PlayerSay', donatosHookId('player_say'), (ply: Player, text: string) =
 })
 
 concommand.Add('donatos_update', async (ply: Player) => {
-  if (!ply.IsSuperAdmin()) {
+  if (IsValid(ply) && !ply.IsSuperAdmin()) {
     return
   }
 

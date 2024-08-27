@@ -1,3 +1,6 @@
+-- Добавляет некоторые функции из IGS, например ply:HasPurchase()
+donatos.config.igsCompat = true
+
 -- Пример кастомизации интерфейса
 
 --[[ donatos.uiConfig = {

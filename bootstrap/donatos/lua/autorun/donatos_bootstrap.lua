@@ -16,6 +16,14 @@ local function log(patt, ...)
 	print(string.format("[DonatosBootstrap] " .. patt, ...))
 end
 
+local function asyncDelay(delay)
+	local running = coroutine.running()
+	timer.Simple(delay, function ()
+		coroutine.resume(running)
+	end)
+	return coroutine.yield()
+end
+
 local function asyncHttp(opts)
 	local running = coroutine.running()
 
@@ -139,17 +147,25 @@ end
 
 function donatosBootstrap.bootstrap()
 	if SERVER then
-		donatosBootstrap.localRelease = getLocalRelease()
-
-		if donatosBootstrap.localRelease then
-			donatosBootstrap.addonVersionConVar:SetString(donatosBootstrap.localRelease.name)
-		end
-
 		coroutine.wrap(function ()
-			local success, bundle = asyncLoadBundle(donatosBootstrap.localRelease && donatosBootstrap.localRelease.name)
-			if success then
-				RunString(bundle, "donatos/bundle.lua")
-				log("Готово.")
+			-- HTTP is not available yet
+			-- https://github.com/Facepunch/garrysmod-issues/issues/1010
+			asyncDelay(0)
+
+			while true do
+				donatosBootstrap.localRelease = getLocalRelease()
+
+				if donatosBootstrap.localRelease then
+					donatosBootstrap.addonVersionConVar:SetString(donatosBootstrap.localRelease.name)
+				end
+
+				local success, bundle = asyncLoadBundle(donatosBootstrap.localRelease && donatosBootstrap.localRelease.name)
+				if success then
+					RunString(bundle, "donatos/bundle.lua")
+					log("Готово.")
+					break
+				end
+				asyncDelay(5)
 			end
 		end)()
 	else

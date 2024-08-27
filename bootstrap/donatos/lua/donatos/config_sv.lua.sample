@@ -4,9 +4,6 @@ donatos.config.apiToken = ""
 -- Включить авто-обновление аддона
 donatos.config.autoUpdate = true
 
--- Добавляет некоторые функции из IGS, например ply:HasPurchase()
-donatos.config.igsCompat = true
-
 
 -- Пример заполнения предметов
 
