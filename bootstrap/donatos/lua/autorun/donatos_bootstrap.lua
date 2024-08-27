@@ -119,9 +119,9 @@ local function asyncInstallRelease(release, expectedBundleSha256)
 end
 
 local function runBundle(bundle)
-	local error = RunString(bundle, "donatos/bundle.lua", false)
-	if error then
-		log("RunString вернул ошибку: " .. error)
+	local err = RunString(bundle, "donatos/bundle.lua", false)
+	if err then
+		log("RunString вернул ошибку: " .. err)
 		return false
 	end
 	return true
