@@ -9,13 +9,15 @@ donatosBootstrap?.addonVersionConVar?.SetString(meta.VERSION)
 
 loadRemoteConfig()
 
-hook.Add('PlayerInitialSpawn', donatosHookId('player_initial_spawn'), async (ply: Player) => {
+hook.Add('PlayerInitialSpawn', donatosHookId('player_initial_spawn'), (ply: Player) => {
   if (ply.IsBot()) {
     return
   }
 
-  await ply.Donatos()._sLoadRemoteData()
-  ply.Donatos()._sOnPlayerJoined()
+  ply
+    .Donatos()
+    ._sLoadRemoteData()
+    .then(() => ply.Donatos()._sOnPlayerJoined())
 })
 
 hook.Add('PlayerSay', donatosHookId('player_say'), (ply: Player, text: string) => {
