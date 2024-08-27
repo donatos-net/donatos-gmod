@@ -62,6 +62,7 @@ concommand.Add('donatos_update', async (ply: Player) => {
   }
 
   donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.name)
+  donatosBootstrap?.bundleSha256ConVar?.SetString(util.SHA256(dlResult.data))
   netMessageToClient(undefined, 'updateAddon', latestRelease.name)
 
   log.info('Подгружаю bundle.lua')
@@ -104,6 +105,7 @@ async function checkForAddonUpdates() {
     }
 
     donatosBootstrap?.addonVersionConVar?.SetString(latestRelease.name)
+    donatosBootstrap?.bundleSha256ConVar?.SetString(util.SHA256(result.data))
     netMessageToClient(undefined, 'updateAddon', latestRelease.name)
 
     log.info('Подгружаю bundle.lua')

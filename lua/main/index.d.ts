@@ -28,8 +28,8 @@ declare global {
   declare let donatosBootstrap:
     | {
         version?: number
-        localRelease?: { id?: number }
         addonVersionConVar?: ConVar
+        bundleSha256ConVar?: ConVar
         addonApiUrl?: string
       }
     | undefined
