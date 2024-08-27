@@ -39,6 +39,7 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 
     if (IsValid(ply)) {
       ply.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
+      await ply.Donatos()._sLoadRemoteData()
       netMessageToClient(ply, 'openUi', 'inventory')
     }
   }
