@@ -4,6 +4,8 @@ import { donatosHookId } from '@/utils/addon'
 
 donatos.UI = donatosUi
 
+netMessageToServer('requestSync', undefined)
+
 hook.Add('PlayerButtonDown', donatosHookId('keybind'), (ply: Player, key: KEY) => {
   if (key === (donatos.config?.menuKeyBind ?? KEY.KEY_F6) && IsFirstTimePredicted()) {
     // netMessageToServer('requestSync', undefined)
