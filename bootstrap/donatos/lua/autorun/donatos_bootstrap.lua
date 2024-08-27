@@ -1,13 +1,14 @@
 AddCSLuaFile()
 
-donatosBootstrap = {
-	version = 1,
-	addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE}),
-	bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE}),
-	addonApiUrl = "https://donatos.net/api/game-server/gmod/addon",
+if !donatosBootstrap then
+	donatosBootstrap = {}
+end
 
-	_runUuid = tostring(CurTime()),
-}
+donatosBootstrap.version = 1
+donatosBootstrap.addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
+donatosBootstrap.bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
+donatosBootstrap.addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
+donatosBootstrap._runUuid = tostring(CurTime())
 
 local LOCAL_RELEASE_JSON_PATH = "donatos/release.json"
 local LOCAL_BUNDLE_PATH = "donatos/bundle.txt"
@@ -87,7 +88,7 @@ local function asyncReadLocalRelease()
 	end
 end
 
-local function asyncInstallRelease(release, expectedBundleSha256)
+local function asyncInstallRelease(release)
 	if !release || !release.assets then
 		return false
 	end
@@ -119,11 +120,7 @@ local function asyncInstallRelease(release, expectedBundleSha256)
 end
 
 local function runBundle(bundle)
-	local err = RunString(bundle, "donatos/bundle.lua", false)
-	if err then
-		log("RunString вернул ошибку: " .. err)
-		return false
-	end
+	RunString(bundle, "donatos/bundle.lua")
 	return true
 end
 
@@ -202,7 +199,6 @@ local function asyncBootstrap()
 		return runBundle(bundle)
 	end
 end
-
 
 coroutine.wrap(function ()
 	-- HTTP is not available yet
