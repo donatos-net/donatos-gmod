@@ -104,7 +104,7 @@ export const handleServerMessage = {
       filter: ply as Entity,
     } as Trace)
 
-    const gift = createGiftEnt({ pos: tr.HitPos, token: data.token, item: data.item })
+    const gift = createGiftEnt({ pos: tr.HitPos, token: data.token, item: data.item, itemOwner: ply })
     ply.EmitSound(`physics/metal/paintcan_impact_soft${math.random(1, 2)}.wav`, 65, math.random(90, 110), 0.3)
     gift.GetPhysicsObject().SetVelocity(ply.EyeAngles().Forward().mulOp(50))
 

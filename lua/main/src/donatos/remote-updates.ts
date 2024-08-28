@@ -59,7 +59,7 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 
 timer.Create(donatosHookId('timer-load-players'), 30, 0, async () => {
   for (const ply of player.GetAll()) {
-    if (!ply.Donatos().IsLoaded) {
+    if (!ply.IsBot() && !ply.Donatos().IsLoaded) {
       const { isError } = await ply.Donatos()._sLoadRemoteData()
       if (isError) {
         break

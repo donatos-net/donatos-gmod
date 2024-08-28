@@ -4,7 +4,12 @@ import type { serverApiSchema } from 'api-schema/src'
 
 type DroppedItem = serverApiSchema['player:drop-item']['output']['item']
 
-type GiftEnt = Entity & { Draw?: () => void } & { _itemId: number; _giftToken: string; _lastUse?: number } & {
+type GiftEnt = Entity & { Draw?: () => void } & {
+  _itemId: number
+  _giftToken: string
+  _itemOwner: string
+  _lastUse?: number
+} & {
   GetItemName: () => string
   SetItemName: (this: GiftEnt, name: string) => void
 }
@@ -55,7 +60,12 @@ const ent = {
           ply.EmitSound('garrysmod/content_downloaded.wav', 75, 100, 0.3)
           ply.Donatos()._sPrint('Вы получили в подарок предмет. Откройте донат-меню для активации.')
 
-          return ply.Donatos()._sLoadRemoteData()
+          const ownerPlayer = player.GetBySteamID64(this._itemOwner) as Player | false
+
+          return Promise.all([
+            ply.Donatos()._sLoadRemoteData(),
+            ownerPlayer ? ownerPlayer.Donatos()._sLoadRemoteData() : undefined,
+          ])
         })
 
         this.Remove()
@@ -88,10 +98,16 @@ const ent = {
 table.Merge(metaTable, ent, true)
 scripted_ents.Register(metaTable, 'donatos_gift')
 
-export function createGiftEnt({ pos, token, item }: { pos: Vector; token: string; item: DroppedItem }) {
+export function createGiftEnt({
+  pos,
+  token,
+  item,
+  itemOwner,
+}: { pos: Vector; token: string; item: DroppedItem; itemOwner: Player }) {
   const e = ents.Create('donatos_gift') as GiftEnt
   e._itemId = item.id
   e._giftToken = token
+  e._itemOwner = itemOwner.SteamID64()
   e.SetItemName(item.name)
   e.SetPos(pos)
   e.Spawn()
