@@ -67,23 +67,9 @@ local function asyncFetchReleases()
 	return false, data
 end
 
-local function asyncReadFile(name, gamePath)
-	local running = coroutine.running()
-	file.AsyncRead(name, gamePath, function(_, _, status, data)
-		if status == FSASYNC_OK then
-			coroutine.resume(running, true, data)
-		elseif status == FSASYNC_STATUS_PENDING || status == FSASYNC_STATUS_INPROGRESS || status == FSASYNC_STATUS_UNSERVICED then
-			return
-		else
-			coroutine.resume(running, false, status)
-		end
-	end)
-	return coroutine.yield()
-end
-
 local function asyncReadLocalRelease()
-	local success, data = asyncReadFile(LOCAL_RELEASE_JSON_PATH, "DATA")
-	if success && data then
+	local data = file.Read(LOCAL_RELEASE_JSON_PATH, "DATA")
+	if data then
 		return util.JSONToTable(data)
 	end
 end
@@ -126,8 +112,7 @@ end
 
 local function asyncBootstrap()
 	local localRelease = asyncReadLocalRelease()
-
-	local localBundleSuccess, localBundle = asyncReadFile(LOCAL_BUNDLE_PATH, "DATA")
+	local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 
 	-- check existing bundle, server-side
 	if SERVER && localRelease && localRelease.name && localBundleSuccess && localBundle then
