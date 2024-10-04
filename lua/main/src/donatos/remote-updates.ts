@@ -29,15 +29,21 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
   updatesSince = data.ts
 
   for (const order of data.newOrders) {
-    const ply = player.GetBySteamID64(order.playerExternalId)
+    const ply = player.GetBySteamID64(order.playerExternalId) as Player | false
 
-    sendDonatosMessage({ args: [ply, ` задонатил серверу ${order.total} р.`] })
-    sendDonatosMessage({
-      receiver: ply,
-      args: [`Вы оплатили заказ #${order.id} на ${order.total} р.`],
-    })
+    {
+      const arg = ply || order.playerName
+      if (arg) {
+        sendDonatosMessage({ args: [arg, ` задонатил серверу ${order.total} р.`] })
+      }
+    }
 
-    if (IsValid(ply)) {
+    if (ply) {
+      sendDonatosMessage({
+        receiver: ply,
+        args: [`Вы оплатили заказ #${order.id} на ${order.total} р.`],
+      })
+
       ply.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
       await ply.Donatos()._sLoadRemoteData()
       netMessageToClient(ply, 'openUi', 'inventory')
