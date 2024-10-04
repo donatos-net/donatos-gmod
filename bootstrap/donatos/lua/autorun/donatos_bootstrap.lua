@@ -67,7 +67,7 @@ local function asyncFetchReleases()
 	return false, data
 end
 
-local function asyncReadLocalRelease()
+local function readLocalRelease()
 	local data = file.Read(LOCAL_RELEASE_JSON_PATH, "DATA")
 	if data then
 		return util.JSONToTable(data)
@@ -111,18 +111,18 @@ local function runBundle(bundle)
 end
 
 local function asyncBootstrap()
-	local localRelease = asyncReadLocalRelease()
+	local localRelease = readLocalRelease()
 	local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 
 	-- check existing bundle, server-side
-	if SERVER && localRelease && localRelease.name && localBundleSuccess && localBundle then
+	if SERVER && localRelease && localRelease.name && localBundle then
 		donatosBootstrap.addonVersionConVar:SetString(localRelease.name)
 		donatosBootstrap.bundleSha256ConVar:SetString(util.SHA256(localBundle))
 		return runBundle(localBundle)
 	end
 
 	-- check existing bundle, client-side
-	if CLIENT && localBundleSuccess && localBundle then
+	if CLIENT && localBundle then
 		local expectedSha256 = donatosBootstrap.bundleSha256ConVar:GetString()
 		if expectedSha256 == "" then
 			log("Сервер не передал %s", donatosBootstrap.bundleSha256ConVar:GetName())
