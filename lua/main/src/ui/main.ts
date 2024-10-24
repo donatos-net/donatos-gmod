@@ -70,7 +70,7 @@ export function donatosUi(tab?: DonatosUiTab) {
       close.DoClick = () => frame.Close()
     }
 
-    {
+    if (LocalPlayer().Donatos().Balance > 0) {
       const points = themedUi().btn({ parent: navbar, variant: 'secondary', size: 'sm' })
       points.Dock(DOCK.RIGHT)
       points.DockMargin(0, 0, px(5), 0)
