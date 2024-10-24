@@ -70,6 +70,14 @@ export function donatosUi(tab?: DonatosUiTab) {
       close.DoClick = () => frame.Close()
     }
 
+    {
+      const points = themedUi().btn({ parent: navbar, variant: 'secondary', size: 'sm' })
+      points.Dock(DOCK.RIGHT)
+      points.DockMargin(0, 0, px(5), 0)
+      points.SetText(`Бонусы: ${LocalPlayer().Donatos().Balance} р.`)
+      points.SizeToContentsX(px(15))
+    }
+
     const container = themedUi().panel({ parent: mainPan, color: Color(0, 0, 0, 0) })
     container.Dock(DOCK.FILL)
     mainPan.InvalidateLayout(true)
