@@ -112,7 +112,7 @@ export function tabActiveItems(container: DPanel) {
                   {
                     text: 'Заморозить',
                     onClick: async () => {
-                      askFreezeActiveItem({ id: i.id, invalidateLayout })
+                      askFreezeActiveItem({ id: i.id, invalidateLayout: () => invalidateLayout() })
                       /*if (await netMessageToServer('freezeActiveItem', { id: i.id })) {
                         invalidateLayout()
                       }*/
