@@ -110,6 +110,54 @@ export const handleServerMessage = {
 
     return true
   },
+  freezeActiveItem: async (ply, input: { id: number }) => {
+    const playerId = ply.Donatos().ID
+    if (!playerId) {
+      ply.Donatos()._sPrint('Ошибка: данные игрока не загружены. Попробуйте позднее.')
+      return false
+    }
+
+    const { isError, data, error } = await serverApiRequest('player:freeze-active-item', {
+      playerId: playerId,
+      itemId: input.id,
+    })
+
+    if (isError) {
+      ply.Donatos()._sPrint(`Произошла ошибка: ${error}`)
+      return false
+    }
+
+    ply.Donatos()._sPrint('Вы заморозили предмет.')
+
+    await ply.Donatos()._sLoadRemoteData()
+    ply.Donatos()._sOnPlayerJoined()
+
+    return true
+  },
+  unfreezeActiveItem: async (ply, input: { id: number }) => {
+    const playerId = ply.Donatos().ID
+    if (!playerId) {
+      ply.Donatos()._sPrint('Ошибка: данные игрока не загружены. Попробуйте позднее.')
+      return false
+    }
+
+    const { isError, data, error } = await serverApiRequest('player:unfreeze-active-item', {
+      playerId: playerId,
+      itemId: input.id,
+    })
+
+    if (isError) {
+      ply.Donatos()._sPrint(`Произошла ошибка: ${error}`)
+      return false
+    }
+
+    ply.Donatos()._sPrint('Вы разморозили предмет.')
+
+    await ply.Donatos()._sLoadRemoteData()
+    ply.Donatos()._sOnPlayerJoined()
+
+    return true
+  },
 } satisfies Record<string, ServerNetHandler>
 
 if (SERVER) {

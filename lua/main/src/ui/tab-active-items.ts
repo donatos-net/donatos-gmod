@@ -1,8 +1,11 @@
+import { netMessageToServer } from '@/donatos/net'
 import { themedUi } from '@/ui/ui-utils'
-import { ui } from '@/utils/ui'
+import { cAlpha, ui } from '@/utils/ui'
 import px = ui.px
 
 export function tabActiveItems(container: DPanel) {
+  const invalidateLayout = () => tabActiveItems(container)
+
   container.Clear()
 
   if (LocalPlayer().Donatos().ActiveItems.length === 0) {
@@ -34,24 +37,104 @@ export function tabActiveItems(container: DPanel) {
     })
 
   for (const i of itemsSorted) {
-    const panel = themedUi().panel({ parent: scrollContainer, color: themedUi().theme.colors.secondary })
+    const isButton = i.isFrozen || i.expires
+
+    const panel = themedUi().panel({
+      parent: scrollContainer,
+      color: themedUi().theme.colors.secondary,
+      classname: isButton ? 'DButton' : undefined,
+    })
     panel.Dock(DOCK.TOP)
     panel.DockMargin(0, 0, 0, px(5))
     panel.DockPadding(px(5), px(5), px(5), px(5))
 
     itemPanels.push(panel)
 
-    const name = themedUi().label({
-      parent: panel,
-      text: i.name,
-      size: 'md',
-      color: themedUi().theme.colors.secondaryForeground,
-    })
-    name.Dock(DOCK.TOP)
-    name.DockMargin(0, 0, 0, px(2))
-    name.SizeToContentsX()
+    panel.InvalidateLayout(true)
 
-    if (i.expires) {
+    {
+      const nameContainer = themedUi().panel({
+        parent: panel,
+        classname: 'DLabel',
+        color: Color(0, 0, 0, 0),
+      }) as unknown as DLabel
+      nameContainer.SetText('')
+      nameContainer.Dock(DOCK.TOP)
+      nameContainer.DockMargin(0, 0, 0, px(2))
+
+      const name = themedUi().label({
+        parent: nameContainer,
+        text: i.name,
+        size: 'md',
+        color: themedUi().theme.colors.secondaryForeground,
+      })
+      name.Dock(DOCK.LEFT)
+      name.SizeToContentsX()
+      name.InvalidateLayout(true)
+
+      // workaround
+      nameContainer.SetTall(name.GetTall())
+
+      if (isButton) {
+        const actions = themedUi().label({
+          parent: nameContainer,
+          size: 'xl',
+          text: '⋯',
+          color: Color(255, 255, 255),
+          font: 'robotoBold',
+        })
+        actions.Dock(DOCK.RIGHT)
+        actions.SizeToContentsX()
+        actions.SetContentAlignment(2)
+      }
+    }
+
+    if (isButton) {
+      const btn = panel as unknown as DButton
+      btn.SetText('')
+      btn.DoClick = () => {
+        themedUi()
+          .dermaMenu({
+            variant: 'default',
+            size: 'sm',
+            options: i.isFrozen
+              ? [
+                  {
+                    text: 'Разморозить',
+                    onClick: async () => {
+                      if (await netMessageToServer('unfreezeActiveItem', { id: i.id })) {
+                        invalidateLayout()
+                      }
+                    },
+                  },
+                ]
+              : [
+                  {
+                    text: 'Заморозить',
+                    onClick: async () => {
+                      askFreezeActiveItem({ id: i.id, invalidateLayout })
+                      /*if (await netMessageToServer('freezeActiveItem', { id: i.id })) {
+                        invalidateLayout()
+                      }*/
+                    },
+                  },
+                ],
+          })
+          .Open()
+      }
+      btn.DoRightClick = btn.DoClick
+    }
+
+    if (i.isFrozen) {
+      const exp = themedUi().label({
+        parent: panel,
+        text: 'заморожен',
+        size: 'xs',
+        color: themedUi().theme.colors.mutedForeground,
+      })
+      exp.Dock(DOCK.TOP)
+      exp.DockMargin(0, 0, 0, px(2))
+    } else if (i.expires) {
       const exp = themedUi().label({
         parent: panel,
         text: `истекает ${i.expires.in}`,
@@ -101,4 +184,45 @@ export function tabActiveItems(container: DPanel) {
       col.DockMargin(0, 0, px(5), px(5))
     }
   }
+}
+
+function askFreezeActiveItem(params: { id: number; invalidateLayout: () => void }) {
+  const frame = themedUi().frame({
+    color: cAlpha(themedUi().theme.colors.muted, 230),
+  })
+  frame.SetSize(px(330), px(120))
+  frame.MakePopup()
+  frame.SetTitle('')
+  frame.Center()
+  frame.ShowCloseButton(false)
+  frame.DockPadding(px(5), px(5), px(5), px(5))
+
+  frame.InvalidateLayout(true)
+
+  const exp = themedUi().label({
+    parent: frame,
+    size: 'md',
+    text: 'Заморозить активный предмет можно только 1 раз. Продолжить?',
+    color: themedUi().theme.colors.secondaryForeground,
+  })
+  exp.SetContentAlignment(7)
+  exp.SetWrap(true)
+  exp.Dock(DOCK.FILL)
+  exp.DockMargin(0, 0, 0, px(2))
+
+  const yes = themedUi().btn({ parent: frame, size: 'sm', variant: 'default' })
+  yes.Dock(DOCK.BOTTOM)
+  yes.SetText('Заморозить')
+  yes.DoClick = async () => {
+    frame.Remove()
+    if (await netMessageToServer('freezeActiveItem', { id: params.id })) {
+      params.invalidateLayout()
+    }
+  }
+
+  const no = themedUi().btn({ parent: frame, size: 'sm', variant: 'secondary' })
+  no.Dock(DOCK.BOTTOM)
+  no.SetText('Отмена')
+  no.DockMargin(0, 0, 0, px(4))
+  no.DoClick = () => frame.Remove()
 }

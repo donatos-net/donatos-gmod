@@ -16,7 +16,7 @@ export namespace ui {
   }
 
   export const fontSizes = {
-    xs: px(12),
+    xs: px(13),
     sm: px(14),
     md: px(16),
     lg: px(18),

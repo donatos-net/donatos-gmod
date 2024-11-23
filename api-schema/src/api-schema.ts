@@ -113,6 +113,9 @@ export const serverApiSchema = {
                 durationS: z.number(),
               })
               .optional(),
+            isFrozen: z.boolean(),
+            frozenAt: z.number().optional(),
+            freezeCounter: z.number().optional(),
           })
           .array(),
       })
@@ -169,6 +172,20 @@ export const serverApiSchema = {
       playerExternalId: z.string(),
       itemId: z.number(),
       token: z.string().min(1),
+    }),
+    output: z.boolean(),
+  },
+  'player:freeze-active-item': {
+    input: z.object({
+      playerId: z.number(),
+      itemId: z.number(),
+    }),
+    output: z.boolean(),
+  },
+  'player:unfreeze-active-item': {
+    input: z.object({
+      playerId: z.number(),
+      itemId: z.number(),
     }),
     output: z.boolean(),
   },
