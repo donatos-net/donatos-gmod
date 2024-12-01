@@ -52,7 +52,7 @@ export class DonatosPlayer {
   }
 
   HasActiveItem(key: string): boolean {
-    return this.ActiveItems.find((i) => !i.isFrozen && i.key === key) !== undefined
+    return this.ActiveItems.find((i) => !i.isFrozen && i.goods.key === key) !== undefined
   }
 
   async _sLoadRemoteData(): Promise<Result<serverApiSchema['server:get-player']['output']>> {
@@ -124,7 +124,7 @@ export class DonatosPlayer {
           if (itm.isFrozen) {
             continue
           }
-          const donatosItem = donatosItems[itm.key]
+          const donatosItem = donatosItems[itm.goods.key]
           if (donatosItem?.meta?.samRank) {
             purchasedSamRanks[donatosItem.meta.samRank] = true
           }
@@ -141,7 +141,7 @@ export class DonatosPlayer {
       if (itm.isFrozen) {
         continue
       }
-      invokeDonatosItem(itm.key, '_onPlayerJoin', this._ply)
+      invokeDonatosItem(itm.goods.key, '_onPlayerJoin', this._ply, { goods: itm.goods })
     }
   }
 }

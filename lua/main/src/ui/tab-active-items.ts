@@ -64,7 +64,7 @@ export function tabActiveItems(container: DPanel) {
 
       const name = themedUi().label({
         parent: nameContainer,
-        text: i.name,
+        text: i.goods.name,
         size: 'md',
         color: themedUi().theme.colors.secondaryForeground,
       })

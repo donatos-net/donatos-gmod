@@ -62,7 +62,7 @@ export const handleServerMessage = {
       return false
     }
 
-    const activateResult = invokeDonatosItem(data.goods.key, '_onActivate', ply)
+    const activateResult = invokeDonatosItem(data.goods.key, '_onActivate', ply, data)
     if (activateResult.isError) {
       ply
         .Donatos()
@@ -73,7 +73,7 @@ export const handleServerMessage = {
       return true
     }
 
-    invokeDonatosItem(data.goods.key, '_onPlayerJoin', ply)
+    invokeDonatosItem(data.goods.key, '_onPlayerJoin', ply, data)
 
     // ply.donatos().sPrint(`Вы активировали предмет "${data.goods.name}"`)
     sendDonatosMessage({ args: [ply, ` активировал предмет "${data.goods.name}"`] })

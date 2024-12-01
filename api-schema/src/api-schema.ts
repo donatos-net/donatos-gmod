@@ -102,8 +102,8 @@ export const serverApiSchema = {
         activeItems: z
           .object({
             id: z.number(),
-            key: z.string(),
-            name: z.string(),
+            // key: z.string(),
+            // name: z.string(),
             activatedAt: z.number(),
             expires: z
               .object({
@@ -116,6 +116,18 @@ export const serverApiSchema = {
             isFrozen: z.boolean(),
             frozenAt: z.number().optional(),
             freezeCounter: z.number().optional(),
+            goods: z.object({
+              key: z.string(),
+              meta: z.string().optional(),
+              name: z.string(),
+            }),
+            variant: z
+              .object({
+                id: z.string(),
+                price: z.coerce.number(),
+                duration: z.number().optional(),
+              })
+              .optional(),
           })
           .array(),
       })
@@ -145,11 +157,13 @@ export const serverApiSchema = {
       goods: z.object({
         id: z.number(),
         key: z.string(),
+        meta: z.string().optional(),
         name: z.string(),
       }),
       variant: z.object({
+        id: z.string(),
         duration: z.number().optional(),
-        price: z.number().optional(),
+        price: z.number(),
       }),
     }),
   },

@@ -2,13 +2,21 @@ import { persistedVar } from '@/utils/addon'
 import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
 
+type DonatosItemInvokeData = {
+  goods: {
+    key: string
+    meta?: string
+    name: string
+  }
+}
+
 interface DonatosItem {
   key: string
-  _onActivate: ((ply: Player) => void)[]
-  _onPlayerJoin: ((ply: Player) => void)[]
+  _onActivate: ((ply: Player, data: DonatosItemInvokeData) => void)[]
+  _onPlayerJoin: ((ply: Player, data: DonatosItemInvokeData) => void)[]
 
-  OnActivate: (func: (ply: Player) => void) => this
-  OnPlayerJoin: (func: (ply: Player) => void) => this
+  OnActivate: (func: (ply: Player, data: DonatosItemInvokeData) => void) => this
+  OnPlayerJoin: (func: (ply: Player, data: DonatosItemInvokeData) => void) => this
 
   SetSAMGroup: (group: string) => this
   SetDarkRPMoney: (amount: number) => this
@@ -59,6 +67,13 @@ export function invokeDonatosItem(
   key: string,
   handlerType: '_onActivate' | '_onPlayerJoin',
   ply: Player,
+  data: {
+    goods: {
+      key: string
+      meta?: string
+      name: string
+    }
+  },
 ): Result<boolean, undefined> {
   const item = donatosItems[key]
   if (!item || !IsValid(ply)) {
@@ -73,7 +88,7 @@ export function invokeDonatosItem(
       continue
     }
 
-    const [success, err] = pcall(handler, ply)
+    const [success, err] = pcall(handler, ply, data)
     if (!success) {
       log.error(`Failed to invoke item handler (${key} ${handlerType}) for player ${ply.SteamID()}`)
       print(err)
