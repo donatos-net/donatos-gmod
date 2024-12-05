@@ -23,7 +23,7 @@ export interface ButtonParams {
   round?: { topLeft?: boolean; topRight?: boolean; bottomLeft?: boolean; bottomRight?: boolean }
 }
 
-type ButtonVariant = 'default' | 'secondary'
+type ButtonVariant = 'default' | 'secondary' | 'muted'
 type BorderRadiusVariant = 'lg' | 'md' | 'sm' | 'xs'
 
 type DermaMenuOption =
@@ -43,6 +43,10 @@ export class ThemedUi {
       secondary: {
         bg: this.theme.colors.secondary,
         text: this.theme.colors.secondaryForeground,
+      },
+      muted: {
+        bg: this.theme.colors.muted,
+        text: this.theme.colors.mutedForeground,
       },
     }
     this.borderRadius = {

@@ -72,24 +72,25 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
     }
 
     {
-      const headerContainer = themedUi().panel({
+      /*const headerContainer = themedUi().panel({
         parent: scrollContainer,
-        color: themedUi().theme.colors.secondary,
+        color: themedUi().theme.colors.muted,
       })
       headerContainer.Dock(DOCK.TOP)
       headerContainer.DockMargin(0, 0, px(5), px(5))
-      headerContainer.DockPadding(px(8), px(2), px(5), px(2))
+      headerContainer.DockPadding(px(8), px(2), px(5), px(2))*/
 
       const label = themedUi().label({
-        parent: headerContainer,
+        parent: scrollContainer,
         text: group.name,
         size: 'md',
-        color: themedUi().theme.colors.secondaryForeground,
+        color: themedUi().theme.colors.mutedForeground,
       })
       label.Dock(DOCK.TOP)
+      label.DockMargin(0, 0, 0, px(4))
 
-      headerContainer.InvalidateLayout(true)
-      headerContainer.SizeToChildren(false, true)
+      /*headerContainer.InvalidateLayout(true)
+      headerContainer.SizeToChildren(false, true)*/
     }
 
     const goodsContainer = themedUi().panel({

@@ -65,7 +65,7 @@ export function donatosUi(tab?: DonatosUiTab) {
     {
       const close = themedUi().btn({ parent: navbar, variant: 'secondary' })
       close.Dock(DOCK.RIGHT)
-      close.SetText('x')
+      close.SetText('×')
       close.SizeToContentsX(px(15))
       close.DoClick = () => frame.Close()
     }

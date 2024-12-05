@@ -7,17 +7,18 @@ donatos.UpdateTheme = () => {
   updateThemedUi()
 }
 
-const blueDark: ThemedUiConfig['colors'] = {
-  background: Color(9, 9, 11),
+// https://ui.shadcn.com/colors#colors
+const zincDark: ThemedUiConfig['colors'] = {
+  background: Color(24, 24, 27), // zinc-900
   foreground: Color(250, 250, 250),
-  card: Color(45, 45, 55),
-  cardForeground: Color(250, 250, 250),
-  primary: Color(37, 99, 235),
-  primaryForeground: Color(248, 250, 252),
-  secondary: Color(241, 245, 249),
-  secondaryForeground: Color(15, 23, 42),
-  muted: Color(39, 39, 42),
-  mutedForeground: Color(161, 161, 170),
+  card: Color(39, 39, 42), // zinc-800
+  cardForeground: Color(244, 244, 245),
+  primary: Color(228, 228, 231), // zinc-200
+  primaryForeground: Color(39, 39, 42),
+  secondary: Color(63, 63, 70), // zinc-700
+  secondaryForeground: Color(212, 212, 216),
+  muted: Color(82, 82, 91), // zinc-600
+  mutedForeground: Color(161, 161, 170), // zinc-400
 }
 
 let _themedUi = createThemedUi()
@@ -28,7 +29,7 @@ export function themedUi() {
 
 function createThemedUi() {
   return new ThemedUi({
-    colors: { ...blueDark, ...donatos.uiConfig?.theme?.colors },
+    colors: { ...zincDark, ...donatos.uiConfig?.theme?.colors },
     radius: px(donatos.uiConfig?.theme?.radius ?? 8),
   })
 }
