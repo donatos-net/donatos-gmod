@@ -53,7 +53,7 @@ export function tabInventory(container: DPanel) {
     itemCols.push(leftGoods)
     itemCols.push(rightGoods)
 
-    const itemCardColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'secondary')
+    const itemCardColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'card')
 
     for (const [i1, i2] of cluster(LocalPlayer().Donatos().InventoryItems)) {
       const m1 = descriptionMarkup(
@@ -127,7 +127,7 @@ function itemCard({
   descriptionHeight: number
   invalidateLayout: () => void
 }) {
-  const componentColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'secondary')
+  const componentColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'card')
 
   const itemContainer = themedUi().panel({
     parent: parentPanel,

@@ -142,7 +142,7 @@ export class ThemedUi {
     closeOnEsc?: boolean
   } = {}) {
     const frame = vgui.Create('DFrame') as DFrame & PaintExt<Frame>
-    const bg = color || this.theme.colors.card
+    const bg = color || this.theme.colors.background
     const r = this.borderRadius[radius || 'sm']
 
     frame.Paint = function (this: Frame, w: number, h: number) {

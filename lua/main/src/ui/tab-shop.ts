@@ -37,7 +37,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
     navbarContainer.DockMargin(0, 0, 0, px(5))
     navbarContainer.SetTall(px(30))
 
-    const navbar = themedUi().panel({ parent: navbarContainer, color: themedUi().theme.colors.card })
+    const navbar = themedUi().panel({ parent: navbarContainer, color: themedUi().theme.colors.muted })
     navbar.Dock(DOCK.FILL)
     navbar.DockPadding(px(5), px(5), px(5), px(5))
 
@@ -117,7 +117,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
     itemCols.push(leftGoods)
     itemCols.push(rightGoods)
 
-    const itemCardColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'secondary')
+    const itemCardColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'card')
 
     for (const [i1, i2] of cluster(group.goods)) {
       const m1 = descriptionMarkup(i1?.description || '', leftGoods.GetWide(), cAlpha(itemCardColor.foreground, 150))
@@ -172,7 +172,7 @@ export function itemCard(
   descriptionMarkup: MarkupObject,
   descriptionHeight: number,
 ) {
-  const componentColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'secondary')
+  const componentColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'card')
 
   const itemContainer = themedUi().panel({
     parent: panel,

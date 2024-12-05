@@ -46,7 +46,7 @@ export function tabActiveItems(container: DPanel) {
 
     const panel = themedUi().panel({
       parent: scrollContainer,
-      color: themedUi().theme.colors.secondary,
+      color: themedUi().theme.colors.card,
       classname: isButton ? 'DButton' : undefined,
     })
     panel.Dock(DOCK.TOP)
@@ -71,7 +71,7 @@ export function tabActiveItems(container: DPanel) {
         parent: nameContainer,
         text: i.goods.name,
         size: 'md',
-        color: themedUi().theme.colors.secondaryForeground,
+        color: themedUi().theme.colors.cardForeground,
       })
       name.Dock(DOCK.LEFT)
       name.SizeToContentsX()
@@ -158,8 +158,8 @@ export function tabActiveItems(container: DPanel) {
 
       const r = px(3)
       const ratio = i.expires.inS / i.expires.durationS
-      const bg = cAlpha(themedUi().theme.colors.primary, 50)
-      const bgFill = cAlpha(themedUi().theme.colors.primary, 230)
+      const bg = cAlpha(themedUi().theme.colors.cardForeground, 20)
+      const bgFill = cAlpha(themedUi().theme.colors.cardForeground, 50)
       progressBar.Paint = function (this, w, h) {
         draw.RoundedBox(r, 0, 0, w, h, bg)
         draw.RoundedBox(r, 0, 0, w * ratio, h, bgFill)
@@ -193,7 +193,7 @@ export function tabActiveItems(container: DPanel) {
 
 function askFreezeActiveItem(params: { id: number; invalidateLayout: () => void }) {
   const frame = themedUi().frame({
-    color: cAlpha(themedUi().theme.colors.muted, 230),
+    color: cAlpha(themedUi().theme.colors.muted, 250),
   })
   frame.SetSize(px(330), px(120))
   frame.MakePopup()

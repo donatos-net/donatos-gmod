@@ -41,7 +41,7 @@ export function donatosUi(tab?: DonatosUiTab) {
   function content(tab: DonatosUiTab) {
     mainPan.Clear()
 
-    const navbar = themedUi().panel({ parent: mainPan, color: themedUi().theme.colors.card })
+    const navbar = themedUi().panel({ parent: mainPan, color: themedUi().theme.colors.muted })
     navbar.SetSize(0, px(30))
     navbar.Dock(DOCK.TOP)
     navbar.DockMargin(0, 0, 0, px(7))
