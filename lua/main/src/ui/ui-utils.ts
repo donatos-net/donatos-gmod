@@ -10,7 +10,7 @@ donatos.UpdateTheme = () => {
 const blueDark: ThemedUiConfig['colors'] = {
   background: Color(9, 9, 11),
   foreground: Color(250, 250, 250),
-  card: Color(9, 9, 11),
+  card: Color(45, 45, 55),
   cardForeground: Color(250, 250, 250),
   primary: Color(37, 99, 235),
   primaryForeground: Color(248, 250, 252),

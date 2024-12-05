@@ -10,15 +10,15 @@ donatos.config.menuKeyBind = KEY_F6
   theme = {
     radius = 6,
     colors = {
-      background = Color(29, 36, 41),
+      background = Color(9, 9, 11),
       foreground = Color(250, 250, 250),
-      card = Color(9, 9, 11),
+      card = Color(45, 45, 55),
       cardForeground = Color(250, 250, 250),
-      primary = Color(58, 102, 135),
-      primaryForeground = Color(116, 212, 221),
-      secondary = Color(50, 62, 73),
-      secondaryForeground = Color(210, 210, 210),
-      muted = Color(0, 0, 0),
+      primary = Color(37, 99, 235),
+      primaryForeground = Color(248, 250, 252),
+      secondary = Color(241, 245, 249),
+      secondaryForeground = Color(15, 23, 42),
+      muted = Color(39, 39, 42),
       mutedForeground = Color(161, 161, 170),
     }
   },
