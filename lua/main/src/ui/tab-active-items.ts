@@ -9,7 +9,12 @@ export function tabActiveItems(container: DPanel) {
   container.Clear()
 
   if (LocalPlayer().Donatos().ActiveItems.length === 0) {
-    const empty = themedUi().label({ parent: container, text: 'У вас нет активных предметов :(', size: 'md' })
+    const empty = themedUi().label({
+      parent: container,
+      color: themedUi().theme.colors.foreground,
+      text: 'У вас нет активных предметов :(',
+      size: 'md',
+    })
     empty.Dock(DOCK.FILL)
     empty.SetContentAlignment(5)
     return
@@ -146,15 +151,15 @@ export function tabActiveItems(container: DPanel) {
 
       const progressBar = themedUi().panel({
         parent: panel,
-        color: themedUi().theme.colors.primaryForeground,
+        color: Color(0, 0, 0),
       })
       progressBar.Dock(DOCK.TOP)
       progressBar.SetTall(px(8))
 
       const r = px(3)
       const ratio = i.expires.inS / i.expires.durationS
-      const bg = themedUi().theme.colors.muted
-      const bgFill = themedUi().theme.colors.mutedForeground
+      const bg = cAlpha(themedUi().theme.colors.primary, 50)
+      const bgFill = cAlpha(themedUi().theme.colors.primary, 230)
       progressBar.Paint = function (this, w, h) {
         draw.RoundedBox(r, 0, 0, w, h, bg)
         draw.RoundedBox(r, 0, 0, w * ratio, h, bgFill)

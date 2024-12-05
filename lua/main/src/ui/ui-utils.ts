@@ -7,7 +7,7 @@ donatos.UpdateTheme = () => {
   updateThemedUi()
 }
 
-const zincDark: ThemedUiConfig['colors'] = {
+const blueDark: ThemedUiConfig['colors'] = {
   background: Color(9, 9, 11),
   foreground: Color(250, 250, 250),
   card: Color(9, 9, 11),
@@ -28,7 +28,7 @@ export function themedUi() {
 
 function createThemedUi() {
   return new ThemedUi({
-    colors: { ...zincDark, ...donatos.uiConfig?.theme?.colors },
+    colors: { ...blueDark, ...donatos.uiConfig?.theme?.colors },
     radius: px(donatos.uiConfig?.theme?.radius ?? 8),
   })
 }

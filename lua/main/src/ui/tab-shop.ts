@@ -20,7 +20,12 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
   const filteredCategories = allCategories.filter((c) => (selectedCategoryId ? selectedCategoryId === c.id : true))
 
   if ((remoteConfig.value?.goods?.length ?? 0) === 0) {
-    const empty = themedUi().label({ parent: container, text: 'Владелец сервера ещё не добавил товары.', size: 'md' })
+    const empty = themedUi().label({
+      parent: container,
+      color: themedUi().theme.colors.foreground,
+      text: 'Владелец сервера ещё не добавил товары.',
+      size: 'md',
+    })
     empty.Dock(DOCK.FILL)
     empty.SetContentAlignment(5)
     return
@@ -32,7 +37,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
     navbarContainer.DockMargin(0, 0, 0, px(5))
     navbarContainer.SetTall(px(30))
 
-    const navbar = themedUi().panel({ parent: navbarContainer, color: cAlpha(themedUi().theme.colors.background, 150) })
+    const navbar = themedUi().panel({ parent: navbarContainer, color: themedUi().theme.colors.card })
     navbar.Dock(DOCK.FILL)
     navbar.DockPadding(px(5), px(5), px(5), px(5))
 
@@ -69,7 +74,7 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
     {
       const headerContainer = themedUi().panel({
         parent: scrollContainer,
-        color: cAlpha(themedUi().theme.colors.secondary, 200),
+        color: themedUi().theme.colors.secondary,
       })
       headerContainer.Dock(DOCK.TOP)
       headerContainer.DockMargin(0, 0, px(5), px(5))

@@ -10,7 +10,12 @@ export function tabInventory(container: DPanel) {
   container.Clear()
 
   if (LocalPlayer().Donatos().InventoryItems.length === 0) {
-    const empty = themedUi().label({ parent: container, text: 'Инвентарь пуст :(', size: 'md' })
+    const empty = themedUi().label({
+      parent: container,
+      color: themedUi().theme.colors.foreground,
+      text: 'Инвентарь пуст :(',
+      size: 'md',
+    })
     empty.Dock(DOCK.FILL)
     empty.SetContentAlignment(5)
     return
@@ -122,10 +127,12 @@ function itemCard({
   descriptionHeight: number
   invalidateLayout: () => void
 }) {
+  const componentColor = customizedColor(donatos.uiConfig?.components?.shopItem, 'secondary')
+
   const itemContainer = themedUi().panel({
     parent: parentPanel,
     classname: 'DButton',
-    color: themedUi().theme.colors.secondary,
+    color: componentColor.background,
   }) as unknown as DButton
   itemContainer.SetText('')
   itemContainer.Dock(DOCK.TOP)
@@ -188,7 +195,7 @@ function itemCard({
       parent: nameContainer,
       text: `${item.goods?.name || 'Удалённый предмет'}${durationText}`,
       size: 'sm',
-      color: themedUi().theme.colors.secondaryForeground,
+      color: componentColor.foreground,
     })
     name.Dock(DOCK.LEFT)
     name.SizeToContentsX()
@@ -200,7 +207,7 @@ function itemCard({
       parent: nameContainer,
       size: 'xl',
       text: '⋯',
-      color: themedUi().theme.colors.secondaryForeground,
+      color: componentColor.foreground,
       font: 'robotoBold',
     })
     actions.Dock(DOCK.RIGHT)
@@ -219,7 +226,7 @@ function itemCard({
     parent: itemContainer,
     text: `Куплено за ${item.amountPaid} р.`,
     size: 'xs',
-    color: themedUi().theme.colors.secondaryForeground,
+    color: componentColor.foreground,
   })
   price.Dock(DOCK.TOP)
   price.DockMargin(0, px(4), 0, 0)

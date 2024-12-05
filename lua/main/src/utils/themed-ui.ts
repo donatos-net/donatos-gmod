@@ -89,7 +89,7 @@ export class ThemedUi {
     const r = this.borderRadius[radius || 'sm']
 
     const bg = btnSkin.bg
-    const bgDisabled = cAlpha(bg, 150)
+    const bgDisabled = cAlpha(bg, 170)
     const bgHover = cAlpha(bg, 230)
 
     const ro = {
@@ -112,7 +112,7 @@ export class ThemedUi {
     }
     button.UpdateColours = function (this: DButton) {
       if (!this.IsEnabled()) {
-        return this.SetTextStyleColor(cAlpha(btnSkin.text, 150))
+        return this.SetTextStyleColor(cAlpha(btnSkin.text, 170))
       }
       /*if (this.IsDown() || this.m_bSelected) {
         return this.SetTextStyleColor(btnSkin.text)
@@ -174,8 +174,8 @@ export class ThemedUi {
     const panel = vgui.Create('DScrollPanel', parent) as DScrollPanel
 
     const r = this.borderRadius[radius || 'sm']
-    const barColor = this.theme.colors.background
-    const gripColor = cAlpha(this.theme.colors.foreground, 100)
+    const barColor = cAlpha(this.theme.colors.secondary, 50)
+    const gripColor = this.theme.colors.secondary
 
     const vBar = panel.GetVBar() as DVScrollBar & PaintExt<DVScrollBar> & { btnGrip: PaintExt<Panel> }
     vBar.SetHideButtons(true)

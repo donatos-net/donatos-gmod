@@ -1,6 +1,9 @@
 -- Добавляет некоторые функции из IGS, например ply:HasPurchase()
 donatos.config.igsCompat = true
 
+-- Кнопка для открытия донат-меню
+donatos.config.menuKeyBind = KEY_F6
+
 -- Пример кастомизации интерфейса
 
 --[[ donatos.uiConfig = {
@@ -19,11 +22,6 @@ donatos.config.igsCompat = true
       mutedForeground = Color(161, 161, 170),
     }
   },
-  components = {
-    shopItem = {
-      // color = "primary"
-    }
-  }
 }
 
 donatos.UpdateTheme() ]]

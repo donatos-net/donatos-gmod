@@ -20,7 +20,7 @@ export function donatosUi(tab?: DonatosUiTab) {
   }
 
   const frame = themedUi().frame({
-    color: cAlpha(themedUi().theme.colors.muted, 250),
+    color: cAlpha(themedUi().theme.colors.background, 250),
     closeOnEsc: false,
   })
   frame.SetSize(px(600), px(400))
@@ -41,7 +41,7 @@ export function donatosUi(tab?: DonatosUiTab) {
   function content(tab: DonatosUiTab) {
     mainPan.Clear()
 
-    const navbar = themedUi().panel({ parent: mainPan, color: cAlpha(themedUi().theme.colors.background, 150) })
+    const navbar = themedUi().panel({ parent: mainPan, color: themedUi().theme.colors.card })
     navbar.SetSize(0, px(30))
     navbar.Dock(DOCK.TOP)
     navbar.DockMargin(0, 0, 0, px(7))
