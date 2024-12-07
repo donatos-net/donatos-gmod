@@ -4,6 +4,9 @@ donatos.config.igsCompat = true
 -- Кнопка для открытия донат-меню
 donatos.config.menuKeyBind = KEY_F6
 
+-- Размер донат-меню
+-- donatos.config.menuSize = { 600, 400 }
+
 -- Пример кастомизации интерфейса
 
 --[[ donatos.uiConfig = {

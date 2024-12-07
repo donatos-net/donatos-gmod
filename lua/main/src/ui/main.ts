@@ -23,7 +23,7 @@ export function donatosUi(tab?: DonatosUiTab) {
     color: cAlpha(themedUi().theme.colors.background, 250),
     closeOnEsc: false,
   })
-  frame.SetSize(px(600), px(400))
+  frame.SetSize(px(donatos.config?.menuSize?.[0] ?? 600), px(donatos.config?.menuSize?.[1] ?? 400))
   frame.MakePopup()
   frame.SetTitle('')
   frame.Center()

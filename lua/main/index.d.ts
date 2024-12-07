@@ -14,6 +14,7 @@ declare global {
       apiToken?: string
       autoUpdate?: boolean
       menuKeyBind?: KEY
+      menuSize?: [number, number]
       igsCompat?: boolean
     }
     uiConfig?: {
