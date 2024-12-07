@@ -14,10 +14,10 @@ declare global {
       apiToken?: string
       autoUpdate?: boolean
       menuKeyBind?: KEY
-      menuSize?: [number, number]
       igsCompat?: boolean
     }
     uiConfig?: {
+      menuSize?: [number, number]
       theme?: ThemedUiConfig
       components?: {
         shopItem?: ColorConfig
