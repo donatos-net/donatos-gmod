@@ -23,3 +23,5 @@ list.Set('DesktopWindows', 'donatos', {
   icon: 'icon16/money_add.png',
   init: () => donatosUi(),
 })
+
+concommand.Add('donatos', () => donatosUi(), undefined, 'Открыть донат-меню')
