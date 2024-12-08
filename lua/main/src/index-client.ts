@@ -1,8 +1,9 @@
-import { netMessageToServer } from '@/donatos/net'
+import { netMessageToServer, netMessageToServerCallback } from '@/donatos/net'
 import { donatosUi } from '@/ui/main'
 import { donatosHookId } from '@/utils/addon'
 
-donatos.UI = donatosUi
+donatos.OpenUI = donatosUi
+donatos.NetMessageToServer = netMessageToServerCallback
 
 netMessageToServer('requestSync', undefined)
 

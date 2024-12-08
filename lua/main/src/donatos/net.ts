@@ -35,20 +35,28 @@ export function netMessageToServer<T extends keyof typeof handleServerMessage>(
   })
 }
 
+export function netMessageToServerCallback<T extends keyof typeof handleServerMessage>(
+  action: T,
+  data: InferServerNetHandler<(typeof handleServerMessage)[T]>['in'],
+  callback: (data: InferServerNetHandler<(typeof handleServerMessage)[T]>['out']) => void,
+) {
+  netMessageToServer(action, data).then((data) => callback(data))
+}
+
 export function netMessageToClient<T extends keyof typeof handleClientMessage>(
   ply: Player | undefined,
   action: T,
   data: InferClientNetHandler<(typeof handleClientMessage)[T]>['in'],
 ) {
+  if (ply && !IsValid(ply)) {
+    return
+  }
+
   net.Start('donatos')
   net.WriteString(util.TableToJSON([action, data]))
 
   if (ply) {
-    if (IsValid(ply)) {
-      net.Send(ply)
-    } else {
-      net.Abort()
-    }
+    net.Send(ply)
   } else {
     net.Broadcast()
   }

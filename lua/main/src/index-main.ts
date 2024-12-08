@@ -1,4 +1,5 @@
 import { donatosItem } from '@/donatos/item'
+import { remoteConfig } from '@/donatos/remote-config'
 import { meta } from '@/meta'
 import { DonatosPlayer } from '@/player'
 import { log } from '@/utils/log'
@@ -10,8 +11,9 @@ if (!donatos) {
 donatos.config = {}
 donatos.uiConfig = undefined
 
-donatos.Item = donatosItem
 donatos.UpdateTheme = () => {}
+donatos.Item = donatosItem
+donatos.GetRemoteConfig = () => remoteConfig.value
 
 if (SERVER) {
   if (file.Exists('donatos/config_sv.lua', 'LUA')) {

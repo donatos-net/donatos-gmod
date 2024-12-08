@@ -19,6 +19,11 @@ export function donatosUi(tab?: DonatosUiTab) {
     return
   }
 
+  if (donatos.uiConfig?.customUi) {
+    donatos.uiConfig.customUi(tab)
+    return
+  }
+
   const frame = themedUi().frame({
     color: cAlpha(themedUi().theme.colors.background, 250),
     closeOnEsc: false,
