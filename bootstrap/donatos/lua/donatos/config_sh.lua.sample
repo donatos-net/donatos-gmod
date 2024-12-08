@@ -5,9 +5,9 @@ donatos.config.igsCompat = true
 donatos.config.menuKeyBind = KEY_F6
 
 -- Пример кастомизации интерфейса
-
 --[[ donatos.uiConfig = {
   -- menuSize = { 600, 400 }, -- Размер донат-меню
+  -- customUi = function (tab) end, -- Своя реализация донат-меню
   theme = {
     radius = 6,
     colors = {
