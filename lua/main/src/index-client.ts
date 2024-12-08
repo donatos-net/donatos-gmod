@@ -17,8 +17,8 @@ hook.Add('InitPostEntity', donatosHookId('postEntity'), () => {
   netMessageToServer('requestSync', undefined)
 })
 
-list.Set('DesktopWindows', 'donatos', {
-  title: 'Автодонат',
+list.Add('DesktopWindows', {
+  title: 'Донат',
   icon: 'icon16/money_add.png',
   init: () => donatosUi(),
 })
