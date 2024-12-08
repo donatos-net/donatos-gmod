@@ -1,4 +1,5 @@
 import { netMessageToClient } from '@/donatos/net'
+import { handleServerMessage } from '@/donatos/net/server'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { meta } from '@/meta'
@@ -67,6 +68,12 @@ concommand.Add('donatos_update', async (ply: Player) => {
 
   log.info('Подгружаю bundle.lua')
   RunString(dlResult.data, 'donatos/bundle.lua')
+})
+
+concommand.Add('donatos_activate_items', async (ply: Player) => {
+  for (const i of ply.Donatos().InventoryItems) {
+    await handleServerMessage.activateItem(ply, { id: i.id })
+  }
 })
 
 async function checkForAddonUpdates() {
