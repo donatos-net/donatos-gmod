@@ -17,5 +17,9 @@ export function sendDonatosMessage(params: { receiver?: Player; args: (string | 
     }
   }
 
-  netMessageToClient(params.receiver, 'print', serialized)
+  if (params.receiver) {
+    netMessageToClient(params.receiver, 'print', serialized)
+  } else {
+    netMessageToClient(undefined, 'broadcast', serialized)
+  }
 }

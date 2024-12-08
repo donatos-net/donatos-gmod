@@ -6,6 +6,30 @@ import { type DonatosUiTab, donatosUi } from '@/ui/main'
 import { log } from '@/utils/log'
 import type { serverApiSchema } from 'api-schema/src'
 
+const broadcastEnabled = CreateClientConVar(
+  'donatos_receive_announcements',
+  '1',
+  true,
+  false,
+  'Получать сообщения о донатах других игроков',
+)
+
+function print(input: [number, unknown][]) {
+  const deserialized: (string | Player | Color)[] = []
+
+  for (const [type, value] of input) {
+    if (type === 0) {
+      deserialized.push(value as string)
+    } else if (type === 1) {
+      deserialized.push(Player(value as number))
+    } else if (type === 2) {
+      deserialized.push(Color(...(value as [number, number, number])))
+    }
+  }
+
+  donatosAddText(...deserialized)
+}
+
 // server -> client
 export const handleClientMessage = {
   resultFromServer: (input: [number, unknown]) => {
@@ -41,19 +65,12 @@ export const handleClientMessage = {
 
   openUi: (tab?: DonatosUiTab) => donatosUi(tab),
   print: (input: [number, unknown][]) => {
-    const deserialized: (string | Player | Color)[] = []
-
-    for (const [type, value] of input) {
-      if (type === 0) {
-        deserialized.push(value as string)
-      } else if (type === 1) {
-        deserialized.push(Player(value as number))
-      } else if (type === 2) {
-        deserialized.push(Color(...(value as [number, number, number])))
-      }
+    print(input)
+  },
+  broadcast: (input: [number, unknown][]) => {
+    if (broadcastEnabled.GetBool()) {
+      print(input)
     }
-
-    donatosAddText(...deserialized)
   },
   syncConfig: async (input: serverApiSchema['server:get-config']['output']) => {
     remoteConfig.value = input
