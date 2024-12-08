@@ -1,4 +1,4 @@
-import { invokeDonatosItem } from '@/donatos/item'
+import { donatosItems, invokeDonatosItem } from '@/donatos/item'
 import { type ServerNetHandler, netMessageToClient } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
@@ -58,7 +58,20 @@ export const handleServerMessage = {
       return false
     }
 
-    const [canActivate, message] = hookRun('donatos:preActivateItem', ply, input.id)
+    const inventoryItem = ply.Donatos().InventoryItems.find((i) => i.id === input.id)
+    if (!inventoryItem) {
+      return false
+    }
+
+    if (inventoryItem.goods) {
+      const item = donatosItems[inventoryItem.goods.key]
+      if (!item) {
+        ply.Donatos()._sPrint('Ошибка: предмет не настроен. Обратитесь к администратору сервера.')
+        return false
+      }
+    }
+
+    const [canActivate, message] = hookRun('donatos:preActivateItem', ply, inventoryItem)
     if (canActivate === false) {
       ply.Donatos()._sPrint(`Вы не можете активировать этот предмет${message ? `: ${message}` : ''}`)
       return false

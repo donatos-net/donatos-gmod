@@ -86,6 +86,7 @@ export const serverApiSchema = {
               .object({
                 name: z.string(),
                 description: z.string().optional(),
+                key: z.string(),
               })
               .optional(),
             variantId: z.string().optional(),
