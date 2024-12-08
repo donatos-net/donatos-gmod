@@ -5,6 +5,12 @@ import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { createGiftEnt } from '@/ents/gift'
 import colors from '@/utils/colors'
+import { log } from '@/utils/log'
+
+const hookRun = hook.Run as (
+  eventName: string,
+  ...args: unknown[]
+) => LuaMultiReturn<[boolean | undefined, string | undefined]>
 
 // client -> server -> client
 export const handleServerMessage = {
@@ -49,6 +55,12 @@ export const handleServerMessage = {
     const playerId = ply.Donatos().ID
     if (!playerId) {
       ply.Donatos()._sPrint('Ошибка: данные игрока не загружены. Попробуйте позднее.')
+      return false
+    }
+
+    const [canActivate, message] = hookRun('donatos:preActivateItem', ply, input.id)
+    if (canActivate === false) {
+      ply.Donatos()._sPrint(`Вы не можете активировать этот предмет${message ? `: ${message}` : ''}`)
       return false
     }
 
@@ -165,8 +177,14 @@ if (SERVER) {
   net.Receive('donatos', async (len: number, ply: Player) => {
     const nonce = net.ReadUInt(20)
     const [action, data] = util.JSONToTable(net.ReadString()) as [keyof typeof handleServerMessage, unknown]
-    const result = await handleServerMessage[action](ply, data as never)
 
-    netMessageToClient(ply, 'resultFromServer', [nonce, result])
+    try {
+      const result = await handleServerMessage[action](ply, data as never)
+
+      netMessageToClient(ply, 'resultFromServer', [nonce, result])
+    } catch (e) {
+      log.error(`Error in handleServerMessage[${action}]:`)
+      print(e)
+    }
   })
 }
