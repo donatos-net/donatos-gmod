@@ -89,6 +89,10 @@ export class DonatosPlayer {
 
     if (!wasLoaded && data && data.player.balance > 0) {
       this._sPrint(`Вам доступно ${data.player.balance} р.`)
+      if (data.inventoryItems.length > 0) {
+        const names = data.inventoryItems.map((i) => i.goods?.name ?? '???')
+        this._sPrint(`У вас есть неактивированные предметы в инвентаре: ${names.join(', ')}`)
+      }
     }
 
     return apiResult
