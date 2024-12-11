@@ -63,7 +63,7 @@ export const handleServerMessage = {
       return false
     }
 
-    if (inventoryItem.goods) {
+    if (inventoryItem.goods && inventoryItem.variant?.duration === undefined) {
       const item = donatosItems[inventoryItem.goods.key]
       if (!item) {
         ply.Donatos()._sPrint('Ошибка: предмет не настроен. Обратитесь к администратору сервера.')
