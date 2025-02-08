@@ -9,7 +9,7 @@ export namespace ui {
     return Object.fromEntries(entries)
   }
 
-  const scrW = ScrW()
+  const scrW = math.max(ScrW(), 1920)
 
   export function px(value: number) {
     return math.Round((scrW / 1920) * value)
