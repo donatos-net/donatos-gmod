@@ -59,6 +59,7 @@ export const serverApiSchema = {
           playerName: z.string().optional(),
           total: z.string(),
           status: z.enum(['PENDING', 'SUCCEEDED', 'CANCELED', 'REFUNDED']),
+          isAnonymous: z.boolean(),
         })
         .array(),
     }),
@@ -166,6 +167,11 @@ export const serverApiSchema = {
         duration: z.number().optional(),
         price: z.number(),
       }),
+      order: z
+        .object({
+          isAnonymous: z.boolean(),
+        })
+        .optional(),
     }),
   },
   'player:drop-item': {

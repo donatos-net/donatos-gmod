@@ -101,7 +101,9 @@ export const handleServerMessage = {
     invokeDonatosItem(data.goods.key, '_onPlayerJoin', ply, data)
 
     // ply.donatos().sPrint(`Вы активировали предмет "${data.goods.name}"`)
-    sendDonatosMessage({ args: [ply, ` активировал предмет "${data.goods.name}"`] })
+    if (!data.order || data.order.isAnonymous === false) {
+      sendDonatosMessage({ args: [ply, ` активировал предмет "${data.goods.name}"`] })
+    }
     ply.EmitSound('friends/friend_join.wav', 75, 100, 0.2)
 
     return true

@@ -35,7 +35,7 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
   for (const order of data.newOrders) {
     const ply = player.GetBySteamID64(order.playerExternalId) as Player | false
 
-    {
+    if (!order.isAnonymous) {
       const arg = ply || order.playerName
       if (arg) {
         sendDonatosMessage({ args: [arg, ` задонатил серверу ${order.total} р.`] })
