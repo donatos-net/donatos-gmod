@@ -137,7 +137,7 @@ local function asyncDownloadBundleFromServer(failureReason)
 	end
 
 	net.Start("donatos_bundle")
-	net.WriteString(failureReason or "")
+	net.WriteString(tostring(failureReason))
 	net.SendToServer()
 
 	log("Запрос bundle.lua с сервера")
@@ -186,7 +186,7 @@ end
 
 local function asyncInstallRelease(release)
 	if !release || !release.assets then
-		return false
+		return false, string.format("Неверный релиз: %s", release and util.TableToJSON(release) or nil)
 	end
 
 	local bundleAsset
