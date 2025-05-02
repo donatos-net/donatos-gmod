@@ -32,19 +32,19 @@ local function asyncHttp(opts)
 	local running = coroutine.running()
 
 	local function onSuccess(code, body, headers)
-		if code == 200 then
+		if code >= 200 && code <= 299 then
 			coroutine.resume(running, true, body)
 		else
 			log("HTTP Error %s: %s", code, body)
 			log("Request was: %s", util.TableToJSON(opts))
 
-			coroutine.resume(running, false, body)
+			coroutine.resume(running, false, string.format("HTTP code %s on %s", code, opts.url))
 		end
 	end
 
 	local function onFailure(reason)
 		log("HTTP Error: %s", reason)
-		coroutine.resume(running, false, reason)
+		coroutine.resume(running, false, string.format("HTTP failed on %s: %s", opts.url, reason))
 	end
 
 	log("HTTP %s %s", opts.method || "GET", opts.url)
@@ -93,7 +93,7 @@ if SERVER then
 		cachedBundle = localBundle
 		cachedHash = hash
 
-		log("Игрок %s запросил bundle.lua с сервера", ply:SteamID())
+		log("Игрок %s запросил bundle.lua с сервера. Причина: %s", ply:SteamID(), net.ReadString())
 
 		local chunkSize = 65532 - 8 - 8 - 16
 		local chunks = {}
@@ -113,7 +113,7 @@ if SERVER then
 	end)
 end
 
-local function asyncDownloadBundleFromServer()
+local function asyncDownloadBundleFromServer(failureReason)
 	if SERVER then
 		return false, "server"
 	end
@@ -137,6 +137,7 @@ local function asyncDownloadBundleFromServer()
 	end
 
 	net.Start("donatos_bundle")
+	net.WriteString(failureReason or "")
 	net.SendToServer()
 
 	log("Запрос bundle.lua с сервера")
@@ -213,7 +214,7 @@ local function asyncInstallRelease(release)
 		file.Write(LOCAL_RELEASE_JSON_PATH, util.TableToJSON(release))
 	end
 
-	log("Версия %s скачана в %s.", release.name, LOCAL_BUNDLE_PATH)
+	log("Версия %s скачана в %s", release.name, LOCAL_BUNDLE_PATH)
 
 	return true, remoteBundle
 end
@@ -275,14 +276,12 @@ local function asyncBootstrap()
 		local function clientHttpBootstrap()
 			local version = donatosBootstrap.addonVersionConVar:GetString()
 			if version == "" then
-				log("Сервер не передал %s", donatosBootstrap.addonVersionConVar:GetName())
-				return false
+				return false, string.format("Сервер не передал %s", donatosBootstrap.addonVersionConVar:GetName())
 			end
 
 			local remoteReleasesSuccess, remoteReleases = asyncFetchReleases()
 			if !remoteReleasesSuccess then
-				log("Не удалось получить список релизов аддона.")
-				return false
+				return false, remoteReleases
 			end
 
 			local release
@@ -294,16 +293,14 @@ local function asyncBootstrap()
 			end
 
 			if !release then
-				log("Релиз %s недоступен.", version)
-				return false
+				return false, string.format("Релиз %s недоступен.", version)
 			end
 
 			local success, bundle = asyncInstallRelease(release)
 			if !success then
-				log(bundle) -- err
-				return false
+				return false, bundle
 			end
-			return runBundle(bundle)
+			return true, runBundle(bundle)
 		end
 
 		local success, result = clientHttpBootstrap()
@@ -311,8 +308,10 @@ local function asyncBootstrap()
 			return result
 		end
 
+		log("Не удалось получить bundle.lua через HTTP: %s", result)
+
 		-- если не получилось скачать аддон через http, запрашиваем с сервера через net
-		local success, bundle = asyncDownloadBundleFromServer()
+		local success, bundle = asyncDownloadBundleFromServer(result)
 		if success then
 			file.CreateDir("donatos")
 			file.Write(LOCAL_BUNDLE_PATH, bundle)
