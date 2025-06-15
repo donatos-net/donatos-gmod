@@ -120,10 +120,14 @@ export class DonatosPlayer {
     }
 
     {
-      const ply = this._ply as Player & { sam_getrank?: () => string; sam_set_rank?: (rank: string) => void }
+      const ply = this._ply as Player & {
+        sam_getrank?: () => string
+        sam_get_nwvar?: (key: string, fallback: string) => string
+        sam_set_rank?: (rank: string) => void
+      }
 
-      if (ply.sam_getrank && ply.sam_set_rank) {
-        const plySamRank = ply.sam_getrank()
+      if (ply.sam_set_rank) {
+        const plySamRank = ply.sam_getrank?.() ?? ply.sam_get_nwvar?.('rank', 'user') ?? ply.GetUserGroup()
         const purchasedSamRanks: Record<string, true> = {}
 
         for (const itm of this.ActiveItems) {
