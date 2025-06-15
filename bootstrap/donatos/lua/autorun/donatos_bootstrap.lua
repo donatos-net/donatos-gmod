@@ -31,19 +31,24 @@ end
 local function asyncHttp(opts)
 	local running = coroutine.running()
 
+	local resolved = false
+
 	local function onSuccess(code, body, headers)
 		if code >= 200 && code <= 299 then
+			resolved = true
 			coroutine.resume(running, true, body)
 		else
 			log("HTTP Error %s: %s", code, body)
 			log("Request was: %s", util.TableToJSON(opts))
 
+			resolved = true
 			coroutine.resume(running, false, string.format("HTTP code %s on %s", code, opts.url))
 		end
 	end
 
 	local function onFailure(reason)
 		log("HTTP Error: %s", reason)
+		resolved = true
 		coroutine.resume(running, false, string.format("HTTP failed on %s: %s", opts.url, reason))
 	end
 
@@ -55,6 +60,14 @@ local function asyncHttp(opts)
 		method = opts.method || "GET",
 		url = opts.url
 	})
+
+	local timeout = opts.timeout || 10
+
+	timer.Simple(timeout, function ()
+		if !resolved then
+			onFailure(string.format("Manual timeout (%ss)", timeout))
+		end
+	end)
 
 	return coroutine.yield()
 end
