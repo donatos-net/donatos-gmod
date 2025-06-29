@@ -24,6 +24,9 @@ declare global {
       autoUpdate?: boolean
       menuKeyBind?: KEY
       igsCompat?: boolean
+      gift?: {
+        model?: string
+      }
     }
     uiConfig?: {
       customUi?: (this: void, tab?: string) => void

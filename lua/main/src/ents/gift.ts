@@ -30,7 +30,7 @@ const ent = {
 
   Initialize: SERVER
     ? function (this: GiftEnt) {
-        this.SetModel('models/dav0r/hoverball.mdl')
+        this.SetModel(donatos.config?.gift?.model ?? 'models/dav0r/hoverball.mdl')
 
         this.PhysicsInit(SOLID.SOLID_VPHYSICS)
         this.SetMoveType(MOVETYPE.MOVETYPE_VPHYSICS)
