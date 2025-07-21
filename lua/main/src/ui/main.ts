@@ -14,7 +14,7 @@ export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 export function donatosUi(tab?: DonatosUiTab) {
   destroyUi()
 
-  if (!remoteConfig.value) {
+  if (!remoteConfig.value || !LocalPlayer().Donatos().IsLoaded) {
     donatosAddText('Данные не загружены. Попробуйте немного позднее.')
     return
   }
