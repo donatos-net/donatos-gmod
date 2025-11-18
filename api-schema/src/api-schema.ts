@@ -64,6 +64,36 @@ export const serverApiSchema = {
         .array(),
     }),
   },
+  'server:get-updates:v2': {
+    input: z.object({
+      since: z.string().optional(),
+      playerExternalIds: z.string().array().max(128),
+    }),
+    output: z.object({
+      ts: z.string(),
+      server: z.object({
+        updatedAt: z.string(),
+      }),
+      updatedPlayers: z
+        .object({
+          id: z.number(),
+          externalId: z.string(),
+          updatedAt: z.string(),
+        })
+        .array(),
+      newOrders: z
+        .object({
+          id: z.number(),
+          playerId: z.number(),
+          playerExternalId: z.string(),
+          playerName: z.string().optional(),
+          total: z.string(),
+          status: z.enum(['PENDING', 'SUCCEEDED', 'CANCELED', 'REFUNDED']),
+          isAnonymous: z.boolean(),
+        })
+        .array(),
+    }),
+  },
   'server:get-player': {
     input: z.object({
       playerExternalId: z.string(),

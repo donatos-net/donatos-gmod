@@ -9,16 +9,13 @@ let updatesSince: string | undefined = undefined
 let serverUpdatedAt: string | undefined = undefined
 
 timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
-  const playerIds: number[] = []
+  const playerExternalIds: string[] = []
   for (const p of player.GetAll()) {
-    const dId = p.Donatos().ID
-    if (dId) {
-      playerIds.push(dId)
-    }
+    playerExternalIds.push(p.SteamID64())
   }
-  const { isError, data, error } = await serverApiRequest('server:get-updates', {
+  const { isError, data, error } = await serverApiRequest('server:get-updates:v2', {
     since: updatesSince,
-    playerIds,
+    playerExternalIds,
   })
 
   if (isError) {
