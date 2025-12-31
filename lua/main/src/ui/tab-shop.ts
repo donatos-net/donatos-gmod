@@ -162,7 +162,7 @@ function buyItem(id: number, variant: { id: string; price: number; duration?: nu
     netMessageToServer('purchaseGoods', { goodsId: id, variantId: variant.id })
   } else {
     const payUrl = remoteConfig.value?.payUrl
-    if (payUrl) gui.OpenURL(`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openCart=${id}-${variant.id}`)
+    if (payUrl) gui.OpenURL(`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openDeposit=${variant.price}`)
   }
 }
 

@@ -79,8 +79,14 @@ export function donatosUi(tab?: DonatosUiTab) {
     const points = themedUi().btn({ parent: navbar, variant: 'secondary', size: 'sm' })
     points.Dock(DOCK.RIGHT)
     points.DockMargin(0, 0, px(5), 0)
-    points.SetText(`Бонусы: ${LocalPlayer().Donatos().Balance} р.`)
+    points.SetText(`Бонусы: ${LocalPlayer().Donatos().Balance}`)
     points.SizeToContentsX(px(15))
+    points.DoClick = () => {
+      const payUrl = remoteConfig.value?.payUrl
+      if (payUrl) {
+        gui.OpenURL(`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openDeposit=true`)
+      }
+    }
     // }
 
     const container = themedUi().panel({ parent: mainPan, color: Color(0, 0, 0, 0) })
