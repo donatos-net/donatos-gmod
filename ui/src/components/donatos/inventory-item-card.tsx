@@ -1,3 +1,5 @@
+import { useDonatosError } from '@/components/donatos/error-dialog';
+import { Button } from '@/components/ui/button';
 import {
 	Card,
 	CardContent,
@@ -5,9 +7,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { useDonatosError } from '@/components/donatos/error-dialog';
-import { useActivateItem, useDropItem } from '@/hooks/use-donatos-mutations';
+import { useActivateItem } from '@/hooks/use-donatos-mutations';
 import { formatDurationInParens } from '@/lib/format-duration';
 import type { InventoryItem } from '@/types/donatos';
 
@@ -17,7 +17,7 @@ interface InventoryItemCardProps {
 
 export function InventoryItemCard({ item }: InventoryItemCardProps) {
 	const { mutate: activateItem } = useActivateItem();
-	const { mutate: dropItem } = useDropItem();
+	// const { mutate: dropItem } = useDropItem();
 	const { showError } = useDonatosError();
 
 	const durationText = formatDurationInParens(item.variant?.duration);
