@@ -47,7 +47,15 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	);
 
 	const handlePurchase = (variantId: string) => {
-		purchaseItem({ goodsId: item.id, variantId });
+		purchaseItem(
+			{ goodsId: item.id, variantId },
+			{
+				onSuccess: () => {
+					setConfirmOpen(false);
+					setPendingVariantId(null);
+				},
+			},
+		);
 	};
 
 	const requestPurchase = (variantId: string) => {
