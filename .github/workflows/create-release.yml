@@ -16,24 +16,15 @@ jobs:
       - name: Checkout Git repo
         uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          version: 9
-          run_install: false
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
+      - uses: oven-sh/setup-bun@v2
+        name: Install Bun
 
       - name: Install dependencies
-        run: pnpm install
+        run: bun install
 
       - name: Build
         working-directory: ./lua/main
-        run: pnpm run build
+        run: bun run build
 
       - name: Pack addon ZIP
         working-directory: ./bootstrap

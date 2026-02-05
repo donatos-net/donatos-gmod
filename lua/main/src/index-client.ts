@@ -1,8 +1,17 @@
 import { netMessageToServer, netMessageToServerCallback } from '@/donatos/net'
 import { donatosUi } from '@/ui/main'
+import { donatosWebUi } from '@/ui/web-panel'
 import { donatosHookId } from '@/utils/addon'
 
-donatos.OpenUI = donatosUi
+const openUi = (tab?: Parameters<typeof donatosUi>[0]) => {
+  if (donatos.uiConfig?.useWebUi) {
+    return donatosWebUi(tab)
+  }
+
+  return donatosUi(tab)
+}
+
+donatos.OpenUI = openUi
 donatos.NetMessageToServer = netMessageToServerCallback
 
 netMessageToServer('requestSync', undefined)
@@ -10,7 +19,7 @@ netMessageToServer('requestSync', undefined)
 hook.Add('PlayerButtonDown', donatosHookId('keybind'), (ply: Player, key: KEY) => {
   if (key === (donatos.config?.menuKeyBind ?? KEY.KEY_F6) && IsFirstTimePredicted()) {
     // netMessageToServer('requestSync', undefined)
-    donatosUi()
+    openUi()
   }
 })
 
@@ -21,7 +30,7 @@ hook.Add('InitPostEntity', donatosHookId('postEntity'), () => {
 list.Set('DesktopWindows', 'donatos', {
   title: 'Автодонат',
   icon: 'icon16/money_add.png',
-  init: () => donatosUi(),
+  init: () => openUi(),
 })
 
-concommand.Add('donatos', () => donatosUi(), undefined, 'Открыть донат-меню')
+concommand.Add('donatos', () => openUi(), undefined, 'Открыть донат-меню')

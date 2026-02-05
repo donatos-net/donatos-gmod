@@ -1,5 +1,6 @@
 import type { donatosItem } from '@/donatos/item'
 import type { netMessageToServerCallback } from '@/donatos/net'
+import type { DonatosUiTab } from '@/ui/main'
 import type { DonatosPlayer } from '@/player'
 import type { ColorConfig } from '@/ui/ui-utils'
 import type { ButtonParams, ThemedUiConfig } from '@/utils/themed-ui'
@@ -11,7 +12,7 @@ declare global {
     Item?: typeof donatosItem
 
     // client
-    OpenUI?: () => void
+    OpenUI?: (tab?: DonatosUiTab) => void
     NetMessageToServer?: typeof netMessageToServerCallback
 
     // shared
@@ -29,6 +30,7 @@ declare global {
       }
     }
     uiConfig?: {
+      useWebUi?: boolean
       customUi?: (this: void, tab?: string) => void
       menuSize?: [number, number]
       theme?: ThemedUiConfig

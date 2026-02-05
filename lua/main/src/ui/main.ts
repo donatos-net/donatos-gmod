@@ -3,6 +3,7 @@ import { remoteConfig } from '@/donatos/remote-config'
 import { tabActiveItems } from '@/ui/tab-active-items'
 import { tabInventory } from '@/ui/tab-inventory'
 import { tabShop } from '@/ui/tab-shop'
+import { donatosWebUi } from '@/ui/web-panel'
 import { destroyUi, themedUi, uiPersistedVar } from '@/ui/ui-utils'
 import { cAlpha, ui } from '@/utils/ui'
 import px = ui.px
@@ -13,6 +14,10 @@ export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 
 export function donatosUi(tab?: DonatosUiTab) {
   destroyUi()
+
+  if (donatos.uiConfig?.useWebUi) {
+    return donatosWebUi(tab)
+  }
 
   if (!remoteConfig.value || !LocalPlayer().Donatos().IsLoaded) {
     donatosAddText('Данные не загружены. Попробуйте немного позднее.')

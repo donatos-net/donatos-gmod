@@ -6,6 +6,7 @@ import { sendDonatosMessage } from '@/donatos/server-utils'
 import { createGiftEnt } from '@/ents/gift'
 import colors from '@/utils/colors'
 import { log } from '@/utils/log'
+import type { DonatosServerActions } from 'api-schema/src/server-actions'
 
 const hookRun = hook.Run as (
   eventName: string,
@@ -13,6 +14,13 @@ const hookRun = hook.Run as (
 ) => LuaMultiReturn<[boolean | undefined, string | undefined]>
 
 // client -> server -> client
+type ServerActionHandlers = {
+  [K in keyof DonatosServerActions]: ServerNetHandler<
+    DonatosServerActions[K]['input'],
+    DonatosServerActions[K]['output']
+  >
+}
+
 export const handleServerMessage = {
   requestSync: async (ply, input: undefined) => {
     ply.Donatos()._sSyncPlayer()
@@ -185,7 +193,7 @@ export const handleServerMessage = {
 
     return true
   },
-} satisfies Record<string, ServerNetHandler>
+} satisfies ServerActionHandlers
 
 if (SERVER) {
   util.AddNetworkString('donatos')
