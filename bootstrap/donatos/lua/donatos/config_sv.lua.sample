@@ -1,16 +1,6 @@
 -- Вставить сюда токен из личного кабинета
 donatos.config.apiToken = ""
 
--- Включить авто-обновление аддона
-donatos.config.autoUpdate = true
-
--- Настройки подарков
---[[
-donatos.config.gift = {
-  model = "models/dav0r/hoverball.mdl"
-}
-]]
-
 
 -- Пример заполнения предметов
 

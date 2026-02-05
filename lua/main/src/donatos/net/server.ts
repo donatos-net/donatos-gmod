@@ -62,7 +62,7 @@ export const handleServerMessage = {
 		);
 
 		if (isError) {
-			return err(`Произошла ошибка: ${error}`);
+			return err(error);
 		}
 
 		await ply.Donatos()._sLoadRemoteData();
@@ -113,7 +113,7 @@ export const handleServerMessage = {
 		);
 
 		if (isError) {
-			return err(`Произошла ошибка: ${error}`);
+			return err(error);
 		}
 
 		const activateResult = invokeDonatosItem(
@@ -138,6 +138,8 @@ export const handleServerMessage = {
 		}
 		ply.EmitSound('friends/friend_join.wav', 75, 100, 0.2);
 
+		void ply.Donatos()._sLoadRemoteData();
+
 		return ok(true);
 	},
 	dropItem: async (ply, input: { id: number }) => {
@@ -155,7 +157,7 @@ export const handleServerMessage = {
 		);
 
 		if (isError) {
-			return err(`Произошла ошибка: ${error}`);
+			return err(error);
 		}
 
 		const tr = util.TraceLine({
@@ -195,7 +197,7 @@ export const handleServerMessage = {
 		);
 
 		if (isError) {
-			return err(`Произошла ошибка: ${error}`);
+			return err(error);
 		}
 
 		await ply.Donatos()._sLoadRemoteData();
@@ -218,7 +220,7 @@ export const handleServerMessage = {
 		);
 
 		if (isError) {
-			return err(`Произошла ошибка: ${error}`);
+			return err(error);
 		}
 
 		await ply.Donatos()._sLoadRemoteData();

@@ -1,12 +1,14 @@
 --[[
-Donatos bootstrapper overview:
-- Server: fetches latest release via HTTP, stores bundle at data/donatos/bundle.txt,
-  sets donatos_version + donatos_bundle_sha256, then runs bundle.lua.
-- Client: tries HTTP download first. On failure, requests bundle from server via donatos_bundle net message.
-- Net transfer: 32KB chunks, client requests sequentially (1, 2, 3, ...), tagged with requestId.
-  Server caches chunks by bundle hash and enforces: first chunk only once per 30s; subsequent requests must be lastChunk + 1.
-- Client stores bundle at data/donatos/bundle.txt and verifies SHA256 before running.
+Обзор загрузчика Donatos:
+- Сервер: сначала проверяет обновления по HTTP; если есть новый релиз, скачивает его в
+  data/donatos/bundle.server.txt, устанавливает donatos_version + donatos_bundle_sha256 и запускает bundle.lua.
+  Если проверка обновлений не удалась или обновлений нет, запускает существующий локальный bundle (если он есть).
+- Клиент: сначала пытается скачать по HTTP. При ошибке запрашивает bundle с сервера через net-сообщение donatos_bundle.
+- Передача по сети: чанки по 32KB, клиент запрашивает последовательно (1, 2, 3, ...), с requestId.
+  Сервер кэширует чанки по хэшу bundle и ограничивает: первый чанк не чаще раза в 30с; далее строго lastChunk + 1.
+- Клиент проверяет SHA256 только для уже существующего локального bundle; скачанные по HTTP/сети запускаются без проверки.
 ]]
+
 AddCSLuaFile()
 
 if !donatosBootstrap then
@@ -17,10 +19,14 @@ donatosBootstrap.version = 3
 donatosBootstrap.addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
-donatosBootstrap._runID = tostring(CurTime())
+donatosBootstrap._runID = tostring(CurTime()) -- для отмены таймеров с прошлого запуска скрипта
 
 local LOCAL_RELEASE_JSON_PATH = "donatos/release.json"
 local LOCAL_BUNDLE_PATH = "donatos/bundle.txt"
+
+if SERVER then
+	LOCAL_BUNDLE_PATH = "donatos/bundle.server.txt"
+end
 
 local function log(patt, ...)
 	print(string.format("[DonatosBootstrap] " .. patt, ...))
@@ -35,6 +41,12 @@ local function resume(co, ...)
 			debug.traceback(co, "[coroutine error] " .. err)
 		)
 	end
+end
+
+-- coroutine.wrap but resumes instantly
+local function async(f)
+	local co = coroutine.create(f)
+	return resume(co)
 end
 
 local function asyncDelay(delay)
@@ -54,6 +66,7 @@ local function asyncHttp(opts)
 	local resolved = false
 
 	local function onSuccess(code, body, headers)
+		if resolved then return end
 		if code >= 200 && code <= 299 then
 			resolved = true
 			resume(running, true, body)
@@ -67,6 +80,7 @@ local function asyncHttp(opts)
 	end
 
 	local function onFailure(reason)
+		if resolved then return end
 		log("HTTP Error: %s", reason)
 		resolved = true
 		resume(running, false, string.format("HTTP failed on %s: %s", opts.url, reason))
@@ -101,44 +115,39 @@ if SERVER then
 
 	net.Receive("donatos_bundle", function (len, ply)
 		local requestId = net.ReadUInt(16)
-		local requestedChunk = net.ReadUInt(8)
-		if requestedChunk < 1 then
-			requestedChunk = 1
-		end
-
-		log("donatos_bundle recv from %s: req=%s chunk=%s", ply:SteamID(), requestId, requestedChunk)
 
 		local now = CurTime()
 		local lastChunk = ply._donatosBundleLastChunk or 0
+		local isNewRequest = ply._donatosBundleRequestId ~= requestId
 
-		if requestedChunk == 1 then
+		if isNewRequest then
 			if ply._donatosBundleFirstRequestAt && now - ply._donatosBundleFirstRequestAt < 30 then
-				log("donatos_bundle reject: too soon (first request <30s)")
+				log("donatos_bundle reject from %s: too soon (first request <30s)", ply:SteamID())
 				return
 			end
 			ply._donatosBundleFirstRequestAt = now
-			ply._donatosBundleLastChunk = 1
-		else
-			if requestedChunk ~= lastChunk + 1 then
-				log("donatos_bundle reject: non-seq (last=%s req=%s)", lastChunk, requestedChunk)
-				return
-			end
-			ply._donatosBundleLastChunk = requestedChunk
+			ply._donatosBundleRequestId = requestId
+			lastChunk = 0
 		end
+
+		local requestedChunk = lastChunk + 1
+		log("donatos_bundle recv from %s: req=%s chunk=%s", ply:SteamID(), requestId, requestedChunk)
+		ply._donatosBundleLastChunk = requestedChunk
 
 		local hash = donatosBootstrap.bundleSha256ConVar:GetString()
 		if hash == "" then
 			-- аддон не запущен
-			log("donatos_bundle reject: empty bundle sha256")
+			log("donatos_bundle reject from %s: empty bundle sha256", ply:SteamID())
 			return
 		end
 
-		if cachedChunks == nil || cachedChunksHash ~= hash then
+		if cachedChunks == nil or cachedChunksHash ~= hash then
 			local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 			if !localBundle then
-				log("donatos_bundle reject: missing %s", LOCAL_BUNDLE_PATH)
+				log("donatos_bundle reject from %s: missing %s", ply:SteamID(), LOCAL_BUNDLE_PATH)
 				return
 			end
+			localBundle = util.Compress(localBundle)
 
 			local chunkSize = 32768
 			cachedChunks = {}
@@ -147,7 +156,7 @@ if SERVER then
 			end
 			cachedChunkCount = #cachedChunks
 			cachedChunksHash = hash
-			log("donatos_bundle cache built: chunks=%s", cachedChunkCount)
+			log("donatos_bundle cache built for %s: chunks=%s", ply:SteamID(), cachedChunkCount)
 		end
 
 		if requestedChunk == 1 then
@@ -155,24 +164,24 @@ if SERVER then
 		end
 
 		if requestedChunk > cachedChunkCount then
-			log("donatos_bundle reject: chunk out of range (req=%s total=%s)", requestedChunk, cachedChunkCount)
+			log("donatos_bundle reject from %s: chunk out of range (req=%s total=%s)", ply:SteamID(), requestedChunk, cachedChunkCount)
 			return
 		end
 
 		local chunk = cachedChunks[requestedChunk]
-		local compressed = util.Compress(chunk)
 		net.Start("donatos_bundle")
 		net.WriteUInt(requestId, 16)
 		net.WriteUInt(cachedChunkCount, 8)
 		net.WriteUInt(requestedChunk, 8)
-		net.WriteUInt(#compressed, 16)
-		net.WriteData(compressed, #compressed)
+		net.WriteUInt(#chunk, 16)
+		net.WriteData(chunk, #chunk)
 		net.Send(ply)
-		log("donatos_bundle sent: req=%s chunk=%s/%s size=%s", requestId, requestedChunk, cachedChunkCount, #compressed)
+
+		log("donatos_bundle sent: req=%s chunk=%s/%s size=%s", requestId, requestedChunk, cachedChunkCount, #chunk)
 	end)
 end
 
-local function asyncDownloadBundleFromServer(failureReason)
+local function asyncDownloadBundleFromServer()
 	if SERVER then
 		return false, "server"
 	end
@@ -185,10 +194,9 @@ local function asyncDownloadBundleFromServer(failureReason)
 	local nextChunk = 1
 	local requestId = math.random(1, 65535)
 
-	local function requestChunk(idx)
+	local function requestChunk()
 		net.Start("donatos_bundle")
 		net.WriteUInt(requestId, 16)
-		net.WriteUInt(idx, 8)
 		net.SendToServer()
 	end
 
@@ -199,6 +207,7 @@ local function asyncDownloadBundleFromServer(failureReason)
 			end
 
 			if CurTime() - lastPacket > 5 then
+				resolved = true
 				resume(running, false, "Таймаут запроса")
 			else
 				checkTimeout()
@@ -206,11 +215,7 @@ local function asyncDownloadBundleFromServer(failureReason)
 		end)
 	end
 
-	if failureReason then
-		ErrorNoHaltWithStack("[DonatosBootstrap] " .. tostring(failureReason))
-	end
-
-	requestChunk(nextChunk)
+	requestChunk()
 	log("Запрос bundle.lua с сервера")
 
 	checkTimeout()
@@ -218,6 +223,8 @@ local function asyncDownloadBundleFromServer(failureReason)
 	local chunks = {}
 
 	net.Receive("donatos_bundle", function (len, ply)
+		if resolved then return end
+
 		lastPacket = CurTime()
 
 		local responseRequestId = net.ReadUInt(16)
@@ -227,7 +234,7 @@ local function asyncDownloadBundleFromServer(failureReason)
 
 		local totalChunksLocal = net.ReadUInt(8)
 		local chunkIdx = net.ReadUInt(8)
-		local data = util.Decompress(net.ReadData(net.ReadUInt(16)))
+		local data = net.ReadData(net.ReadUInt(16))
 
 		chunks[chunkIdx] = data
 		totalChunks = totalChunksLocal
@@ -236,7 +243,10 @@ local function asyncDownloadBundleFromServer(failureReason)
 			if chunkIdx == nextChunk then
 				nextChunk = nextChunk + 1
 				if nextChunk <= totalChunks then
-					requestChunk(nextChunk)
+						async(function()
+							asyncDelay(0.5)
+							requestChunk()
+						end)
 				end
 			end
 		end
@@ -248,7 +258,12 @@ local function asyncDownloadBundleFromServer(failureReason)
 			end
 			resolved = true
 			log("Получен bundle.lua с сервера")
-			resume(running, true, result)
+			result = util.Decompress(result)
+			if result and result ~= "" then
+				resume(running, true, result)
+			else
+				resume(running, false, "Не удалось распаковать результат")
+			end
 		end
 	end)
 
@@ -258,7 +273,16 @@ end
 local function asyncFetchReleases()
 	local success, data = asyncHttp({ url = donatosBootstrap.addonApiUrl })
 	if success then
-		return true, util.JSONToTable(data)
+		local result = util.JSONToTable(data)
+		if result then
+			if result.releases then
+				return true, result
+			else
+				return false, "Неверный формат ответа: " .. data
+			end
+		else
+			return false, "Ошибка util.JSONToTable: " .. data
+		end
 	end
 	return false, data
 end
@@ -291,6 +315,9 @@ local function asyncInstallRelease(release)
 	if !remoteBundleSuccess then
 		return false, "Не удалось скачать bundle.lua релиза " .. release.name .. ": " .. remoteBundle
 	end
+	if !remoteBundle or remoteBundle == "" then
+		return false, "Пустой bundle.lua для релиза " .. release.name
+	end
 
 	file.CreateDir("donatos")
 	file.Write(LOCAL_BUNDLE_PATH, remoteBundle)
@@ -313,14 +340,39 @@ end
 local function asyncBootstrap()
 	local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 
-	-- check existing bundle, server-side
 	if SERVER then
 		local localRelease = readLocalRelease()
+
+		local remoteReleasesSuccess, remoteReleases = asyncFetchReleases()
+		if remoteReleasesSuccess then
+			local latestRelease = remoteReleases.releases[1]
+			if !latestRelease then
+				log("Нет доступных релизов")
+			else
+				local needsUpdate = !localBundle || !localRelease || localRelease.name ~= latestRelease.name
+				if needsUpdate then
+					log("Доступен новый релиз %s (локальный: %s)", latestRelease.name, localRelease and localRelease.name or "нет")
+					local success, bundle = asyncInstallRelease(latestRelease)
+					if success then
+						donatosBootstrap.addonVersionConVar:SetString(latestRelease.name)
+						donatosBootstrap.bundleSha256ConVar:SetString(util.SHA256(bundle))
+						return runBundle(bundle)
+					end
+					log(bundle) -- err
+				else
+					log("Установлена последняя версия: %s", localRelease.name)
+				end
+			end
+		else
+			log("Не удалось получить список релизов аддона.")
+		end
+
 		if localRelease && localRelease.name && localBundle then
 			donatosBootstrap.addonVersionConVar:SetString(localRelease.name)
 			donatosBootstrap.bundleSha256ConVar:SetString(util.SHA256(localBundle))
 			return runBundle(localBundle)
 		end
+		return false
 	end
 
 	-- check existing bundle, client-side
@@ -338,27 +390,7 @@ local function asyncBootstrap()
 		end
 	end
 
-	if SERVER then
-		local remoteReleasesSuccess, remoteReleases = asyncFetchReleases()
-		if !remoteReleasesSuccess then
-			log("Не удалось получить список релизов аддона.")
-			return false
-		end
-
-		local latestRelease = remoteReleases.releases[1]
-		if !latestRelease then
-			log("Нет доступных релизов")
-			return false
-		end
-		local success, bundle = asyncInstallRelease(latestRelease)
-		if !success then
-			log(bundle) -- err
-			return false
-		end
-		donatosBootstrap.addonVersionConVar:SetString(latestRelease.name)
-		donatosBootstrap.bundleSha256ConVar:SetString(util.SHA256(bundle))
-		return runBundle(bundle)
-	else
+	if CLIENT then
 		local function clientHttpBootstrap()
 			local version = donatosBootstrap.addonVersionConVar:GetString()
 			if version == "" then
