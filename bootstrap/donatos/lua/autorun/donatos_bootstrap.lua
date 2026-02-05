@@ -1,10 +1,19 @@
+--[[
+Donatos bootstrapper overview:
+- Server: fetches latest release via HTTP, stores bundle at data/donatos/bundle.txt,
+  sets donatos_version + donatos_bundle_sha256, then runs bundle.lua.
+- Client: tries HTTP download first. On failure, requests bundle from server via donatos_bundle net message.
+- Net transfer: 32KB chunks, client requests sequentially (1, 2, 3, ...), tagged with requestId.
+  Server caches chunks by bundle hash and enforces: first chunk only once per 30s; subsequent requests must be lastChunk + 1.
+- Client stores bundle at data/donatos/bundle.txt and verifies SHA256 before running.
+]]
 AddCSLuaFile()
 
 if !donatosBootstrap then
 	donatosBootstrap = {}
 end
 
-donatosBootstrap.version = 2
+donatosBootstrap.version = 3
 donatosBootstrap.addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
@@ -17,12 +26,23 @@ local function log(patt, ...)
 	print(string.format("[DonatosBootstrap] " .. patt, ...))
 end
 
+-- coroutine.resume but with error logging
+local function resume(co, ...)
+	local ok, err = coroutine.resume(co, ...)
+
+	if ! ok then
+		return ErrorNoHalt(
+			debug.traceback(co, "[coroutine error] " .. err)
+		)
+	end
+end
+
 local function asyncDelay(delay)
 	local id = donatosBootstrap._runID
 	local running = coroutine.running()
 	timer.Simple(delay, function ()
 		if id == donatosBootstrap._runID then
-			coroutine.resume(running)
+			resume(running)
 		end
 	end)
 	return coroutine.yield()
@@ -36,20 +56,20 @@ local function asyncHttp(opts)
 	local function onSuccess(code, body, headers)
 		if code >= 200 && code <= 299 then
 			resolved = true
-			coroutine.resume(running, true, body)
+			resume(running, true, body)
 		else
 			log("HTTP Error %s: %s", code, body)
 			log("Request was: %s", util.TableToJSON(opts))
 
 			resolved = true
-			coroutine.resume(running, false, string.format("HTTP code %s on %s", code, opts.url))
+			resume(running, false, string.format("HTTP code %s on %s", code, opts.url))
 		end
 	end
 
 	local function onFailure(reason)
 		log("HTTP Error: %s", reason)
 		resolved = true
-		coroutine.resume(running, false, string.format("HTTP failed on %s: %s", opts.url, reason))
+		resume(running, false, string.format("HTTP failed on %s: %s", opts.url, reason))
 	end
 
 	log("HTTP %s %s", opts.method || "GET", opts.url)
@@ -77,52 +97,78 @@ end
 if SERVER then
 	util.AddNetworkString("donatos_bundle")
 
-	local cachedBundle, cachedHash
+	local cachedChunks, cachedChunkCount, cachedChunksHash
 
 	net.Receive("donatos_bundle", function (len, ply)
-		if ply._donatosBundleRequest && CurTime() - ply._donatosBundleRequest <= 30 then
-			return
+		local requestId = net.ReadUInt(16)
+		local requestedChunk = net.ReadUInt(8)
+		if requestedChunk < 1 then
+			requestedChunk = 1
 		end
 
-		ply._donatosBundleRequest = CurTime()
+		log("donatos_bundle recv from %s: req=%s chunk=%s", ply:SteamID(), requestId, requestedChunk)
+
+		local now = CurTime()
+		local lastChunk = ply._donatosBundleLastChunk or 0
+
+		if requestedChunk == 1 then
+			if ply._donatosBundleFirstRequestAt && now - ply._donatosBundleFirstRequestAt < 30 then
+				log("donatos_bundle reject: too soon (first request <30s)")
+				return
+			end
+			ply._donatosBundleFirstRequestAt = now
+			ply._donatosBundleLastChunk = 1
+		else
+			if requestedChunk ~= lastChunk + 1 then
+				log("donatos_bundle reject: non-seq (last=%s req=%s)", lastChunk, requestedChunk)
+				return
+			end
+			ply._donatosBundleLastChunk = requestedChunk
+		end
 
 		local hash = donatosBootstrap.bundleSha256ConVar:GetString()
 		if hash == "" then
 			-- аддон не запущен
+			log("donatos_bundle reject: empty bundle sha256")
 			return
 		end
 
-		local localBundle
-		if cachedHash == hash then
-			localBundle = cachedBundle
-		else
-			localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
+		if cachedChunks == nil || cachedChunksHash ~= hash then
+			local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
+			if !localBundle then
+				log("donatos_bundle reject: missing %s", LOCAL_BUNDLE_PATH)
+				return
+			end
+
+			local chunkSize = 32768
+			cachedChunks = {}
+			for i = 1, #localBundle, chunkSize do
+				table.insert(cachedChunks, localBundle:sub(i, i + chunkSize - 1))
+			end
+			cachedChunkCount = #cachedChunks
+			cachedChunksHash = hash
+			log("donatos_bundle cache built: chunks=%s", cachedChunkCount)
 		end
 
-		if !localBundle then
+		if requestedChunk == 1 then
+			log("Игрок %s запросил bundle.lua с сервера", ply:SteamID())
+		end
+
+		if requestedChunk > cachedChunkCount then
+			log("donatos_bundle reject: chunk out of range (req=%s total=%s)", requestedChunk, cachedChunkCount)
 			return
 		end
 
-		cachedBundle = localBundle
-		cachedHash = hash
-
-		log("Игрок %s запросил bundle.lua с сервера. Причина: %s", ply:SteamID(), net.ReadString())
-
-		local chunkSize = 65532 - 8 - 8 - 16
-		local chunks = {}
-		for i = 1, #localBundle, chunkSize do
-			table.insert(chunks, localBundle:sub(i, i + chunkSize - 1))
-		end
-
-		for chunkIdx, chunk in ipairs(chunks) do
-			local compressed = util.Compress(chunk)
-			net.Start("donatos_bundle")
-			net.WriteUInt(#chunks, 8)
-			net.WriteUInt(chunkIdx, 8)
-			net.WriteUInt(#compressed, 16)
-			net.WriteData(compressed, #compressed)
-			net.Send(ply)
-		end
+		local chunk = cachedChunks[requestedChunk]
+		local compressed = util.Compress(chunk)
+		net.Start("donatos_bundle")
+		net.WriteUInt(requestId, 16)
+		net.WriteUInt(cachedChunkCount, 8)
+		net.WriteUInt(requestedChunk, 8)
+		net.WriteUInt(#compressed, 16)
+		net.WriteData(compressed, #compressed)
+		net.Send(ply)
+		log("donatos_bundle sent: req=%s chunk=%s/%s size=%s", requestId, requestedChunk, cachedChunkCount, #compressed)
 	end)
 end
 
@@ -135,6 +181,17 @@ local function asyncDownloadBundleFromServer(failureReason)
 
 	local resolved = false
 	local lastPacket = CurTime()
+	local totalChunks
+	local nextChunk = 1
+	local requestId = math.random(1, 65535)
+
+	local function requestChunk(idx)
+		net.Start("donatos_bundle")
+		net.WriteUInt(requestId, 16)
+		net.WriteUInt(idx, 8)
+		net.SendToServer()
+	end
+
 	local function checkTimeout()
 		timer.Simple(5, function()
 			if resolved then
@@ -142,17 +199,18 @@ local function asyncDownloadBundleFromServer(failureReason)
 			end
 
 			if CurTime() - lastPacket > 5 then
-				coroutine.resume(running, false, "Таймаут запроса")
+				resume(running, false, "Таймаут запроса")
 			else
 				checkTimeout()
 			end
 		end)
 	end
 
-	net.Start("donatos_bundle")
-	net.WriteString(tostring(failureReason))
-	net.SendToServer()
+	if failureReason then
+		ErrorNoHaltWithStack("[DonatosBootstrap] " .. tostring(failureReason))
+	end
 
+	requestChunk(nextChunk)
 	log("Запрос bundle.lua с сервера")
 
 	checkTimeout()
@@ -162,20 +220,35 @@ local function asyncDownloadBundleFromServer(failureReason)
 	net.Receive("donatos_bundle", function (len, ply)
 		lastPacket = CurTime()
 
-		local totalChunks = net.ReadUInt(8)
+		local responseRequestId = net.ReadUInt(16)
+		if responseRequestId ~= requestId then
+			return
+		end
+
+		local totalChunksLocal = net.ReadUInt(8)
 		local chunkIdx = net.ReadUInt(8)
 		local data = util.Decompress(net.ReadData(net.ReadUInt(16)))
 
 		chunks[chunkIdx] = data
+		totalChunks = totalChunksLocal
 
-		if table.Count(chunks) == totalChunks then
+		if totalChunks && nextChunk <= totalChunks then
+			if chunkIdx == nextChunk then
+				nextChunk = nextChunk + 1
+				if nextChunk <= totalChunks then
+					requestChunk(nextChunk)
+				end
+			end
+		end
+
+		if totalChunks && table.Count(chunks) == totalChunks then
 			local result = ""
 			for _, key in SortedPairs(table.GetKeys(chunks)) do
 				result = result .. chunks[key]
 			end
 			resolved = true
 			log("Получен bundle.lua с сервера")
-			coroutine.resume(running, true, result)
+			resume(running, true, result)
 		end
 	end)
 
@@ -354,3 +427,5 @@ coroutine.wrap(function ()
 		asyncDelay(15)
 	end
 end)()
+
+log("Инициализирован")
