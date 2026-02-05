@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 
-import { installGmodBridge, registerStateCallbacks } from '@/lib/gmod-bridge'
+import { installGmodBridge, registerStateCallbacks, requestStateSync } from '@/lib/gmod-bridge'
 import { installMockBridge } from '@/lib/gmod-bridge-mock'
 
 export function initGmodBridge(queryClient: QueryClient) {
@@ -13,5 +13,7 @@ export function initGmodBridge(queryClient: QueryClient) {
 
   if (!window.donatosLua) {
     installMockBridge()
+  } else {
+    requestStateSync()
   }
 }

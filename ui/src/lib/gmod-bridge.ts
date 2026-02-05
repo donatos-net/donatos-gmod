@@ -90,3 +90,9 @@ export function closeUi() {
 
 	window.close();
 }
+
+export function requestStateSync() {
+	if (window.donatosLua?.requestStateSync) {
+		window.donatosLua.requestStateSync();
+	}
+}

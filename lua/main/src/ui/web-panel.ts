@@ -33,7 +33,7 @@ function pushState(panel: DHTML, key: string, value: unknown) {
 	const payload = util.TableToJSON({ value });
 	const safeKey = string.JavascriptSafe(key);
 	const safePayload = string.JavascriptSafe(payload ?? '{}');
-	const js = `window.donatosNative.setState('${safeKey}', JSON.parse('${safePayload}').value)`;
+	const js = `window.donatosNative.setState?.('${safeKey}', JSON.parse('${safePayload}').value)`;
 	panel.QueueJavascript(js);
 }
 
@@ -96,18 +96,19 @@ function createPanel() {
 	panel.AddFunction('donatosLua', 'closeUi', () => {
 		panel.SetVisible(false);
 	});
-
-	panel.OnDocumentReady = () => {
-		const zoom = math.min(ScrW() / 1920, ScrH() / 1080);
-		if (zoom > 1) {
-			panel.QueueJavascript(`document.documentElement.style.zoom = '${zoom}'`);
-		}
-
+	panel.AddFunction('donatosLua', 'requestStateSync', () => {
 		pushState(panel, 'serverConfig', remoteConfig.value);
 
 		const remoteData = LocalPlayer().Donatos()._remoteData;
 		if (remoteData.isLoaded) {
 			pushState(panel, 'playerData', remoteData.data);
+		}
+	});
+
+	panel.OnDocumentReady = () => {
+		const zoom = math.min(ScrW() / 1920, ScrH() / 1080);
+		if (zoom > 1) {
+			panel.QueueJavascript(`document.documentElement.style.zoom = '${zoom}'`);
 		}
 	};
 

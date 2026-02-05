@@ -6,6 +6,7 @@ declare global {
       netMessageToServer: (callbackId: number, action: string, dataJson: string) => void
       openUrl: (url: string) => void
       closeUi: () => void
+      requestStateSync: () => void
     }
     donatosNative?: {
       _resolveCallback: (callbackId: number, result: unknown) => void
