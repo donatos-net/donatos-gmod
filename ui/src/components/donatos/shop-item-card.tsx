@@ -30,8 +30,11 @@ import {
 	useActivateItem,
 	usePurchaseItem,
 } from '@/hooks/use-donatos-mutations';
+import { usePlayerData } from '@/hooks/use-player-data';
+import { useServerConfig } from '@/hooks/use-server-config';
 import { formatDuration } from '@/lib/format-duration';
 import { formatPrice } from '@/lib/format-price';
+import { openExternalUrl } from '@/lib/gmod-bridge';
 import type { Good } from '@/types/donatos';
 
 interface ShopItemCardProps {
@@ -42,8 +45,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	const { mutate: purchaseItem, isPending: isPurchasing } = usePurchaseItem();
 	const { mutate: activateItem, isPending: isActivating } = useActivateItem();
 	const { showError } = useDonatosError();
+	const { data: playerData } = usePlayerData();
+	const { data: serverConfig } = useServerConfig();
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+	const [depositOffer, setDepositOffer] = useState<{
+		requiredAmount: number;
+		price: number;
+	} | null>(null);
 	const [activateOffer, setActivateOffer] = useState<{
 		itemId: number;
 		goodsName?: string;
@@ -55,6 +64,17 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	);
 
 	const handlePurchase = (variantId: string) => {
+		const variant = item.variants?.find((entry) => entry.id === variantId);
+		const balance = playerData?.player.balance;
+		if (variant && typeof balance === 'number' && balance < variant.price) {
+			setConfirmOpen(false);
+			setPendingVariantId(null);
+			setDepositOffer({
+				requiredAmount: Math.max(variant.price - balance, 0),
+				price: variant.price,
+			});
+			return;
+		}
 		purchaseItem(
 			{ goodsId: item.id, variantId },
 			{
@@ -187,6 +207,48 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						>
 							{isPurchasing && <Spinner data-icon="inline-start" />}
 							Купить
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+			<Dialog
+				onOpenChange={(open) => {
+					if (!open) setDepositOffer(null);
+				}}
+				open={depositOffer !== null}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Недостаточно средств</DialogTitle>
+						<DialogDescription>
+							Для покупки {item.name} нужно{' '}
+							{formatPrice(depositOffer?.price ?? 0)}. Вам не хватает{' '}
+							{formatPrice(depositOffer?.requiredAmount ?? 0)}. Пополнить
+							баланс?
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<DialogClose asChild>
+							<Button size="sm" variant="outline">
+								Отмена
+							</Button>
+						</DialogClose>
+						<Button
+							disabled={!depositOffer || !playerData || !serverConfig}
+							onClick={() => {
+								if (!depositOffer || !playerData || !serverConfig) return;
+								const payUrl = serverConfig.payUrl.replace(
+									'{id}',
+									playerData.player.externalId,
+								);
+								openExternalUrl(
+									`${payUrl}&openDeposit=${depositOffer.requiredAmount}`,
+								);
+								setDepositOffer(null);
+							}}
+							size="sm"
+						>
+							Пополнить
 						</Button>
 					</DialogFooter>
 				</DialogContent>
