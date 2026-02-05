@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { DonatosHeader } from '@/components/donatos/donatos-header';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { DonatosErrorProvider } from '@/components/donatos/error-dialog';
 
 export const Route = createFileRoute('/donatos')({
 	component: DonatosLayout,
@@ -8,13 +8,13 @@ export const Route = createFileRoute('/donatos')({
 
 function DonatosLayout() {
 	return (
-		<div className="flex h-full flex-col overflow-hidden rounded-lg bg-muted/90">
-			<DonatosHeader />
-			<div className="flex-1 overflow-hidden">
-				<ScrollArea className="h-full w-full">
+		<DonatosErrorProvider>
+			<div className="flex h-full flex-col overflow-hidden rounded-lg bg-muted/95">
+				<DonatosHeader />
+				<div className="flex-1 overflow-hidden">
 					<Outlet />
-				</ScrollArea>
+				</div>
 			</div>
-		</div>
+		</DonatosErrorProvider>
 	);
 }

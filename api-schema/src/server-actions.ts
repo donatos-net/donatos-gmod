@@ -1,32 +1,36 @@
 import type { serverApiSchema } from './index'
 
+export type ActionResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string }
+
 export type DonatosServerActions = {
   requestSync: {
     input: undefined
-    output: void
+    output: ActionResult<true>
   }
   requestRefresh: {
     input: undefined
-    output: boolean
+    output: ActionResult<true>
   }
   purchaseGoods: {
     input: { goodsId: number; variantId: string }
-    output: serverApiSchema['player:purchase-goods']['output'] | false
+    output: ActionResult<serverApiSchema['player:purchase-goods']['output']>
   }
   activateItem: {
     input: { id: number }
-    output: boolean
+    output: ActionResult<true>
   }
   dropItem: {
     input: { id: number }
-    output: boolean
+    output: ActionResult<true>
   }
   freezeActiveItem: {
     input: { id: number }
-    output: boolean
+    output: ActionResult<true>
   }
   unfreezeActiveItem: {
     input: { id: number }
-    output: boolean
+    output: ActionResult<true>
   }
 }

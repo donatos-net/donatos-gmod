@@ -1,3 +1,5 @@
+'use client';
+
 import { ScrollArea as ScrollAreaPrimitive } from 'radix-ui';
 import type * as React from 'react';
 
@@ -43,7 +45,7 @@ function ScrollBar({
 			{...props}
 		>
 			<ScrollAreaPrimitive.ScrollAreaThumb
-				className="relative flex-1 rounded-full bg-border"
+				className="relative flex-1 rounded-full bg-foreground/35"
 				data-slot="scroll-area-thumb"
 			/>
 		</ScrollAreaPrimitive.ScrollAreaScrollbar>

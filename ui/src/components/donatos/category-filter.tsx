@@ -13,11 +13,11 @@ export function CategoryFilter({
 	onSelect,
 }: CategoryFilterProps) {
 	return (
-		<div className="flex items-center gap-2 border-border/10 border-b bg-background/50 p-2">
+		<div className="flex items-center gap-2 border-border/30 border-b bg-background/90 p-2 shadow-sm">
 			<Button
 				onClick={() => onSelect(undefined)}
 				size="sm"
-				variant={selected === undefined ? 'default' : 'ghost'}
+				variant={selected === undefined ? 'secondary' : 'ghost'}
 			>
 				Все
 			</Button>
@@ -26,7 +26,7 @@ export function CategoryFilter({
 					key={category.id}
 					onClick={() => onSelect(category.id)}
 					size="sm"
-					variant={selected === category.id ? 'default' : 'ghost'}
+					variant={selected === category.id ? 'secondary' : 'ghost'}
 				>
 					{category.name}
 				</Button>

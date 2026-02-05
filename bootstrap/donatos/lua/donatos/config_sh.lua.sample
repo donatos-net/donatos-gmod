@@ -3,26 +3,3 @@ donatos.config.igsCompat = true
 
 -- Кнопка для открытия донат-меню
 donatos.config.menuKeyBind = KEY_F6
-
--- Пример кастомизации интерфейса
---[[ donatos.uiConfig = {
-  -- menuSize = { 600, 400 }, -- Размер донат-меню
-  -- customUi = function (tab) end, -- Своя реализация донат-меню
-  theme = {
-    radius = 6,
-    colors = {
-      background = Color(24, 24, 27), // zinc-900
-      foreground = Color(250, 250, 250),
-      card = Color(63, 63, 70), // zinc-700
-      cardForeground = Color(228, 228, 231),
-      primary = Color(228, 228, 231), // zinc-200
-      primaryForeground = Color(39, 39, 42),
-      secondary = Color(82, 82, 91), // zinc-600
-      secondaryForeground = Color(212, 212, 216),
-      muted = Color(39, 39, 42), // zinc-800
-      mutedForeground = Color(228, 228, 231), // zinc-200
-    }
-  },
-}
-
-donatos.UpdateTheme() ]]

@@ -1,4 +1,4 @@
-import { descriptionMarkup } from '@/donatos/client-utils'
+import { descriptionMarkup, donatosAddText } from '@/donatos/client-utils'
 import { netMessageToServer } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
 import { customizedColor, themedUi } from '@/ui/ui-utils'
@@ -157,9 +157,12 @@ export function tabShop(container: DPanel, selectedCategoryId: number | undefine
   }
 }
 
-function buyItem(id: number, variant: { id: string; price: number; duration?: number }) {
+async function buyItem(id: number, variant: { id: string; price: number; duration?: number }) {
   if (LocalPlayer().Donatos().Balance >= variant.price) {
-    netMessageToServer('purchaseGoods', { goodsId: id, variantId: variant.id })
+    const result = await netMessageToServer('purchaseGoods', { goodsId: id, variantId: variant.id })
+    if (!result.success) {
+      donatosAddText(result.error)
+    }
   } else {
     const payUrl = remoteConfig.value?.payUrl
     if (payUrl) gui.OpenURL(`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openDeposit=${variant.price}`)
@@ -197,7 +200,9 @@ export function itemCard(
                   options:
                     item.variants?.map((v) => ({
                       text: `На ${v.duration}`,
-                      onClick: () => buyItem(item.id, v),
+                      onClick: () => {
+                        void buyItem(item.id, v)
+                      },
                     })) || [],
                 },
               ]
@@ -207,7 +212,7 @@ export function itemCard(
                   onClick: async () => {
                     const v = item.variants?.[0]
                     if (v) {
-                      buyItem(item.id, v)
+                      await buyItem(item.id, v)
                     }
                   },
                 },

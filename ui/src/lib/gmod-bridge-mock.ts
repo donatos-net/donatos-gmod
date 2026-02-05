@@ -18,7 +18,7 @@ export function installMockBridge() {
       console.log('[MockBridge] netMessageToServer', payload)
 
       setTimeout(() => {
-        window.donatosNative?._resolveCallback(callbackId, true)
+        window.donatosNative?._resolveCallback(callbackId, { success: true, data: true })
       }, 250)
     },
     openUrl(url) {

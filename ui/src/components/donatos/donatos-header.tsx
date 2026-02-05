@@ -37,13 +37,18 @@ export function DonatosHeader() {
 	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' });
 
 	return (
-		<div className="flex flex-col gap-0 bg-background p-1.5">
-			<div className="flex items-center gap-2">
+		<div className="relative flex flex-col gap-0 overflow-hidden bg-primary p-1.5 text-primary-foreground">
+			<div
+				aria-hidden
+				className="donatos-animated-bg pointer-events-none absolute inset-0 opacity-50"
+			/>
+			<div className="relative z-10 flex items-center gap-2">
 				<Button
 					asChild
 					className={cn(
+						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
 						!!isShopActive &&
-							'bg-secondary hover:bg-secondary dark:hover:bg-secondary',
+							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
 					)}
 					size="sm"
 					variant="ghost"
@@ -57,8 +62,9 @@ export function DonatosHeader() {
 				<Button
 					asChild
 					className={cn(
+						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
 						!!isInventoryActive &&
-							'bg-secondary hover:bg-secondary dark:hover:bg-secondary',
+							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
 					)}
 					size="sm"
 					variant="ghost"
@@ -67,7 +73,7 @@ export function DonatosHeader() {
 						<Icon icon={BlockchainIcon} />
 						Инвентарь
 						{playerData && playerData.inventoryItems.length > 0 && (
-							<Badge className="ml-1 h-4 rounded-sm px-1" variant="default">
+							<Badge className="ml-1 bg-secondary/20" variant="default">
 								{playerData.inventoryItems.length}
 							</Badge>
 						)}
@@ -77,8 +83,9 @@ export function DonatosHeader() {
 				<Button
 					asChild
 					className={cn(
+						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
 						!!isActiveItemsActive &&
-							'bg-secondary hover:bg-secondary dark:hover:bg-secondary',
+							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
 					)}
 					size="sm"
 					variant="ghost"
@@ -87,7 +94,7 @@ export function DonatosHeader() {
 						<Icon icon={Calendar02Icon} />
 						Активные предметы
 						{playerData && playerData.activeItems.length > 0 && (
-							<Badge className="ml-1 h-4 rounded-sm px-1" variant="default">
+							<Badge className="ml-1 bg-secondary/20" variant="default">
 								{playerData.activeItems.length}
 							</Badge>
 						)}
@@ -96,11 +103,21 @@ export function DonatosHeader() {
 
 				{/* Right side buttons */}
 				<div className="ml-auto flex items-center gap-2">
-					<Button onClick={handleBalanceClick} size="sm" variant="outline">
+					<Button
+						className="border-primary-foreground/30 text-primary-foreground hover:bg-primary/80"
+						onClick={handleBalanceClick}
+						size="sm"
+						variant="outline"
+					>
 						<Icon icon={PlusSignIcon} />
 						Бонусы: {playerData?.player.balance ?? 0}
 					</Button>
-					<Button onClick={handleClose} size="icon-sm" variant="secondary">
+					<Button
+						className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
+						onClick={handleClose}
+						size="icon-sm"
+						variant="ghost"
+					>
 						<Icon icon={Cancel01Icon}></Icon>
 					</Button>
 				</div>

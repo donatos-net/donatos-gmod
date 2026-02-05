@@ -10,6 +10,7 @@ if (!donatos) {
 
 donatos.config = {}
 donatos.uiConfig = undefined
+donatos.dev = { enabled: false }
 
 donatos.UpdateTheme = () => {}
 donatos.Item = donatosItem

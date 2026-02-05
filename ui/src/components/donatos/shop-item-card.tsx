@@ -1,6 +1,6 @@
 import { MoreVerticalIcon } from '@hugeicons/core-free-icons';
 import { useState } from 'react';
-
+import { useDonatosError } from '@/components/donatos/error-dialog';
 import { Icon } from '@/components/icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,7 +26,11 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { usePurchaseItem } from '@/hooks/use-donatos-mutations';
+import { Spinner } from '@/components/ui/spinner';
+import {
+	useActivateItem,
+	usePurchaseItem,
+} from '@/hooks/use-donatos-mutations';
 import { formatDuration } from '@/lib/format-duration';
 import { formatPrice } from '@/lib/format-price';
 import type { Good } from '@/types/donatos';
@@ -36,10 +40,15 @@ interface ShopItemCardProps {
 }
 
 export function ShopItemCard({ item }: ShopItemCardProps) {
-	const { mutate: purchaseItem } = usePurchaseItem();
-	const [isHovered, setIsHovered] = useState(false);
+	const { mutate: purchaseItem, isPending: isPurchasing } = usePurchaseItem();
+	const { mutate: activateItem, isPending: isActivating } = useActivateItem();
+	const { showError } = useDonatosError();
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+	const [activateOffer, setActivateOffer] = useState<{
+		itemId: number;
+		goodsName?: string;
+	} | null>(null);
 	const firstVariant = item.variants?.[0];
 	const hasMultipleVariants = item.variants && item.variants.length > 1;
 	const selectedVariant = item.variants?.find(
@@ -50,9 +59,18 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 		purchaseItem(
 			{ goodsId: item.id, variantId },
 			{
-				onSuccess: () => {
+				onSuccess: (result) => {
 					setConfirmOpen(false);
 					setPendingVariantId(null);
+					setActivateOffer({
+						itemId: result.item.id,
+						goodsName: result.goods.name,
+					});
+				},
+				onError: (error) => {
+					setConfirmOpen(false);
+					setPendingVariantId(null);
+					showError(getErrorMessage(error));
 				},
 			},
 		);
@@ -69,20 +87,20 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 		return ` на ${formatDuration(duration)}`;
 	};
 
+	const getErrorMessage = (error: unknown) => {
+		if (error instanceof Error && error.message) return error.message;
+		return 'Не удалось выполнить покупку. Попробуйте еще раз.';
+	};
+
 	return (
-		<Card
-			className="bg-card"
-			onMouseEnter={() => setIsHovered(true)}
-			onMouseLeave={() => setIsHovered(false)}
-			size="sm"
-		>
+		<Card className="data-[size=sm]:gap-1" size="sm">
 			<CardHeader>
 				<CardTitle>{item.name}</CardTitle>
 				<CardAction>
 					{hasMultipleVariants ? (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
-								<Button size="xs" variant="secondary">
+								<Button size="xs" variant="outline">
 									Купить
 								</Button>
 							</DropdownMenuTrigger>
@@ -103,7 +121,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							<Button
 								onClick={() => requestPurchase(firstVariant.id)}
 								size="xs"
-								variant={isHovered ? 'default' : 'secondary'}
+								variant="outline"
 							>
 								Купить
 							</Button>
@@ -115,13 +133,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						</span>
 					)}
 				</CardAction>
-				{item.description && (
-					<CardDescription className="whitespace-pre-wrap">
-						{item.description}
-					</CardDescription>
-				)}
 			</CardHeader>
 			<CardContent>
+				{item.description && (
+					<div className="mb-2 whitespace-pre-wrap text-muted-foreground text-xs/relaxed">
+						{item.description}
+					</div>
+				)}
+
 				<p className="text-card-foreground/70 text-xs">
 					{hasMultipleVariants ? 'от ' : ''}
 					{firstVariant && formatPrice(firstVariant.price)}
@@ -159,6 +178,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							</Button>
 						</DialogClose>
 						<Button
+							disabled={!pendingVariantId || isPurchasing}
 							onClick={() => {
 								if (pendingVariantId) {
 									handlePurchase(pendingVariantId);
@@ -166,7 +186,50 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							}}
 							size="sm"
 						>
+							{isPurchasing && <Spinner data-icon="inline-start" />}
 							Купить
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+			<Dialog
+				onOpenChange={(open) => {
+					if (!open) {
+						setActivateOffer(null);
+					}
+				}}
+				open={activateOffer !== null}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Активировать предмет?</DialogTitle>
+						<DialogDescription>
+							Хотите активировать {activateOffer?.goodsName ?? item.name}{' '}
+							сейчас?
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<DialogClose asChild>
+							<Button size="sm" variant="outline">
+								Позже
+							</Button>
+						</DialogClose>
+						<Button
+							disabled={activateOffer === null || isActivating}
+							onClick={() => {
+								if (!activateOffer) return;
+								activateItem(activateOffer.itemId, {
+									onSuccess: () => setActivateOffer(null),
+									onError: (error) => {
+										showError(getErrorMessage(error));
+										setActivateOffer(null);
+									},
+								});
+							}}
+							size="sm"
+						>
+							{isActivating && <Spinner data-icon="inline-start" />}
+							Активировать
 						</Button>
 					</DialogFooter>
 				</DialogContent>

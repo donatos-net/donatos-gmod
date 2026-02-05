@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { CategoryFilter } from '@/components/donatos/category-filter';
 import { EmptyState } from '@/components/donatos/empty-state';
 import { ShopItemsGrid } from '@/components/donatos/shop-items-grid';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useServerConfig } from '@/hooks/use-server-config';
 
 export const Route = createFileRoute('/donatos/shop')({
@@ -49,7 +50,7 @@ function ShopTab() {
 				onSelect={setSelectedCategory}
 				selected={selectedCategory}
 			/>
-			<div className="flex-1 overflow-y-auto">
+			<ScrollArea className="min-h-0 w-full flex-1">
 				{totalItems === 0 || visibleItemCount === 0 ? (
 					<EmptyState message="No items available" />
 				) : (
@@ -59,7 +60,7 @@ function ShopTab() {
 						selectedCategory={selectedCategory}
 					/>
 				)}
-			</div>
+			</ScrollArea>
 		</div>
 	);
 }

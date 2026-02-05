@@ -6,6 +6,7 @@ import {
 	CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useDonatosError } from '@/components/donatos/error-dialog';
 import { useActivateItem, useDropItem } from '@/hooks/use-donatos-mutations';
 import { formatDurationInParens } from '@/lib/format-duration';
 import type { InventoryItem } from '@/types/donatos';
@@ -17,6 +18,7 @@ interface InventoryItemCardProps {
 export function InventoryItemCard({ item }: InventoryItemCardProps) {
 	const { mutate: activateItem } = useActivateItem();
 	const { mutate: dropItem } = useDropItem();
+	const { showError } = useDonatosError();
 
 	const durationText = formatDurationInParens(item.variant?.duration);
 
@@ -38,18 +40,34 @@ export function InventoryItemCard({ item }: InventoryItemCardProps) {
 					Куплено за {item.amountPaid ?? '0'} бонусов
 				</p>
 				<div className="ml-auto flex items-center gap-2">
-					<Button onClick={() => activateItem(item.id)} size="xs">
+					<Button
+						onClick={() =>
+							activateItem(item.id, {
+								onError: (error) => showError(getErrorMessage(error)),
+							})
+						}
+						size="xs"
+					>
 						Активировать
 					</Button>
-					<Button
-						onClick={() => dropItem(item.id)}
+					{/* <Button
+						onClick={() =>
+							dropItem(item.id, {
+								onError: (error) => showError(getErrorMessage(error)),
+							})
+						}
 						size="xs"
 						variant="destructive"
 					>
 						Выбросить
-					</Button>
+					</Button> */}
 				</div>
 			</CardContent>
 		</Card>
 	);
+}
+
+function getErrorMessage(error: unknown) {
+	if (error instanceof Error && error.message) return error.message;
+	return 'Не удалось выполнить действие. Попробуйте еще раз.';
 }

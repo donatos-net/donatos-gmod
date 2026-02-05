@@ -25,6 +25,7 @@
 		"enabled": true,
 		"rules": {
 			"recommended": true,
+			"a11y": "off",
 			"nursery": {
 				"useSortedClasses": {
 					"level": "warn",

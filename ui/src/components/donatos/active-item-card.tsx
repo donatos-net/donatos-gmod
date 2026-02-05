@@ -7,6 +7,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from '@/components/ui/card';
+import { useDonatosError } from '@/components/donatos/error-dialog';
 import { Progress } from '@/components/ui/progress';
 import { useFreezeItem, useUnfreezeItem } from '@/hooks/use-donatos-mutations';
 import type { ActiveItem } from '@/types/donatos';
@@ -21,6 +22,7 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 	const [freezeDialogOpen, setFreezeDialogOpen] = useState(false);
 	const { mutate: freezeItem } = useFreezeItem();
 	const { mutate: unfreezeItem } = useUnfreezeItem();
+	const { showError } = useDonatosError();
 
 	const progressPercent = item.expires
 		? (item.expires.inS / item.expires.durationS) * 100
@@ -42,7 +44,14 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 					{canInteract && (
 						<CardAction>
 							{item.isFrozen ? (
-								<Button onClick={() => unfreezeItem(item.id)} size="xs">
+								<Button
+									onClick={() =>
+										unfreezeItem(item.id, {
+											onError: (error) => showError(getErrorMessage(error)),
+										})
+									}
+									size="xs"
+								>
 									Разморозить
 								</Button>
 							) : (
@@ -62,10 +71,19 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 			</Card>
 
 			<FreezeConfirmDialog
-				onConfirm={() => freezeItem(item.id)}
+				onConfirm={() =>
+					freezeItem(item.id, {
+						onError: (error) => showError(getErrorMessage(error)),
+					})
+				}
 				onOpenChange={setFreezeDialogOpen}
 				open={freezeDialogOpen}
 			/>
 		</>
 	);
+}
+
+function getErrorMessage(error: unknown) {
+	if (error instanceof Error && error.message) return error.message;
+	return 'Не удалось выполнить действие. Попробуйте еще раз.';
 }

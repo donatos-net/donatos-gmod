@@ -3,7 +3,6 @@ import { remoteConfig } from '@/donatos/remote-config';
 import { persistedVar } from '@/utils/addon';
 import { log } from '@/utils/log';
 
-// TODO: Restore compression/decompression once the payload format is finalized.
 const html = '__DONATOS_HTML__';
 
 const webPanelPersistedVar = persistedVar<{ panel?: DHTML }>('webPanel', {
@@ -100,7 +99,7 @@ function createPanel() {
 
 	panel.OnDocumentReady = () => {
 		const zoom = math.min(ScrW() / 1920, ScrH() / 1080);
-		if (zoom !== 1) {
+		if (zoom > 1) {
 			panel.QueueJavascript(`document.documentElement.style.zoom = '${zoom}'`);
 		}
 
@@ -112,14 +111,19 @@ function createPanel() {
 		}
 	};
 
-	panel.SetHTML(html);
+	const devUrl = donatos.dev?.enabled ? donatos.dev?.webUiUrl : undefined;
+	if (devUrl && devUrl.length > 0) {
+		panel.OpenURL(devUrl);
+	} else {
+		panel.SetHTML(html);
+	}
 
 	return panel;
 }
 
 export function donatosWebUi(tab?: string) {
 	// Create panel if not exists
-	if (!isPanelValid(webPanelPersistedVar.panel)) {
+	if (!isPanelValid(webPanelPersistedVar.panel) || donatos.dev?.enabled) {
 		createPanel();
 	}
 

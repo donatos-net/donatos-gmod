@@ -1,3 +1,4 @@
+import { donatosAddText } from '@/donatos/client-utils'
 import { netMessageToServer } from '@/donatos/net'
 import { themedUi } from '@/ui/ui-utils'
 import { cAlpha, ui } from '@/utils/ui'
@@ -107,8 +108,11 @@ export function tabActiveItems(container: DPanel) {
                   {
                     text: 'Разморозить',
                     onClick: async () => {
-                      if (await netMessageToServer('unfreezeActiveItem', { id: i.id })) {
+                      const result = await netMessageToServer('unfreezeActiveItem', { id: i.id })
+                      if (result.success) {
                         invalidateLayout()
+                      } else {
+                        donatosAddText(result.error)
                       }
                     },
                   },
@@ -220,8 +224,11 @@ function askFreezeActiveItem(params: { id: number; invalidateLayout: () => void 
   yes.SetText('Заморозить')
   yes.DoClick = async () => {
     frame.Remove()
-    if (await netMessageToServer('freezeActiveItem', { id: params.id })) {
+    const result = await netMessageToServer('freezeActiveItem', { id: params.id })
+    if (result.success) {
       params.invalidateLayout()
+    } else {
+      donatosAddText(result.error)
     }
   }
 

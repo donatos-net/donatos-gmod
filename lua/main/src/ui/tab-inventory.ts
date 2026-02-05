@@ -1,4 +1,4 @@
-import { descriptionMarkup } from '@/donatos/client-utils'
+import { descriptionMarkup, donatosAddText } from '@/donatos/client-utils'
 import { netMessageToServer } from '@/donatos/net'
 import { customizedColor, destroyUi, themedUi } from '@/ui/ui-utils'
 import { cluster } from '@/utils/lang'
@@ -148,21 +148,30 @@ function itemCard({
           {
             text: 'Активировать',
             onClick: async () => {
-              if (await netMessageToServer('activateItem', { id: item.id })) {
+              const result = await netMessageToServer('activateItem', { id: item.id })
+              if (result.success) {
                 LocalPlayer().Donatos().InventoryItems = LocalPlayer()
                   .Donatos()
                   .InventoryItems.filter((i) => i.id !== item.id)
                 invalidateLayout()
-                await netMessageToServer('requestRefresh', undefined)
+                const refreshResult = await netMessageToServer('requestRefresh', undefined)
+                if (!refreshResult.success) {
+                  donatosAddText(refreshResult.error)
+                }
                 invalidateLayout()
+              } else {
+                donatosAddText(result.error)
               }
             },
           },
           {
             text: 'Выбросить',
             onClick: async () => {
-              if (await netMessageToServer('dropItem', { id: item.id })) {
+              const result = await netMessageToServer('dropItem', { id: item.id })
+              if (result.success) {
                 destroyUi()
+              } else {
+                donatosAddText(result.error)
               }
             },
           },
