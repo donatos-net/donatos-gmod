@@ -49,7 +49,7 @@ export function ShopItemsGrid({
 				return (
 					<div className="flex flex-col gap-2" key={group.id}>
 						<p className="text-foreground text-sm">{group.name}</p>
-						<div className="grid grid-cols-2 gap-2">
+						<div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2">
 							{group.goods.map((item) => (
 								<ShopItemCard item={item} key={item.id} />
 							))}

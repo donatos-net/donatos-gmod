@@ -103,6 +103,18 @@ export const mockServerConfig: ServerConfig = {
 				{ id: 'double_jump_forever', price: 500, duration: 0 },
 			],
 		},
+		{
+			id: 9,
+			name: 'Triple Jump',
+			key: 'ability_double_jump',
+			categoryId: 4,
+			order: 8,
+			description: 'Jump twice in mid-air',
+			variants: [
+				{ id: 'double_jump_7d', price: 120, duration: 7 },
+				{ id: 'double_jump_forever', price: 500, duration: 0 },
+			],
+		},
 	],
 };
 
