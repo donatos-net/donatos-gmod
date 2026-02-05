@@ -6,8 +6,15 @@ import {
 	ShoppingBagIcon,
 } from '@hugeicons/core-free-icons';
 import { Link, useMatchRoute } from '@tanstack/react-router';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { usePlayerData } from '@/hooks/use-player-data';
 import { useServerConfig } from '@/hooks/use-server-config';
 import { closeUi, openExternalUrl } from '@/lib/gmod-bridge';
@@ -35,6 +42,15 @@ export function DonatosHeader() {
 	const isShopActive = matchRoute({ to: '/donatos/shop' });
 	const isInventoryActive = matchRoute({ to: '/donatos/inventory' });
 	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' });
+	const avatarUrl = playerData?.player.externalMeta?.avatarUrl ?? undefined;
+	const playerName = playerData?.player.externalMeta?.name?.trim() ?? '';
+	const avatarFallbackText =
+		playerName
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((part) => part[0]?.toUpperCase())
+			.join('') || '??';
 
 	return (
 		<div className="relative flex flex-col gap-0 overflow-hidden bg-primary p-1.5 text-primary-foreground">
@@ -102,16 +118,36 @@ export function DonatosHeader() {
 				</Button>
 
 				{/* Right side buttons */}
-				<div className="ml-auto flex items-center gap-2">
+				<div className="ml-auto flex items-center gap-3">
 					<Button
 						className="border-primary-foreground/30 text-primary-foreground hover:bg-primary/80"
 						onClick={handleBalanceClick}
 						size="sm"
 						variant="outline"
 					>
-						<Icon icon={PlusSignIcon} />
 						Бонусы: {playerData?.player.balance ?? 0}
 					</Button>
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Avatar
+								className="cursor-pointer"
+								size="sm"
+								title={playerName || undefined}
+							>
+								<AvatarImage
+									alt={playerName || 'Player avatar'}
+									src={avatarUrl}
+								/>
+								<AvatarFallback>{avatarFallbackText}</AvatarFallback>
+							</Avatar>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem onClick={handleBalanceClick}>
+								<Icon icon={PlusSignIcon} />
+								Пополнить баланс
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
 					<Button
 						className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
 						onClick={handleClose}

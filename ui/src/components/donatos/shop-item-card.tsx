@@ -153,14 +153,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 					)}
 				</CardAction>
 			</CardHeader>
-			<CardContent>
+			<CardContent className="flex h-full flex-col">
 				{item.description && (
 					<div className="mb-2 whitespace-pre-wrap text-muted-foreground text-xs/relaxed">
 						{item.description}
 					</div>
 				)}
 
-				<p className="text-card-foreground/70 text-xs">
+				<p className="mt-auto text-card-foreground/70 text-xs">
 					{hasMultipleVariants ? 'от ' : ''}
 					{firstVariant && formatPrice(firstVariant.price)}
 					{firstVariant && renderDuration(firstVariant.duration)}
