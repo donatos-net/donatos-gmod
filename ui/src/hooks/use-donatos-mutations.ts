@@ -65,32 +65,6 @@ export function useActivateItem() {
 	})
 }
 
-export function useDropItem() {
-	const queryClient = useQueryClient()
-	const inGame = isInGame()
-
-	return useMutation({
-		mutationFn: async (itemId: number) => {
-			if (inGame) {
-				const result = await netMessageToServer('dropItem', { id: itemId })
-				if (!result.success) {
-					throw new Error(result.error)
-				}
-				return result.data
-			}
-
-			console.log('Drop item:', itemId)
-			await new Promise((resolve) => setTimeout(resolve, 500))
-			return true
-		},
-		onSuccess: () => {
-			if (!inGame) {
-				queryClient.invalidateQueries({ queryKey: ['player-data'] })
-			}
-		},
-	})
-}
-
 export function useFreezeItem() {
 	const queryClient = useQueryClient()
 	const inGame = isInGame()

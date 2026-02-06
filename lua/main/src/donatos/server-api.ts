@@ -1,7 +1,7 @@
+import type { serverApiSchema } from 'api-schema/src'
 import { httpRequest } from '@/utils/http'
 import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
-import type { serverApiSchema } from 'api-schema/src'
 
 export async function serverApiRequest<T extends keyof serverApiSchema>(
 	action: T,

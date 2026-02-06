@@ -21,10 +21,6 @@ export type DonatosServerActions = {
 		input: { id: number }
 		output: ActionResult<true>
 	}
-	dropItem: {
-		input: { id: number }
-		output: ActionResult<true>
-	}
 	freezeActiveItem: {
 		input: { id: number }
 		output: ActionResult<true>

@@ -16,11 +16,12 @@ interface HttpResponse {
 	headers: Record<string, string>
 }
 
+// TODO: timeouts
 export function httpRequest(
 	parameters: HttpRequest,
 ): Promise<Result<HttpResponse, string>> {
 	return new Promise((resolve) => {
-		// @ts-ignore
+		// @ts-expect-error
 		HTTP({
 			...parameters,
 			method: parameters.method ?? 'GET',

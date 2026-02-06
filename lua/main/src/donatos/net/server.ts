@@ -4,7 +4,6 @@ import { netMessageToClient, type ServerNetHandler } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
-import { createGiftEnt } from '@/ents/gift'
 import { log } from '@/utils/log'
 
 type ActionResult<T> =
@@ -139,46 +138,6 @@ export const handleServerMessage = {
 		ply.EmitSound('friends/friend_join.wav', 75, 100, 0.2)
 
 		void ply.Donatos()._sLoadRemoteData()
-
-		return ok(true)
-	},
-	dropItem: async (ply, input: { id: number }) => {
-		const playerId = ply.Donatos().ID
-		if (!playerId) {
-			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
-		}
-
-		const { isError, data, error } = await serverApiRequest(
-			'player:drop-item',
-			{
-				playerId: playerId,
-				itemId: input.id,
-			},
-		)
-
-		if (isError) {
-			return err(error)
-		}
-
-		const tr = util.TraceLine({
-			start: ply.EyePos(),
-			endpos: ply.EyePos().addOp(ply.EyeAngles().Forward().mulOp(50)),
-			filter: ply as Entity,
-		} as Trace)
-
-		const gift = createGiftEnt({
-			pos: tr.HitPos,
-			token: data.token,
-			item: data.item,
-			itemOwner: ply,
-		})
-		ply.EmitSound(
-			`physics/metal/paintcan_impact_soft${math.random(1, 2)}.wav`,
-			65,
-			math.random(90, 110),
-			0.3,
-		)
-		gift.GetPhysicsObject().SetVelocity(ply.EyeAngles().Forward().mulOp(50))
 
 		return ok(true)
 	},

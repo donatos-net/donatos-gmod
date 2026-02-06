@@ -1,3 +1,5 @@
+export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
+
 import { netMessageToServer } from '@/donatos/net'
 import { remoteConfig } from '@/donatos/remote-config'
 import { persistedVar } from '@/utils/addon'

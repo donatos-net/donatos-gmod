@@ -3,7 +3,7 @@ import { donatosAddText } from '@/donatos/client-utils'
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { remoteConfig } from '@/donatos/remote-config'
-import type { DonatosUiTab } from '@/ui/main'
+import type { DonatosUiTab } from '@/ui/web-panel'
 import { donatosWebUi, pushWebUiState } from '@/ui/web-panel'
 import { log } from '@/utils/log'
 

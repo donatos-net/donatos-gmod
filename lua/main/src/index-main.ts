@@ -9,10 +9,8 @@ if (!donatos) {
 }
 
 donatos.config = {}
-donatos.uiConfig = undefined
 donatos.dev = { enabled: false }
 
-donatos.UpdateTheme = () => {}
 donatos.Item = donatosItem
 donatos.GetRemoteConfig = () => remoteConfig.value
 
@@ -61,8 +59,6 @@ if (SERVER) {
 	import('@/donatos/remote-updates')
 	import('./index-server')
 }
-
-import('@/ents/gift')
 
 log.debug(
 	`Аддон запущен. Версия ${meta.VERSION}, номер сборки ${meta.BUILD_NUMBER}, коммит ${meta.COMMIT_HASH}`,

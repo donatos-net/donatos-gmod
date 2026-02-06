@@ -15,8 +15,6 @@ declare global {
 		OpenUI?: (tab?: DonatosUiTab) => void
 		NetMessageToServer?: typeof netMessageToServerCallback
 
-		// shared
-		UpdateTheme?: () => void
 		GetRemoteConfig?: () =>
 			| serverApiSchema['server:get-config']['output']
 			| undefined
@@ -27,22 +25,10 @@ declare global {
 			autoUpdate?: boolean
 			menuKeyBind?: KEY
 			igsCompat?: boolean
-			gift?: {
-				model?: string
-			}
 		}
 		dev?: {
 			enabled?: boolean
 			webUiUrl?: string
-		}
-		uiConfig?: {
-			customUi?: (this: void, tab?: string) => void
-			menuSize?: [number, number]
-			theme?: ThemedUiConfig
-			components?: {
-				shopItem?: ColorConfig
-				headerNavBtn?: ButtonParams
-			}
 		}
 	}
 

@@ -5,8 +5,8 @@ import { sendDonatosMessage } from '@/donatos/server-utils'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { donatosHookId } from '@/utils/addon'
 
-let updatesSince: string | undefined = undefined
-let serverUpdatedAt: string | undefined = undefined
+let updatesSince: string | undefined
+let serverUpdatedAt: string | undefined
 
 timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 	const playerExternalIds: string[] = []
