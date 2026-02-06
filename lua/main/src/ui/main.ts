@@ -1,11 +1,13 @@
-import { donatosAddText } from '@/donatos/client-utils'
+export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
+
+/* import { donatosAddText } from '@/donatos/client-utils'
 import { remoteConfig } from '@/donatos/remote-config'
 import { tabActiveItems } from '@/ui/tab-active-items'
 import { tabInventory } from '@/ui/tab-inventory'
 import { tabShop } from '@/ui/tab-shop'
-import { donatosWebUi } from '@/ui/web-panel'
 import { destroyUi, themedUi, uiPersistedVar } from '@/ui/ui-utils'
 import { cAlpha, ui } from '@/utils/ui'
+
 import px = ui.px
 
 destroyUi()
@@ -14,10 +16,6 @@ export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 
 export function donatosUi(tab?: DonatosUiTab) {
 	destroyUi()
-
-	if (donatos.uiConfig?.useWebUi) {
-		return donatosWebUi(tab)
-	}
 
 	if (!remoteConfig.value || !LocalPlayer().Donatos().IsLoaded) {
 		donatosAddText('Данные не загружены. Попробуйте немного позднее.')
@@ -127,9 +125,6 @@ export function donatosUi(tab?: DonatosUiTab) {
 
 	content(tab ?? 'shop')
 
-	/*const footer = themedUi().label({ parent: frame, text: `Баланс: ${LocalPlayer().donatos().balance} р.` })
-  footer.Dock(DOCK.BOTTOM)
-  footer.DockMargin(px(5), px(5), 0, 0)*/
-
 	return frame
 }
+ */

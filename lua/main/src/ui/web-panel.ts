@@ -9,9 +9,7 @@ const webPanelPersistedVar = persistedVar<{ panel?: DHTML }>('webPanel', {
 	panel: undefined,
 })
 
-if (donatos.uiConfig?.useWebUi) {
-	createPanel()
-}
+createPanel()
 
 function isPanelValid(panel?: DHTML) {
 	return panel !== undefined && IsValid(panel)

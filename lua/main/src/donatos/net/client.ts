@@ -1,11 +1,11 @@
+import type { serverApiSchema } from 'api-schema/src'
 import { donatosAddText } from '@/donatos/client-utils'
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { remoteConfig } from '@/donatos/remote-config'
-import { type DonatosUiTab, donatosUi } from '@/ui/main'
-import { pushWebUiState } from '@/ui/web-panel'
+import type { DonatosUiTab } from '@/ui/main'
+import { donatosWebUi, pushWebUiState } from '@/ui/web-panel'
 import { log } from '@/utils/log'
-import type { serverApiSchema } from 'api-schema/src'
 
 const broadcastEnabled = CreateClientConVar(
 	'donatos_receive_announcements',
@@ -65,7 +65,7 @@ export const handleClientMessage = {
 	},
 
 	openUi: (tab?: DonatosUiTab) =>
-		donatos.OpenUI ? donatos.OpenUI(tab) : donatosUi(tab),
+		donatos.OpenUI ? donatos.OpenUI(tab) : donatosWebUi(tab),
 	print: (input: [number, unknown][]) => {
 		print(input)
 	},

@@ -1,14 +1,9 @@
 import { netMessageToServer, netMessageToServerCallback } from '@/donatos/net'
-import { donatosUi } from '@/ui/main'
 import { donatosWebUi } from '@/ui/web-panel'
 import { donatosHookId } from '@/utils/addon'
 
-const openUi = (tab?: Parameters<typeof donatosUi>[0]) => {
-	if (donatos.uiConfig?.useWebUi) {
-		return donatosWebUi(tab)
-	}
-
-	return donatosUi(tab)
+const openUi = (tab?: Parameters<typeof donatosWebUi>[0]) => {
+	return donatosWebUi(tab)
 }
 
 donatos.OpenUI = openUi

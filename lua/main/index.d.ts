@@ -36,7 +36,6 @@ declare global {
 			webUiUrl?: string
 		}
 		uiConfig?: {
-			useWebUi?: boolean
 			customUi?: (this: void, tab?: string) => void
 			menuSize?: [number, number]
 			theme?: ThemedUiConfig
