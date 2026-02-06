@@ -57,7 +57,6 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				disabled={!playerData || !serverConfig}
 				itemName={item.name}
 				offer={{ requiredAmount, price }}
-				onClose={closeDialog}
 				onConfirm={() => {
 					if (!playerData || !serverConfig) return
 					const payUrl = serverConfig.payUrl.replace(
@@ -77,7 +76,6 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				disabled={!Number.isFinite(itemId)}
 				goodsName={goodsName}
 				itemName={item.name}
-				onClose={closeDialog}
 				onConfirm={async () => {
 					try {
 						await activateItem(itemId)
@@ -102,7 +100,6 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 		openDialog(
 			<ShopPurchaseConfirmDialog
 				itemName={item.name}
-				onClose={closeDialog}
 				onConfirm={async () => {
 					const balance = playerData?.player.balance
 					if (typeof balance === 'number' && balance < variant.price) {

@@ -15,8 +15,6 @@ import { Route as DonatosIndexRouteImport } from './routes/donatos/index'
 import { Route as DonatosShopRouteImport } from './routes/donatos/shop'
 import { Route as DonatosInventoryRouteImport } from './routes/donatos/inventory'
 import { Route as DonatosActiveItemsRouteImport } from './routes/donatos/active-items'
-import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
-import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 
 const DonatosRoute = DonatosRouteImport.update({
   id: '/donatos',
@@ -48,16 +46,6 @@ const DonatosActiveItemsRoute = DonatosActiveItemsRouteImport.update({
   path: '/active-items',
   getParentRoute: () => DonatosRoute,
 } as any)
-const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
-  id: '/demo/form/simple',
-  path: '/demo/form/simple',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
-  id: '/demo/form/address',
-  path: '/demo/form/address',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -66,8 +54,6 @@ export interface FileRoutesByFullPath {
   '/donatos/inventory': typeof DonatosInventoryRoute
   '/donatos/shop': typeof DonatosShopRoute
   '/donatos/': typeof DonatosIndexRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -75,8 +61,6 @@ export interface FileRoutesByTo {
   '/donatos/inventory': typeof DonatosInventoryRoute
   '/donatos/shop': typeof DonatosShopRoute
   '/donatos': typeof DonatosIndexRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,8 +70,6 @@ export interface FileRoutesById {
   '/donatos/inventory': typeof DonatosInventoryRoute
   '/donatos/shop': typeof DonatosShopRoute
   '/donatos/': typeof DonatosIndexRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,8 +80,6 @@ export interface FileRouteTypes {
     | '/donatos/inventory'
     | '/donatos/shop'
     | '/donatos/'
-    | '/demo/form/address'
-    | '/demo/form/simple'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -107,8 +87,6 @@ export interface FileRouteTypes {
     | '/donatos/inventory'
     | '/donatos/shop'
     | '/donatos'
-    | '/demo/form/address'
-    | '/demo/form/simple'
   id:
     | '__root__'
     | '/'
@@ -117,15 +95,11 @@ export interface FileRouteTypes {
     | '/donatos/inventory'
     | '/donatos/shop'
     | '/donatos/'
-    | '/demo/form/address'
-    | '/demo/form/simple'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DonatosRoute: typeof DonatosRouteWithChildren
-  DemoFormAddressRoute: typeof DemoFormAddressRoute
-  DemoFormSimpleRoute: typeof DemoFormSimpleRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,20 +146,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DonatosActiveItemsRouteImport
       parentRoute: typeof DonatosRoute
     }
-    '/demo/form/simple': {
-      id: '/demo/form/simple'
-      path: '/demo/form/simple'
-      fullPath: '/demo/form/simple'
-      preLoaderRoute: typeof DemoFormSimpleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/form/address': {
-      id: '/demo/form/address'
-      path: '/demo/form/address'
-      fullPath: '/demo/form/address'
-      preLoaderRoute: typeof DemoFormAddressRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -209,8 +169,6 @@ const DonatosRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DonatosRoute: DonatosRouteWithChildren,
-  DemoFormAddressRoute: DemoFormAddressRoute,
-  DemoFormSimpleRoute: DemoFormSimpleRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
