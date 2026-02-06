@@ -48,7 +48,8 @@
 		},
 		"formatter": {
 			"enabled": true,
-			"quoteStyle": "single"
+			"quoteStyle": "single",
+			"semicolons": "asNeeded"
 		},
 		"linter": {
 			"enabled": true

@@ -1,6 +1,6 @@
 {
-  "extends": "../lua/main/tsconfig.json",
-  "compilerOptions": {
-    "baseUrl": "./src/"
-  }
+	"extends": "../lua/main/tsconfig.json",
+	"compilerOptions": {
+		"baseUrl": "./src/"
+	}
 }

@@ -1,27 +1,27 @@
 {
-  "$schema": "https://raw.githubusercontent.com/TypeScriptToLua/TypeScriptToLua/master/tsconfig-schema.json",
-  "compilerOptions": {
-    "target": "ESNext",
-    "lib": ["ESNext"],
-    "module": "ESNext",
-    "moduleResolution": "Node",
-    "types": ["@typescript-to-lua/language-extensions", "types"],
-    "strict": true,
-    "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true,
+	"$schema": "https://raw.githubusercontent.com/TypeScriptToLua/TypeScriptToLua/master/tsconfig-schema.json",
+	"compilerOptions": {
+		"target": "ESNext",
+		"lib": ["ESNext"],
+		"module": "ESNext",
+		"moduleResolution": "Node",
+		"types": ["@typescript-to-lua/language-extensions", "types"],
+		"strict": true,
+		"strictNullChecks": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
 
-    "baseUrl": "./src",
-    "paths": {
-      "@/*": ["./*"]
-    }
-  },
-  "tstl": {
-    "buildMode": "default",
-    "luaTarget": "JIT",
-    "luaBundle": "dist/bundle.lua",
-    "luaBundleEntry": "src/index-main.ts",
-    "luaLibImport": "require-minimal",
-    "noImplicitSelf": true
-  }
+		"baseUrl": "./src",
+		"paths": {
+			"@/*": ["./*"]
+		}
+	},
+	"tstl": {
+		"buildMode": "default",
+		"luaTarget": "JIT",
+		"luaBundle": "dist/bundle.lua",
+		"luaBundleEntry": "src/index-main.ts",
+		"luaLibImport": "require-minimal",
+		"noImplicitSelf": true
+	}
 }

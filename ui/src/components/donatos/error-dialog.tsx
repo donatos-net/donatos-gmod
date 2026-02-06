@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { createContext, useCallback, useContext, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
 	Dialog,
 	DialogClose,
@@ -8,36 +8,36 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
 
 type ErrorState = {
-	title: string;
-	message: string;
-};
+	title: string
+	message: string
+}
 
 type ErrorDialogContextValue = {
-	showError: (message: string, title?: string) => void;
-};
+	showError: (message: string, title?: string) => void
+}
 
-const ErrorDialogContext = createContext<ErrorDialogContextValue | null>(null);
+const ErrorDialogContext = createContext<ErrorDialogContextValue | null>(null)
 
 export function DonatosErrorProvider({
 	children,
 }: {
-	children: React.ReactNode;
+	children: React.ReactNode
 }) {
-	const [error, setError] = useState<ErrorState | null>(null);
+	const [error, setError] = useState<ErrorState | null>(null)
 
 	const showError = useCallback((message: string, title = 'Ошибка') => {
-		setError({ title, message });
-	}, []);
+		setError({ title, message })
+	}, [])
 
 	return (
 		<ErrorDialogContext.Provider value={{ showError }}>
 			{children}
 			<Dialog
 				onOpenChange={(open) => {
-					if (!open) setError(null);
+					if (!open) setError(null)
 				}}
 				open={Boolean(error)}
 			>
@@ -54,13 +54,13 @@ export function DonatosErrorProvider({
 				</DialogContent>
 			</Dialog>
 		</ErrorDialogContext.Provider>
-	);
+	)
 }
 
 export function useDonatosError() {
-	const context = useContext(ErrorDialogContext);
+	const context = useContext(ErrorDialogContext)
 	if (!context) {
-		throw new Error('useDonatosError must be used within DonatosErrorProvider');
+		throw new Error('useDonatosError must be used within DonatosErrorProvider')
 	}
-	return context;
+	return context
 }

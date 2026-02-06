@@ -1,26 +1,26 @@
-import { useDonatosError } from '@/components/donatos/error-dialog';
-import { Button } from '@/components/ui/button';
+import { useDonatosError } from '@/components/donatos/error-dialog'
+import { Button } from '@/components/ui/button'
 import {
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
-} from '@/components/ui/card';
-import { useActivateItem } from '@/hooks/use-donatos-mutations';
-import { formatDurationInParens } from '@/lib/format-duration';
-import type { InventoryItem } from '@/types/donatos';
+} from '@/components/ui/card'
+import { useActivateItem } from '@/hooks/use-donatos-mutations'
+import { formatDurationInParens } from '@/lib/format-duration'
+import type { InventoryItem } from '@/types/donatos'
 
 interface InventoryItemCardProps {
-	item: InventoryItem;
+	item: InventoryItem
 }
 
 export function InventoryItemCard({ item }: InventoryItemCardProps) {
-	const { mutate: activateItem } = useActivateItem();
+	const { mutate: activateItem } = useActivateItem()
 	// const { mutate: dropItem } = useDropItem();
-	const { showError } = useDonatosError();
+	const { showError } = useDonatosError()
 
-	const durationText = formatDurationInParens(item.variant?.duration);
+	const durationText = formatDurationInParens(item.variant?.duration)
 
 	return (
 		<Card className="bg-card" size="sm">
@@ -64,10 +64,10 @@ export function InventoryItemCard({ item }: InventoryItemCardProps) {
 				</div>
 			</CardContent>
 		</Card>
-	);
+	)
 }
 
 function getErrorMessage(error: unknown) {
-	if (error instanceof Error && error.message) return error.message;
-	return 'Не удалось выполнить действие. Попробуйте еще раз.';
+	if (error instanceof Error && error.message) return error.message
+	return 'Не удалось выполнить действие. Попробуйте еще раз.'
 }

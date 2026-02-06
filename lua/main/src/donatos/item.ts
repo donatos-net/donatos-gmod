@@ -3,98 +3,112 @@ import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
 
 type DonatosItemInvokeData = {
-  goods: {
-    key: string
-    meta?: string
-    name: string
-  }
+	goods: {
+		key: string
+		meta?: string
+		name: string
+	}
 }
 
 interface DonatosItem {
-  key: string
-  _onActivate: ((ply: Player, data: DonatosItemInvokeData) => void)[]
-  _onPlayerJoin: ((ply: Player, data: DonatosItemInvokeData) => void)[]
+	key: string
+	_onActivate: ((ply: Player, data: DonatosItemInvokeData) => void)[]
+	_onPlayerJoin: ((ply: Player, data: DonatosItemInvokeData) => void)[]
 
-  OnActivate: (func: (ply: Player, data: DonatosItemInvokeData) => void) => this
-  OnPlayerJoin: (func: (ply: Player, data: DonatosItemInvokeData) => void) => this
+	OnActivate: (func: (ply: Player, data: DonatosItemInvokeData) => void) => this
+	OnPlayerJoin: (
+		func: (ply: Player, data: DonatosItemInvokeData) => void,
+	) => this
 
-  SetSAMGroup: (group: string) => this
-  SetDarkRPMoney: (amount: number) => this
+	SetSAMGroup: (group: string) => this
+	SetDarkRPMoney: (amount: number) => this
 
-  meta: {
-    samRank?: string
-  }
+	meta: {
+		samRank?: string
+	}
 }
 
-export const donatosItems = persistedVar<Record<string, DonatosItem>>('items', {})
-export const knownSamRanks = persistedVar<Record<string, true>>('known_sam_ranks', {})
+export const donatosItems = persistedVar<Record<string, DonatosItem>>(
+	'items',
+	{},
+)
+export const knownSamRanks = persistedVar<Record<string, true>>(
+	'known_sam_ranks',
+	{},
+)
 
 export function donatosItem(key: string) {
-  const itm: DonatosItem = {
-    key,
-    _onActivate: [],
-    _onPlayerJoin: [],
-    OnActivate: function (this, func) {
-      this._onActivate.push(func)
-      return this
-    },
-    OnPlayerJoin: function (this, func) {
-      this._onPlayerJoin.push(func)
-      return this
-    },
+	const itm: DonatosItem = {
+		key,
+		_onActivate: [],
+		_onPlayerJoin: [],
+		OnActivate: function (this, func) {
+			this._onActivate.push(func)
+			return this
+		},
+		OnPlayerJoin: function (this, func) {
+			this._onPlayerJoin.push(func)
+			return this
+		},
 
-    SetSAMGroup: function (this, rank: string) {
-      this.meta.samRank = rank
-      knownSamRanks[rank] = true
-      return this.OnPlayerJoin((ply) => {
-        ;(ply as Player & { sam_set_rank: (rank: string) => void }).sam_set_rank(rank)
-      })
-    },
-    SetDarkRPMoney: function (this, amount) {
-      return this.OnActivate((ply) => {
-        ;(ply as Player & { addMoney: (amount: number, reason: string) => void }).addMoney(amount, 'Donatos')
-      })
-    },
+		SetSAMGroup: function (this, rank: string) {
+			this.meta.samRank = rank
+			knownSamRanks[rank] = true
+			return this.OnPlayerJoin((ply) => {
+				;(
+					ply as Player & { sam_set_rank: (rank: string) => void }
+				).sam_set_rank(rank)
+			})
+		},
+		SetDarkRPMoney: function (this, amount) {
+			return this.OnActivate((ply) => {
+				;(
+					ply as Player & { addMoney: (amount: number, reason: string) => void }
+				).addMoney(amount, 'Donatos')
+			})
+		},
 
-    meta: {},
-  }
+		meta: {},
+	}
 
-  donatosItems[key] = itm
-  return itm
+	donatosItems[key] = itm
+	return itm
 }
 
 export function invokeDonatosItem(
-  key: string,
-  handlerType: '_onActivate' | '_onPlayerJoin',
-  ply: Player,
-  data: {
-    goods: {
-      key: string
-      meta?: string
-      name: string
-    }
-  },
+	key: string,
+	handlerType: '_onActivate' | '_onPlayerJoin',
+	ply: Player,
+	data: {
+		goods: {
+			key: string
+			meta?: string
+			name: string
+		}
+	},
 ): Result<boolean, undefined> {
-  const item = donatosItems[key]
-  if (!item || !IsValid(ply)) {
-    return result.ok(false)
-  }
+	const item = donatosItems[key]
+	if (!item || !IsValid(ply)) {
+		return result.ok(false)
+	}
 
-  const handlers = item[handlerType]
+	const handlers = item[handlerType]
 
-  let errored = false
-  for (const handler of handlers) {
-    if (!isfunction(handler)) {
-      continue
-    }
+	let errored = false
+	for (const handler of handlers) {
+		if (!isfunction(handler)) {
+			continue
+		}
 
-    const [success, err] = pcall(handler, ply, data)
-    if (!success) {
-      log.error(`Failed to invoke item handler (${key} ${handlerType}) for player ${ply.SteamID()}`)
-      print(err)
-      errored = true
-    }
-  }
+		const [success, err] = pcall(handler, ply, data)
+		if (!success) {
+			log.error(
+				`Failed to invoke item handler (${key} ${handlerType}) for player ${ply.SteamID()}`,
+			)
+			print(err)
+			errored = true
+		}
+	}
 
-  return errored ? result.err(undefined) : result.ok(true)
+	return errored ? result.err(undefined) : result.ok(true)
 }

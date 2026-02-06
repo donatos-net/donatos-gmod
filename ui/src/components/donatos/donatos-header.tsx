@@ -4,53 +4,53 @@ import {
 	Cancel01Icon,
 	PlusSignIcon,
 	ShoppingBagIcon,
-} from '@hugeicons/core-free-icons';
-import { Link, useMatchRoute } from '@tanstack/react-router';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from '@hugeicons/core-free-icons'
+import { Link, useMatchRoute } from '@tanstack/react-router'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { usePlayerData } from '@/hooks/use-player-data';
-import { useServerConfig } from '@/hooks/use-server-config';
-import { closeUi, openExternalUrl } from '@/lib/gmod-bridge';
-import { cn } from '@/lib/utils';
-import { Icon } from '../icon';
+} from '@/components/ui/dropdown-menu'
+import { usePlayerData } from '@/hooks/use-player-data'
+import { useServerConfig } from '@/hooks/use-server-config'
+import { closeUi, openExternalUrl } from '@/lib/gmod-bridge'
+import { cn } from '@/lib/utils'
+import { Icon } from '../icon'
 
 export function DonatosHeader() {
-	const { data: playerData } = usePlayerData();
-	const { data: serverConfig } = useServerConfig();
-	const matchRoute = useMatchRoute();
+	const { data: playerData } = usePlayerData()
+	const { data: serverConfig } = useServerConfig()
+	const matchRoute = useMatchRoute()
 
 	const handleBalanceClick = () => {
-		if (!playerData || !serverConfig) return;
+		if (!playerData || !serverConfig) return
 		const payUrl = serverConfig.payUrl.replace(
 			'{id}',
 			playerData.player.externalId,
-		);
-		openExternalUrl(`${payUrl}&openDeposit=true`);
-	};
+		)
+		openExternalUrl(`${payUrl}&openDeposit=true`)
+	}
 
 	const handleClose = () => {
-		closeUi();
-	};
+		closeUi()
+	}
 
-	const isShopActive = matchRoute({ to: '/donatos/shop' });
-	const isInventoryActive = matchRoute({ to: '/donatos/inventory' });
-	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' });
-	const avatarUrl = playerData?.player.externalMeta?.avatarUrl ?? undefined;
-	const playerName = playerData?.player.externalMeta?.name?.trim() ?? '';
+	const isShopActive = matchRoute({ to: '/donatos/shop' })
+	const isInventoryActive = matchRoute({ to: '/donatos/inventory' })
+	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' })
+	const avatarUrl = playerData?.player.externalMeta?.avatarUrl ?? undefined
+	const playerName = playerData?.player.externalMeta?.name?.trim() ?? ''
 	const avatarFallbackText =
 		playerName
 			.split(/\s+/)
 			.filter(Boolean)
 			.slice(0, 2)
 			.map((part) => part[0]?.toUpperCase())
-			.join('') || '??';
+			.join('') || '??'
 
 	return (
 		<div className="relative flex flex-col gap-0 overflow-hidden bg-primary p-1.5 text-primary-foreground">
@@ -159,5 +159,5 @@ export function DonatosHeader() {
 				</div>
 			</div>
 		</div>
-	);
+	)
 }

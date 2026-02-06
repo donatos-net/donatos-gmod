@@ -1,4 +1,4 @@
-import type { PlayerData, ServerConfig } from '@/types/donatos';
+import type { PlayerData, ServerConfig } from '@/types/donatos'
 
 export const mockServerConfig: ServerConfig = {
 	name: 'Demo Server',
@@ -116,7 +116,7 @@ export const mockServerConfig: ServerConfig = {
 			],
 		},
 	],
-};
+}
 
 export const mockPlayerData: PlayerData = {
 	player: {
@@ -206,4 +206,4 @@ export const mockPlayerData: PlayerData = {
 			variant: { id: 'ak47_gold_forever', price: 200, duration: 0 },
 		},
 	],
-};
+}

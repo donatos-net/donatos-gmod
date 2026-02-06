@@ -13,105 +13,123 @@ destroyUi()
 export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 
 export function donatosUi(tab?: DonatosUiTab) {
-  destroyUi()
+	destroyUi()
 
-  if (donatos.uiConfig?.useWebUi) {
-    return donatosWebUi(tab)
-  }
+	if (donatos.uiConfig?.useWebUi) {
+		return donatosWebUi(tab)
+	}
 
-  if (!remoteConfig.value || !LocalPlayer().Donatos().IsLoaded) {
-    donatosAddText('Данные не загружены. Попробуйте немного позднее.')
-    return
-  }
+	if (!remoteConfig.value || !LocalPlayer().Donatos().IsLoaded) {
+		donatosAddText('Данные не загружены. Попробуйте немного позднее.')
+		return
+	}
 
-  if (donatos.uiConfig?.customUi) {
-    donatos.uiConfig.customUi(tab)
-    return
-  }
+	if (donatos.uiConfig?.customUi) {
+		donatos.uiConfig.customUi(tab)
+		return
+	}
 
-  const frame = themedUi().frame({
-    color: cAlpha(themedUi().theme.colors.background, 250),
-    closeOnEsc: false,
-  })
-  frame.SetSize(px(donatos.uiConfig?.menuSize?.[0] ?? 600), px(donatos.uiConfig?.menuSize?.[1] ?? 400))
-  frame.MakePopup()
-  frame.SetTitle('')
-  frame.Center()
-  frame.ShowCloseButton(false)
-  frame.DockPadding(px(5), px(5), px(5), px(5))
+	const frame = themedUi().frame({
+		color: cAlpha(themedUi().theme.colors.background, 250),
+		closeOnEsc: false,
+	})
+	frame.SetSize(
+		px(donatos.uiConfig?.menuSize?.[0] ?? 600),
+		px(donatos.uiConfig?.menuSize?.[1] ?? 400),
+	)
+	frame.MakePopup()
+	frame.SetTitle('')
+	frame.Center()
+	frame.ShowCloseButton(false)
+	frame.DockPadding(px(5), px(5), px(5), px(5))
 
-  uiPersistedVar.frame = frame
+	uiPersistedVar.frame = frame
 
-  const mainPan = themedUi().panel({ parent: frame, color: Color(0, 0, 0, 0) })
-  mainPan.Dock(DOCK.FILL)
-  // mainPan.DockPadding(px(5), 0, px(5), px(5))
+	const mainPan = themedUi().panel({ parent: frame, color: Color(0, 0, 0, 0) })
+	mainPan.Dock(DOCK.FILL)
+	// mainPan.DockPadding(px(5), 0, px(5), px(5))
 
-  frame.InvalidateLayout(true)
+	frame.InvalidateLayout(true)
 
-  function content(tab: DonatosUiTab) {
-    mainPan.Clear()
+	function content(tab: DonatosUiTab) {
+		mainPan.Clear()
 
-    const navbar = themedUi().panel({ parent: mainPan, color: themedUi().theme.colors.muted })
-    navbar.SetSize(0, px(30))
-    navbar.Dock(DOCK.TOP)
-    navbar.DockMargin(0, 0, 0, px(7))
-    navbar.DockPadding(px(5), px(5), px(5), px(5))
+		const navbar = themedUi().panel({
+			parent: mainPan,
+			color: themedUi().theme.colors.muted,
+		})
+		navbar.SetSize(0, px(30))
+		navbar.Dock(DOCK.TOP)
+		navbar.DockMargin(0, 0, 0, px(7))
+		navbar.DockPadding(px(5), px(5), px(5), px(5))
 
-    const navBtn = (key: typeof tab, name: string) => {
-      const btn = themedUi().btn({ parent: navbar, ...donatos.uiConfig?.components?.headerNavBtn })
-      btn.Dock(DOCK.LEFT)
-      btn.DockMargin(0, 0, px(5), 0)
-      btn.SetText(name)
-      btn.SetEnabled(tab !== key)
-      btn.DoClick = () => content(key)
-      btn.SizeToContentsX(px(20))
-    }
+		const navBtn = (key: typeof tab, name: string) => {
+			const btn = themedUi().btn({
+				parent: navbar,
+				...donatos.uiConfig?.components?.headerNavBtn,
+			})
+			btn.Dock(DOCK.LEFT)
+			btn.DockMargin(0, 0, px(5), 0)
+			btn.SetText(name)
+			btn.SetEnabled(tab !== key)
+			btn.DoClick = () => content(key)
+			btn.SizeToContentsX(px(20))
+		}
 
-    navBtn('shop', 'Магазин')
-    navBtn('inventory', 'Инвентарь')
-    navBtn('activeItems', 'Активные предметы')
-    // navBtn('profile', 'Профиль')
+		navBtn('shop', 'Магазин')
+		navBtn('inventory', 'Инвентарь')
+		navBtn('activeItems', 'Активные предметы')
+		// navBtn('profile', 'Профиль')
 
-    {
-      const close = themedUi().btn({ parent: navbar, variant: 'secondary' })
-      close.Dock(DOCK.RIGHT)
-      close.SetText('×')
-      close.SizeToContentsX(px(15))
-      close.DoClick = () => frame.Close()
-    }
+		{
+			const close = themedUi().btn({ parent: navbar, variant: 'secondary' })
+			close.Dock(DOCK.RIGHT)
+			close.SetText('×')
+			close.SizeToContentsX(px(15))
+			close.DoClick = () => frame.Close()
+		}
 
-    // if (LocalPlayer().Donatos().Balance > 0) {
-    const points = themedUi().btn({ parent: navbar, variant: 'secondary', size: 'sm' })
-    points.Dock(DOCK.RIGHT)
-    points.DockMargin(0, 0, px(5), 0)
-    points.SetText(`Бонусы: ${LocalPlayer().Donatos().Balance}`)
-    points.SizeToContentsX(px(15))
-    points.DoClick = () => {
-      const payUrl = remoteConfig.value?.payUrl
-      if (payUrl) {
-        gui.OpenURL(`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openDeposit=true`)
-      }
-    }
-    // }
+		// if (LocalPlayer().Donatos().Balance > 0) {
+		const points = themedUi().btn({
+			parent: navbar,
+			variant: 'secondary',
+			size: 'sm',
+		})
+		points.Dock(DOCK.RIGHT)
+		points.DockMargin(0, 0, px(5), 0)
+		points.SetText(`Бонусы: ${LocalPlayer().Donatos().Balance}`)
+		points.SizeToContentsX(px(15))
+		points.DoClick = () => {
+			const payUrl = remoteConfig.value?.payUrl
+			if (payUrl) {
+				gui.OpenURL(
+					`${string.Replace(payUrl, '{id}', LocalPlayer().SteamID64())}&openDeposit=true`,
+				)
+			}
+		}
+		// }
 
-    const container = themedUi().panel({ parent: mainPan, color: Color(0, 0, 0, 0) })
-    container.Dock(DOCK.FILL)
-    mainPan.InvalidateLayout(true)
+		const container = themedUi().panel({
+			parent: mainPan,
+			color: Color(0, 0, 0, 0),
+		})
+		container.Dock(DOCK.FILL)
+		mainPan.InvalidateLayout(true)
 
-    if (tab === 'shop') {
-      tabShop(container, undefined)
-    } else if (tab === 'inventory') {
-      tabInventory(container)
-    } else if (tab === 'activeItems') {
-      tabActiveItems(container)
-    }
-  }
+		if (tab === 'shop') {
+			tabShop(container, undefined)
+		} else if (tab === 'inventory') {
+			tabInventory(container)
+		} else if (tab === 'activeItems') {
+			tabActiveItems(container)
+		}
+	}
 
-  content(tab ?? 'shop')
+	content(tab ?? 'shop')
 
-  /*const footer = themedUi().label({ parent: frame, text: `Баланс: ${LocalPlayer().donatos().balance} р.` })
+	/*const footer = themedUi().label({ parent: frame, text: `Баланс: ${LocalPlayer().donatos().balance} р.` })
   footer.Dock(DOCK.BOTTOM)
   footer.DockMargin(px(5), px(5), 0, 0)*/
 
-  return frame
+	return frame
 }

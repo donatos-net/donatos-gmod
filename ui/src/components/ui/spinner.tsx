@@ -1,6 +1,6 @@
-import { Loading03Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { cn } from '@/lib/utils';
+import { Loading03Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { cn } from '@/lib/utils'
 
 function Spinner({
 	className,
@@ -16,7 +16,7 @@ function Spinner({
 			strokeWidth={Number(strokeWidth) ?? 2}
 			{...props}
 		/>
-	);
+	)
 }
 
-export { Spinner };
+export { Spinner }

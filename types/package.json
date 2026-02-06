@@ -1,6 +1,6 @@
 {
-  "name": "types",
-  "files": [
-    "*.d.ts"
-  ]
+	"name": "types",
+	"files": [
+		"*.d.ts"
+	]
 }

@@ -1,7 +1,7 @@
 {
-  "name": "api-schema",
-  "scripts": {},
-  "dependencies": {
-    "zod": "^3.23.8"
-  }
+	"name": "api-schema",
+	"scripts": {},
+	"dependencies": {
+		"zod": "^3.23.8"
+	}
 }

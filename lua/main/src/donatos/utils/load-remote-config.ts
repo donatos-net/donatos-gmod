@@ -4,15 +4,18 @@ import { serverApiRequest } from '@/donatos/server-api'
 import { log } from '@/utils/log'
 
 export async function loadRemoteConfig() {
-  log.info('Loading remote config...')
-  const { isError, data, error } = await serverApiRequest('server:get-config', undefined)
+	log.info('Loading remote config...')
+	const { isError, data, error } = await serverApiRequest(
+		'server:get-config',
+		undefined,
+	)
 
-  if (isError) {
-    return
-  }
+	if (isError) {
+		return
+	}
 
-  remoteConfig.value = data
-  netMessageToClient(undefined, 'syncConfig', data)
+	remoteConfig.value = data
+	netMessageToClient(undefined, 'syncConfig', data)
 
-  log.info('Received new remote config')
+	log.info('Received new remote config')
 }

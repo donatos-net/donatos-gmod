@@ -1,11 +1,11 @@
-import { fileURLToPath, URL } from 'node:url';
+import { fileURLToPath, URL } from 'node:url'
 // import tailwindcss from '@tailwindcss/vite';
-import { devtools } from '@tanstack/devtools-vite';
-import { tanstackRouter } from '@tanstack/router-plugin/vite';
-import viteReact from '@vitejs/plugin-react';
-import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig } from 'vite';
-import { viteSingleFile } from 'vite-plugin-singlefile';
+import { devtools } from '@tanstack/devtools-vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import viteReact from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer'
+import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -44,4 +44,4 @@ export default defineConfig({
 	preview: {
 		allowedHosts: true,
 	},
-});
+})

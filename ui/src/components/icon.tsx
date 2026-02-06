@@ -1,7 +1,7 @@
-import { HugeiconsIcon } from '@hugeicons/react';
-import type { ComponentProps } from 'react';
+import { HugeiconsIcon } from '@hugeicons/react'
+import type { ComponentProps } from 'react'
 
-type IconProps = ComponentProps<typeof HugeiconsIcon>;
+type IconProps = ComponentProps<typeof HugeiconsIcon>
 
 export function Icon({
 	size = 24,
@@ -16,5 +16,5 @@ export function Icon({
 			strokeWidth={strokeWidth}
 			{...rest}
 		/>
-	);
+	)
 }

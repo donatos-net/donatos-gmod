@@ -1,15 +1,15 @@
-import { MoreVerticalIcon } from '@hugeicons/core-free-icons';
-import { useState } from 'react';
-import { useDonatosError } from '@/components/donatos/error-dialog';
-import { Icon } from '@/components/icon';
-import { Button } from '@/components/ui/button';
+import { MoreVerticalIcon } from '@hugeicons/core-free-icons'
+import { useState } from 'react'
+import { useDonatosError } from '@/components/donatos/error-dialog'
+import { Icon } from '@/components/icon'
+import { Button } from '@/components/ui/button'
 import {
 	Card,
 	CardAction,
 	CardContent,
 	CardHeader,
 	CardTitle,
-} from '@/components/ui/card';
+} from '@/components/ui/card'
 import {
 	Dialog,
 	DialogClose,
@@ -18,98 +18,95 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Spinner } from '@/components/ui/spinner';
-import {
-	useActivateItem,
-	usePurchaseItem,
-} from '@/hooks/use-donatos-mutations';
-import { usePlayerData } from '@/hooks/use-player-data';
-import { useServerConfig } from '@/hooks/use-server-config';
-import { formatDuration } from '@/lib/format-duration';
-import { formatPrice } from '@/lib/format-price';
-import { openExternalUrl } from '@/lib/gmod-bridge';
-import type { Good } from '@/types/donatos';
+} from '@/components/ui/dropdown-menu'
+import { Spinner } from '@/components/ui/spinner'
+import { useActivateItem, usePurchaseItem } from '@/hooks/use-donatos-mutations'
+import { usePlayerData } from '@/hooks/use-player-data'
+import { useServerConfig } from '@/hooks/use-server-config'
+import { formatDuration } from '@/lib/format-duration'
+import { formatPrice } from '@/lib/format-price'
+import { openExternalUrl } from '@/lib/gmod-bridge'
+import type { Good } from '@/types/donatos'
 
 interface ShopItemCardProps {
-	item: Good;
+	item: Good
 }
 
 export function ShopItemCard({ item }: ShopItemCardProps) {
-	const { mutate: purchaseItem, isPending: isPurchasing } = usePurchaseItem();
-	const { mutate: activateItem, isPending: isActivating } = useActivateItem();
-	const { showError } = useDonatosError();
-	const { data: playerData } = usePlayerData();
-	const { data: serverConfig } = useServerConfig();
-	const [confirmOpen, setConfirmOpen] = useState(false);
-	const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+	const { mutate: purchaseItem, isPending: isPurchasing } = usePurchaseItem()
+	const { mutate: activateItem, isPending: isActivating } = useActivateItem()
+	const { showError } = useDonatosError()
+	const { data: playerData } = usePlayerData()
+	const { data: serverConfig } = useServerConfig()
+	const [confirmOpen, setConfirmOpen] = useState(false)
+	const [pendingVariantId, setPendingVariantId] = useState<string | null>(null)
 	const [depositOffer, setDepositOffer] = useState<{
-		requiredAmount: number;
-		price: number;
-	} | null>(null);
+		requiredAmount: number
+		price: number
+	} | null>(null)
 	const [activateOffer, setActivateOffer] = useState<{
-		itemId: number;
-		goodsName?: string;
-	} | null>(null);
-	const firstVariant = item.variants?.[0];
-	const hasMultipleVariants = item.variants && item.variants.length > 1;
+		itemId: number
+		goodsName?: string
+	} | null>(null)
+	const firstVariant = item.variants?.[0]
+	const hasMultipleVariants = item.variants && item.variants.length > 1
 	const selectedVariant = item.variants?.find(
 		(variant) => variant.id === pendingVariantId,
-	);
+	)
 
 	const handlePurchase = (variantId: string) => {
-		const variant = item.variants?.find((entry) => entry.id === variantId);
-		const balance = playerData?.player.balance;
+		const variant = item.variants?.find((entry) => entry.id === variantId)
+		const balance = playerData?.player.balance
 		if (variant && typeof balance === 'number' && balance < variant.price) {
-			setConfirmOpen(false);
-			setPendingVariantId(null);
+			setConfirmOpen(false)
+			setPendingVariantId(null)
 			setDepositOffer({
 				requiredAmount: Math.max(variant.price - balance, 0),
 				price: variant.price,
-			});
-			return;
+			})
+			return
 		}
 		purchaseItem(
 			{ goodsId: item.id, variantId },
 			{
 				onSuccess: (result) => {
-					setConfirmOpen(false);
-					setPendingVariantId(null);
+					setConfirmOpen(false)
+					setPendingVariantId(null)
 					setActivateOffer({
 						itemId: result.item.id,
 						goodsName: result.goods.name,
-					});
+					})
 				},
 				onError: (error) => {
-					setConfirmOpen(false);
-					setPendingVariantId(null);
-					showError(getErrorMessage(error));
+					setConfirmOpen(false)
+					setPendingVariantId(null)
+					showError(getErrorMessage(error))
 				},
 			},
-		);
-	};
+		)
+	}
 
 	const requestPurchase = (variantId: string) => {
-		setPendingVariantId(variantId);
-		setConfirmOpen(true);
-	};
+		setPendingVariantId(variantId)
+		setConfirmOpen(true)
+	}
 
 	const renderDuration = (duration?: number) => {
-		if (duration === undefined) return '';
-		if (duration === 0) return ' навсегда';
-		return ` на ${formatDuration(duration)}`;
-	};
+		if (duration === undefined) return ''
+		if (duration === 0) return ' навсегда'
+		return ` на ${formatDuration(duration)}`
+	}
 
 	const getErrorMessage = (error: unknown) => {
-		if (error instanceof Error && error.message) return error.message;
-		return 'Не удалось выполнить покупку. Попробуйте еще раз.';
-	};
+		if (error instanceof Error && error.message) return error.message
+		return 'Не удалось выполнить покупку. Попробуйте еще раз.'
+	}
 
 	return (
 		<Card className="data-[size=sm]:gap-1" size="sm">
@@ -168,9 +165,9 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 			</CardContent>
 			<Dialog
 				onOpenChange={(open) => {
-					setConfirmOpen(open);
+					setConfirmOpen(open)
 					if (!open) {
-						setPendingVariantId(null);
+						setPendingVariantId(null)
 					}
 				}}
 				open={confirmOpen}
@@ -200,7 +197,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							disabled={!pendingVariantId || isPurchasing}
 							onClick={() => {
 								if (pendingVariantId) {
-									handlePurchase(pendingVariantId);
+									handlePurchase(pendingVariantId)
 								}
 							}}
 							size="sm"
@@ -213,7 +210,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 			</Dialog>
 			<Dialog
 				onOpenChange={(open) => {
-					if (!open) setDepositOffer(null);
+					if (!open) setDepositOffer(null)
 				}}
 				open={depositOffer !== null}
 			>
@@ -236,15 +233,15 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						<Button
 							disabled={!depositOffer || !playerData || !serverConfig}
 							onClick={() => {
-								if (!depositOffer || !playerData || !serverConfig) return;
+								if (!depositOffer || !playerData || !serverConfig) return
 								const payUrl = serverConfig.payUrl.replace(
 									'{id}',
 									playerData.player.externalId,
-								);
+								)
 								openExternalUrl(
 									`${payUrl}&openDeposit=${depositOffer.requiredAmount}`,
-								);
-								setDepositOffer(null);
+								)
+								setDepositOffer(null)
 							}}
 							size="sm"
 						>
@@ -256,7 +253,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 			<Dialog
 				onOpenChange={(open) => {
 					if (!open) {
-						setActivateOffer(null);
+						setActivateOffer(null)
 					}
 				}}
 				open={activateOffer !== null}
@@ -278,14 +275,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						<Button
 							disabled={activateOffer === null || isActivating}
 							onClick={() => {
-								if (!activateOffer) return;
+								if (!activateOffer) return
 								activateItem(activateOffer.itemId, {
 									onSuccess: () => setActivateOffer(null),
 									onError: (error) => {
-										showError(getErrorMessage(error));
-										setActivateOffer(null);
+										showError(getErrorMessage(error))
+										setActivateOffer(null)
 									},
-								});
+								})
 							}}
 							size="sm"
 						>
@@ -296,5 +293,5 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				</DialogContent>
 			</Dialog>
 		</Card>
-	);
+	)
 }

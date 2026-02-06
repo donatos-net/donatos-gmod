@@ -1,10 +1,10 @@
-import { Button } from '@/components/ui/button';
-import type { GoodCategory } from '@/types/donatos';
+import { Button } from '@/components/ui/button'
+import type { GoodCategory } from '@/types/donatos'
 
 interface CategoryFilterProps {
-	categories: GoodCategory[];
-	selected: number | undefined;
-	onSelect: (categoryId: number | undefined) => void;
+	categories: GoodCategory[]
+	selected: number | undefined
+	onSelect: (categoryId: number | undefined) => void
 }
 
 export function CategoryFilter({
@@ -32,5 +32,5 @@ export function CategoryFilter({
 				</Button>
 			))}
 		</div>
-	);
+	)
 }

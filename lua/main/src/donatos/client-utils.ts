@@ -6,12 +6,12 @@ import { ui } from '@/utils/ui'
 }*/
 
 export function descriptionMarkup(text: string, width: number, color: Color) {
-  return markup.Parse(
-    `<color=${markup.Color(color)}><font=${ui.fonts.roboto.xs}>${markup.Escape(text) || ''}</font></color>`,
-    width,
-  )
+	return markup.Parse(
+		`<color=${markup.Color(color)}><font=${ui.fonts.roboto.xs}>${markup.Escape(text) || ''}</font></color>`,
+		width,
+	)
 }
 
 export function donatosAddText(...args: unknown[]) {
-  chat.AddText(colors.BLUE_6, '[Donatos] ', colors.BLUE_1, ...args)
+	chat.AddText(colors.BLUE_6, '[Donatos] ', colors.BLUE_1, ...args)
 }

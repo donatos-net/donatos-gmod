@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button'
 import {
 	Dialog,
 	DialogClose,
@@ -7,12 +7,12 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
 
 interface FreezeConfirmDialogProps {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	onConfirm: () => void;
+	open: boolean
+	onOpenChange: (open: boolean) => void
+	onConfirm: () => void
 }
 
 export function FreezeConfirmDialog({
@@ -37,8 +37,8 @@ export function FreezeConfirmDialog({
 					</DialogClose>
 					<Button
 						onClick={() => {
-							onConfirm();
-							onOpenChange(false);
+							onConfirm()
+							onOpenChange(false)
 						}}
 						size="sm"
 					>
@@ -47,5 +47,5 @@ export function FreezeConfirmDialog({
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>
-	);
+	)
 }

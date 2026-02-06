@@ -1,10 +1,10 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router';
-import { DonatosHeader } from '@/components/donatos/donatos-header';
-import { DonatosErrorProvider } from '@/components/donatos/error-dialog';
+import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { DonatosHeader } from '@/components/donatos/donatos-header'
+import { DonatosErrorProvider } from '@/components/donatos/error-dialog'
 
 export const Route = createFileRoute('/donatos')({
 	component: DonatosLayout,
-});
+})
 
 function DonatosLayout() {
 	return (
@@ -16,5 +16,5 @@ function DonatosLayout() {
 				</div>
 			</div>
 		</DonatosErrorProvider>
-	);
+	)
 }

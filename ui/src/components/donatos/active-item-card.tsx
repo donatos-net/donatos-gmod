@@ -1,40 +1,40 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
 	Card,
 	CardAction,
 	CardContent,
 	CardHeader,
 	CardTitle,
-} from '@/components/ui/card';
-import { useDonatosError } from '@/components/donatos/error-dialog';
-import { Progress } from '@/components/ui/progress';
-import { useFreezeItem, useUnfreezeItem } from '@/hooks/use-donatos-mutations';
-import type { ActiveItem } from '@/types/donatos';
+} from '@/components/ui/card'
+import { useDonatosError } from '@/components/donatos/error-dialog'
+import { Progress } from '@/components/ui/progress'
+import { useFreezeItem, useUnfreezeItem } from '@/hooks/use-donatos-mutations'
+import type { ActiveItem } from '@/types/donatos'
 
-import { FreezeConfirmDialog } from './freeze-confirm-dialog';
+import { FreezeConfirmDialog } from './freeze-confirm-dialog'
 
 interface ActiveItemCardProps {
-	item: ActiveItem;
+	item: ActiveItem
 }
 
 export function ActiveItemCard({ item }: ActiveItemCardProps) {
-	const [freezeDialogOpen, setFreezeDialogOpen] = useState(false);
-	const { mutate: freezeItem } = useFreezeItem();
-	const { mutate: unfreezeItem } = useUnfreezeItem();
-	const { showError } = useDonatosError();
+	const [freezeDialogOpen, setFreezeDialogOpen] = useState(false)
+	const { mutate: freezeItem } = useFreezeItem()
+	const { mutate: unfreezeItem } = useUnfreezeItem()
+	const { showError } = useDonatosError()
 
 	const progressPercent = item.expires
 		? (item.expires.inS / item.expires.durationS) * 100
-		: 100;
+		: 100
 
 	const statusText = item.isFrozen
 		? 'заморожен'
 		: item.expires
 			? `истекает через ${item.expires.in}`
-			: 'навсегда';
+			: 'навсегда'
 
-	const canInteract = item.isFrozen || item.expires;
+	const canInteract = item.isFrozen || item.expires
 
 	return (
 		<>
@@ -80,10 +80,10 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 				open={freezeDialogOpen}
 			/>
 		</>
-	);
+	)
 }
 
 function getErrorMessage(error: unknown) {
-	if (error instanceof Error && error.message) return error.message;
-	return 'Не удалось выполнить действие. Попробуйте еще раз.';
+	if (error instanceof Error && error.message) return error.message
+	return 'Не удалось выполнить действие. Попробуйте еще раз.'
 }

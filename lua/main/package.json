@@ -1,11 +1,11 @@
 {
-  "name": "main",
-  "scripts": {
-    "build": "tstl",
-    "postbuild": "bun run postbuild.js",
-    "dev": "tstl --watch"
-  },
-  "dependencies": {
-    "api-schema": "workspace:*"
-  }
+	"name": "main",
+	"scripts": {
+		"build": "tstl",
+		"postbuild": "bun run postbuild.js",
+		"dev": "tstl --watch"
+	},
+	"dependencies": {
+		"api-schema": "workspace:*"
+	}
 }

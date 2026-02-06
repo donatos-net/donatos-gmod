@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod'
 
 export const serverApiSchema = {
 	'server:get-config': {
@@ -253,4 +253,4 @@ export const serverApiSchema = {
 		}),
 		output: z.boolean(),
 	},
-} satisfies Record<string, { input: z.Schema; output: z.Schema }>;
+} satisfies Record<string, { input: z.Schema; output: z.Schema }>
