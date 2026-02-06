@@ -31,7 +31,7 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 	const statusText = item.isFrozen
 		? 'заморожен'
 		: item.expires
-			? `истекает через ${item.expires.in}`
+			? `истекает ${item.expires.in}`
 			: 'навсегда'
 
 	const canInteract = item.isFrozen || item.expires

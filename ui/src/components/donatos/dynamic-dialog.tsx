@@ -19,11 +19,15 @@ const DynamicDialogContext = createContext<DynamicDialogContextValue | null>(
 
 export function DonatosDialogProvider({ children }: { children: ReactNode }) {
 	const [dialog, setDialog] = useState<ReactElement | null>(null)
+	const [open, setOpen] = useState(false)
+
 	const openDialog = useCallback((nextDialog: ReactElement) => {
 		setDialog(nextDialog)
+		setOpen(true)
 	}, [])
+
 	const closeDialog = useCallback(() => {
-		setDialog(null)
+		setOpen(false)
 	}, [])
 
 	return (
@@ -33,9 +37,17 @@ export function DonatosDialogProvider({ children }: { children: ReactNode }) {
 				onOpenChange={(open) => {
 					if (!open) closeDialog()
 				}}
-				open={dialog !== null}
+				open={open}
 			>
-				<DialogContent>{dialog}</DialogContent>
+				<DialogContent
+					onAnimationEnd={() => {
+						if (!open) {
+							setDialog(null)
+						}
+					}}
+				>
+					{dialog}
+				</DialogContent>
 			</Dialog>
 		</DynamicDialogContext.Provider>
 	)
