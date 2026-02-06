@@ -34,12 +34,6 @@ interface ShopItemCardProps {
 const PURCHASE_ERROR_MESSAGE =
 	'Не удалось выполнить покупку. Попробуйте еще раз.'
 
-function formatDurationSuffix(duration?: number) {
-	if (duration === undefined) return ''
-	if (duration === 0) return ' навсегда'
-	return ` на ${formatDuration(duration)}`
-}
-
 export function ShopItemCard({ item }: ShopItemCardProps) {
 	const { mutateAsync: purchaseItem } = usePurchaseItem()
 	const { mutateAsync: activateItem } = useActivateItem()
@@ -127,10 +121,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						)
 					}
 				}}
-				selectedVariant={{
-					price: variant.price,
-					duration: variant.duration,
-				}}
+				selectedVariant={variant}
 			/>,
 		)
 	}
@@ -148,15 +139,18 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">
-								{item.variants?.map((variant) => (
-									<DropdownMenuItem
-										key={variant.id}
-										onClick={() => requestPurchase(variant.id)}
-									>
-										{formatDuration(variant.duration)} -{' '}
-										{formatPrice(variant.price)}
-									</DropdownMenuItem>
-								))}
+								{item.variants?.map((variant) => {
+									const durationText = formatDuration(variant.duration)
+									return (
+										<DropdownMenuItem
+											key={variant.id}
+											onClick={() => requestPurchase(variant.id)}
+										>
+											{durationText ? `${durationText} - ` : ''}
+											{formatPrice(variant.price)}
+										</DropdownMenuItem>
+									)
+								})}
 							</DropdownMenuContent>
 						</DropdownMenu>
 					) : (
@@ -187,7 +181,9 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				<p className="mt-auto text-card-foreground/70 text-xs">
 					{hasMultipleVariants ? 'от ' : ''}
 					{firstVariant && formatPrice(firstVariant.price)}
-					{firstVariant && formatDurationSuffix(firstVariant.duration)}
+					{!hasMultipleVariants &&
+						firstVariant &&
+						` / ${formatDuration(firstVariant.duration)}`}
 				</p>
 			</CardContent>
 		</Card>

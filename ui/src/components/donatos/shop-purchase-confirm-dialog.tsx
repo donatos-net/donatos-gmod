@@ -8,24 +8,14 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDuration } from '@/lib/format-duration'
+import { formatDurationInParens } from '@/lib/format-duration'
 import { formatPrice } from '@/lib/format-price'
-
-type SelectedVariant = {
-	price: number
-	duration?: number
-}
+import type { GoodVariant } from '@/types/donatos'
 
 interface ShopPurchaseConfirmDialogProps {
 	itemName: string
-	selectedVariant: SelectedVariant | null
+	selectedVariant: GoodVariant | null
 	onConfirm: () => Promise<void> | void
-}
-
-function renderDuration(duration?: number) {
-	if (duration === undefined) return ''
-	if (duration === 0) return ' навсегда'
-	return ` на ${formatDuration(duration)}`
 }
 
 export function ShopPurchaseConfirmDialog({
@@ -45,7 +35,7 @@ export function ShopPurchaseConfirmDialog({
 						<>
 							{' '}
 							за {formatPrice(selectedVariant.price)}
-							{renderDuration(selectedVariant.duration)}
+							{formatDurationInParens(selectedVariant.duration)}
 						</>
 					)}
 					?

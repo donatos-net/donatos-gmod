@@ -1,4 +1,4 @@
-import 'core-js/es/array/at'
+// import 'core-js/es/array/at'
 
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
@@ -22,10 +22,8 @@ const router = createRouter({
 	context: {
 		...TanStackQueryProviderContext,
 	},
-	defaultPreload: 'intent',
+	defaultPreload: false,
 	scrollRestoration: true,
-	defaultStructuralSharing: true,
-	defaultPreloadStaleTime: 0,
 })
 
 // Register the router instance for type safety

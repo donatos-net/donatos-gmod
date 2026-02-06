@@ -35,13 +35,33 @@ export function DonatosHeader() {
 		openExternalUrl(`${payUrl}&openDeposit=true`)
 	}
 
-	const handleClose = () => {
-		closeUi()
-	}
-
 	const isShopActive = matchRoute({ to: '/donatos/shop' })
 	const isInventoryActive = matchRoute({ to: '/donatos/inventory' })
 	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' })
+	const navButtonClass =
+		'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground focus-visible:border-primary-foreground/30 focus-visible:ring-primary-foreground/30 dark:hover:bg-primary-foreground/20'
+	const navItems = [
+		{
+			to: '/donatos/shop' as const,
+			icon: ShoppingBagIcon,
+			label: 'Магазин',
+			isActive: !!isShopActive,
+		},
+		{
+			to: '/donatos/inventory' as const,
+			icon: BlockchainIcon,
+			label: 'Инвентарь',
+			isActive: !!isInventoryActive,
+			badgeCount: playerData?.inventoryItems.length ?? 0,
+		},
+		{
+			to: '/donatos/active-items' as const,
+			icon: Calendar02Icon,
+			label: 'Активные предметы',
+			isActive: !!isActiveItemsActive,
+			badgeCount: playerData?.activeItems.length ?? 0,
+		},
+	]
 	const avatarUrl = playerData?.player.externalMeta?.avatarUrl ?? undefined
 	const playerName = playerData?.player.externalMeta?.name?.trim() ?? ''
 	const avatarFallbackText =
@@ -53,69 +73,35 @@ export function DonatosHeader() {
 			.join('') || '??'
 
 	return (
-		<div className="relative flex flex-col gap-0 overflow-hidden bg-primary p-1.5 text-primary-foreground">
+		<div className="relative flex flex-col gap-0 overflow-hidden bg-background p-1.5 text-primary-foreground">
 			<div
 				aria-hidden
-				className="donatos-animated-bg pointer-events-none absolute inset-0 opacity-50"
+				className="donatos-animated-bg pointer-events-none absolute inset-0 opacity-60"
 			/>
 			<div className="relative z-10 flex items-center gap-2">
-				<Button
-					asChild
-					className={cn(
-						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
-						!!isShopActive &&
-							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
-					)}
-					size="sm"
-					variant="ghost"
-				>
-					<Link to="/donatos/shop">
-						<Icon icon={ShoppingBagIcon} />
-						Магазин
-					</Link>
-				</Button>
-
-				<Button
-					asChild
-					className={cn(
-						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
-						!!isInventoryActive &&
-							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
-					)}
-					size="sm"
-					variant="ghost"
-				>
-					<Link to="/donatos/inventory">
-						<Icon icon={BlockchainIcon} />
-						Инвентарь
-						{playerData && playerData.inventoryItems.length > 0 && (
-							<Badge className="ml-1 bg-secondary/20" variant="default">
-								{playerData.inventoryItems.length}
-							</Badge>
+				{navItems.map((item) => (
+					<Button
+						asChild
+						className={cn(
+							navButtonClass,
+							item.isActive &&
+								'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
 						)}
-					</Link>
-				</Button>
-
-				<Button
-					asChild
-					className={cn(
-						'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground dark:hover:bg-primary-foreground/20',
-						!!isActiveItemsActive &&
-							'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
-					)}
-					size="sm"
-					variant="ghost"
-				>
-					<Link to="/donatos/active-items">
-						<Icon icon={Calendar02Icon} />
-						Активные предметы
-						{playerData && playerData.activeItems.length > 0 && (
-							<Badge className="ml-1 bg-secondary/20" variant="default">
-								{playerData.activeItems.length}
-							</Badge>
-						)}
-					</Link>
-				</Button>
+						key={item.to}
+						size="sm"
+						variant="ghost"
+					>
+						<Link to={item.to}>
+							<Icon icon={item.icon} />
+							{item.label}
+							{item.badgeCount && item.badgeCount > 0 ? (
+								<Badge className="ml-1 bg-secondary/20" variant="default">
+									{item.badgeCount}
+								</Badge>
+							) : null}
+						</Link>
+					</Button>
+				))}
 
 				{/* Right side buttons */}
 				<div className="ml-auto flex items-center gap-3">
@@ -150,7 +136,7 @@ export function DonatosHeader() {
 					</DropdownMenu>
 					<Button
 						className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
-						onClick={handleClose}
+						onClick={() => closeUi()}
 						size="icon-sm"
 						variant="ghost"
 					>
