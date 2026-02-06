@@ -7,6 +7,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from '@/components/ui/card'
+import { Spinner } from '@/components/ui/spinner'
 import { useActivateItem } from '@/hooks/use-donatos-mutations'
 import { formatDurationInParens } from '@/lib/format-duration'
 import type { InventoryItem } from '@/types/donatos'
@@ -16,7 +17,7 @@ interface InventoryItemCardProps {
 }
 
 export function InventoryItemCard({ item }: InventoryItemCardProps) {
-	const { mutate: activateItem } = useActivateItem()
+	const { mutate: activateItem, isPending: isActivating } = useActivateItem()
 	// const { mutate: dropItem } = useDropItem();
 	const { showError } = useDonatosError()
 
@@ -41,21 +42,23 @@ export function InventoryItemCard({ item }: InventoryItemCardProps) {
 				</p>
 				<div className="ml-auto flex items-center gap-2">
 					<Button
+						disabled={isActivating}
 						onClick={() =>
 							activateItem(item.id, {
-								onError: (error) => showError(getErrorMessage(error)),
+								onError: (error) => showError(error),
 							})
 						}
 						size="xs"
 					>
+						{isActivating && <Spinner data-icon="inline-start" />}
 						Активировать
 					</Button>
 					{/* <Button
-						onClick={() =>
-							dropItem(item.id, {
-								onError: (error) => showError(getErrorMessage(error)),
-							})
-						}
+							onClick={() =>
+								dropItem(item.id, {
+									onError: (error) => showError(error),
+								})
+							}
 						size="xs"
 						variant="destructive"
 					>
@@ -65,9 +68,4 @@ export function InventoryItemCard({ item }: InventoryItemCardProps) {
 			</CardContent>
 		</Card>
 	)
-}
-
-function getErrorMessage(error: unknown) {
-	if (error instanceof Error && error.message) return error.message
-	return 'Не удалось выполнить действие. Попробуйте еще раз.'
 }

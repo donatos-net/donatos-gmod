@@ -15,8 +15,13 @@ type ErrorState = {
 	message: string
 }
 
+const DEFAULT_ERROR_MESSAGE =
+	'Не удалось выполнить действие. Попробуйте еще раз.'
+
+type ErrorDialogInput = unknown
+
 type ErrorDialogContextValue = {
-	showError: (message: string, title?: string) => void
+	showError: (message: ErrorDialogInput, title?: string) => void
 }
 
 const ErrorDialogContext = createContext<ErrorDialogContextValue | null>(null)
@@ -28,9 +33,22 @@ export function DonatosErrorProvider({
 }) {
 	const [error, setError] = useState<ErrorState | null>(null)
 
-	const showError = useCallback((message: string, title = 'Ошибка') => {
-		setError({ title, message })
-	}, [])
+	const showError = useCallback(
+		(message: ErrorDialogInput, title = 'Ошибка') => {
+			const normalizedMessage =
+				typeof message === 'string' && message
+					? message
+					: message instanceof Error && message.message
+						? message.message
+						: DEFAULT_ERROR_MESSAGE
+
+			setError({
+				title,
+				message: normalizedMessage,
+			})
+		},
+		[],
+	)
 
 	return (
 		<ErrorDialogContext.Provider value={{ showError }}>

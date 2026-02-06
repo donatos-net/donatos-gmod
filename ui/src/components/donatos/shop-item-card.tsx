@@ -1,6 +1,9 @@
 import { MoreVerticalIcon } from '@hugeicons/core-free-icons'
-import { useState } from 'react'
+import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
 import { useDonatosError } from '@/components/donatos/error-dialog'
+import { ShopActivateOfferDialog } from '@/components/donatos/shop-activate-offer-dialog'
+import { ShopDepositDialog } from '@/components/donatos/shop-deposit-dialog'
+import { ShopPurchaseConfirmDialog } from '@/components/donatos/shop-purchase-confirm-dialog'
 import { Icon } from '@/components/icon'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,21 +14,11 @@ import {
 	CardTitle,
 } from '@/components/ui/card'
 import {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from '@/components/ui/dialog'
-import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
 import { useActivateItem, usePurchaseItem } from '@/hooks/use-donatos-mutations'
 import { usePlayerData } from '@/hooks/use-player-data'
 import { useServerConfig } from '@/hooks/use-server-config'
@@ -38,74 +31,111 @@ interface ShopItemCardProps {
 	item: Good
 }
 
+const PURCHASE_ERROR_MESSAGE =
+	'Не удалось выполнить покупку. Попробуйте еще раз.'
+
+function formatDurationSuffix(duration?: number) {
+	if (duration === undefined) return ''
+	if (duration === 0) return ' навсегда'
+	return ` на ${formatDuration(duration)}`
+}
+
 export function ShopItemCard({ item }: ShopItemCardProps) {
-	const { mutate: purchaseItem, isPending: isPurchasing } = usePurchaseItem()
-	const { mutate: activateItem, isPending: isActivating } = useActivateItem()
+	const { mutateAsync: purchaseItem } = usePurchaseItem()
+	const { mutateAsync: activateItem } = useActivateItem()
 	const { showError } = useDonatosError()
+	const { openDialog, closeDialog } = useDonatosDialog()
 	const { data: playerData } = usePlayerData()
 	const { data: serverConfig } = useServerConfig()
-	const [confirmOpen, setConfirmOpen] = useState(false)
-	const [pendingVariantId, setPendingVariantId] = useState<string | null>(null)
-	const [depositOffer, setDepositOffer] = useState<{
-		requiredAmount: number
-		price: number
-	} | null>(null)
-	const [activateOffer, setActivateOffer] = useState<{
-		itemId: number
-		goodsName?: string
-	} | null>(null)
+
 	const firstVariant = item.variants?.[0]
 	const hasMultipleVariants = item.variants && item.variants.length > 1
-	const selectedVariant = item.variants?.find(
-		(variant) => variant.id === pendingVariantId,
-	)
 
-	const handlePurchase = (variantId: string) => {
-		const variant = item.variants?.find((entry) => entry.id === variantId)
-		const balance = playerData?.player.balance
-		if (variant && typeof balance === 'number' && balance < variant.price) {
-			setConfirmOpen(false)
-			setPendingVariantId(null)
-			setDepositOffer({
-				requiredAmount: Math.max(variant.price - balance, 0),
-				price: variant.price,
-			})
-			return
-		}
-		purchaseItem(
-			{ goodsId: item.id, variantId },
-			{
-				onSuccess: (result) => {
-					setConfirmOpen(false)
-					setPendingVariantId(null)
-					setActivateOffer({
-						itemId: result.item.id,
-						goodsName: result.goods.name,
-					})
-				},
-				onError: (error) => {
-					setConfirmOpen(false)
-					setPendingVariantId(null)
-					showError(getErrorMessage(error))
-				},
-			},
+	const showDepositDialog = (requiredAmount: number, price: number) => {
+		openDialog(
+			<ShopDepositDialog
+				disabled={!playerData || !serverConfig}
+				itemName={item.name}
+				offer={{ requiredAmount, price }}
+				onClose={closeDialog}
+				onConfirm={() => {
+					if (!playerData || !serverConfig) return
+					const payUrl = serverConfig.payUrl.replace(
+						'{id}',
+						playerData.player.externalId,
+					)
+					openExternalUrl(`${payUrl}&openDeposit=${requiredAmount}`)
+					closeDialog()
+				}}
+			/>,
+		)
+	}
+
+	const showActivateDialog = (itemId: number, goodsName?: string) => {
+		openDialog(
+			<ShopActivateOfferDialog
+				disabled={!Number.isFinite(itemId)}
+				goodsName={goodsName}
+				itemName={item.name}
+				onClose={closeDialog}
+				onConfirm={async () => {
+					try {
+						await activateItem(itemId)
+						closeDialog()
+					} catch (error) {
+						showError(
+							error instanceof Error && error.message
+								? error
+								: PURCHASE_ERROR_MESSAGE,
+						)
+						closeDialog()
+					}
+				}}
+			/>,
 		)
 	}
 
 	const requestPurchase = (variantId: string) => {
-		setPendingVariantId(variantId)
-		setConfirmOpen(true)
-	}
+		const variant = item.variants?.find((entry) => entry.id === variantId)
+		if (!variant) return
 
-	const renderDuration = (duration?: number) => {
-		if (duration === undefined) return ''
-		if (duration === 0) return ' навсегда'
-		return ` на ${formatDuration(duration)}`
-	}
+		openDialog(
+			<ShopPurchaseConfirmDialog
+				itemName={item.name}
+				onClose={closeDialog}
+				onConfirm={async () => {
+					const balance = playerData?.player.balance
+					if (typeof balance === 'number' && balance < variant.price) {
+						closeDialog()
+						showDepositDialog(
+							Math.max(variant.price - balance, 0),
+							variant.price,
+						)
+						return
+					}
 
-	const getErrorMessage = (error: unknown) => {
-		if (error instanceof Error && error.message) return error.message
-		return 'Не удалось выполнить покупку. Попробуйте еще раз.'
+					try {
+						const result = await purchaseItem({
+							goodsId: item.id,
+							variantId,
+						})
+						closeDialog()
+						showActivateDialog(result.item.id, result.goods.name)
+					} catch (error) {
+						closeDialog()
+						showError(
+							error instanceof Error && error.message
+								? error
+								: PURCHASE_ERROR_MESSAGE,
+						)
+					}
+				}}
+				selectedVariant={{
+					price: variant.price,
+					duration: variant.duration,
+				}}
+			/>,
+		)
 	}
 
 	return (
@@ -160,138 +190,9 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				<p className="mt-auto text-card-foreground/70 text-xs">
 					{hasMultipleVariants ? 'от ' : ''}
 					{firstVariant && formatPrice(firstVariant.price)}
-					{firstVariant && renderDuration(firstVariant.duration)}
+					{firstVariant && formatDurationSuffix(firstVariant.duration)}
 				</p>
 			</CardContent>
-			<Dialog
-				onOpenChange={(open) => {
-					setConfirmOpen(open)
-					if (!open) {
-						setPendingVariantId(null)
-					}
-				}}
-				open={confirmOpen}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Подтвердить покупку</DialogTitle>
-						<DialogDescription>
-							Вы уверены, что хотите купить {item.name}
-							{selectedVariant && (
-								<>
-									{' '}
-									за {formatPrice(selectedVariant.price)}
-									{renderDuration(selectedVariant.duration)}
-								</>
-							)}
-							?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<DialogClose asChild>
-							<Button size="sm" variant="outline">
-								Отмена
-							</Button>
-						</DialogClose>
-						<Button
-							disabled={!pendingVariantId || isPurchasing}
-							onClick={() => {
-								if (pendingVariantId) {
-									handlePurchase(pendingVariantId)
-								}
-							}}
-							size="sm"
-						>
-							{isPurchasing && <Spinner data-icon="inline-start" />}
-							Купить
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-			<Dialog
-				onOpenChange={(open) => {
-					if (!open) setDepositOffer(null)
-				}}
-				open={depositOffer !== null}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Недостаточно средств</DialogTitle>
-						<DialogDescription>
-							Для покупки {item.name} нужно{' '}
-							{formatPrice(depositOffer?.price ?? 0)}. Вам не хватает{' '}
-							{formatPrice(depositOffer?.requiredAmount ?? 0)}. Пополнить
-							баланс?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<DialogClose asChild>
-							<Button size="sm" variant="outline">
-								Отмена
-							</Button>
-						</DialogClose>
-						<Button
-							disabled={!depositOffer || !playerData || !serverConfig}
-							onClick={() => {
-								if (!depositOffer || !playerData || !serverConfig) return
-								const payUrl = serverConfig.payUrl.replace(
-									'{id}',
-									playerData.player.externalId,
-								)
-								openExternalUrl(
-									`${payUrl}&openDeposit=${depositOffer.requiredAmount}`,
-								)
-								setDepositOffer(null)
-							}}
-							size="sm"
-						>
-							Пополнить
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-			<Dialog
-				onOpenChange={(open) => {
-					if (!open) {
-						setActivateOffer(null)
-					}
-				}}
-				open={activateOffer !== null}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Активировать предмет?</DialogTitle>
-						<DialogDescription>
-							Хотите активировать {activateOffer?.goodsName ?? item.name}{' '}
-							сейчас?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<DialogClose asChild>
-							<Button size="sm" variant="outline">
-								Позже
-							</Button>
-						</DialogClose>
-						<Button
-							disabled={activateOffer === null || isActivating}
-							onClick={() => {
-								if (!activateOffer) return
-								activateItem(activateOffer.itemId, {
-									onSuccess: () => setActivateOffer(null),
-									onError: (error) => {
-										showError(getErrorMessage(error))
-										setActivateOffer(null)
-									},
-								})
-							}}
-							size="sm"
-						>
-							{isActivating && <Spinner data-icon="inline-start" />}
-							Активировать
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
 		</Card>
 	)
 }

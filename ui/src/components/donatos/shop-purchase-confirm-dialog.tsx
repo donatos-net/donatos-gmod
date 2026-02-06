@@ -1,0 +1,89 @@
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
+import { formatDuration } from '@/lib/format-duration'
+import { formatPrice } from '@/lib/format-price'
+
+type SelectedVariant = {
+	price: number
+	duration?: number
+}
+
+interface ShopPurchaseConfirmDialogProps {
+	itemName: string
+	selectedVariant: SelectedVariant | null
+	onClose: () => void
+	onConfirm: () => Promise<void> | void
+}
+
+function renderDuration(duration?: number) {
+	if (duration === undefined) return ''
+	if (duration === 0) return ' навсегда'
+	return ` на ${formatDuration(duration)}`
+}
+
+export function ShopPurchaseConfirmDialog({
+	itemName,
+	selectedVariant,
+	onClose,
+	onConfirm,
+}: ShopPurchaseConfirmDialogProps) {
+	const [isSubmitting, setIsSubmitting] = useState(false)
+
+	return (
+		<Dialog
+			onOpenChange={(open) => {
+				if (!open) onClose()
+			}}
+			open
+		>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Подтвердить покупку</DialogTitle>
+					<DialogDescription>
+						Вы уверены, что хотите купить {itemName}
+						{selectedVariant && (
+							<>
+								{' '}
+								за {formatPrice(selectedVariant.price)}
+								{renderDuration(selectedVariant.duration)}
+							</>
+						)}
+						?
+					</DialogDescription>
+				</DialogHeader>
+				<DialogFooter>
+					<DialogClose asChild>
+						<Button size="sm" variant="outline">
+							Отмена
+						</Button>
+					</DialogClose>
+					<Button
+						disabled={!selectedVariant || isSubmitting}
+						onClick={async () => {
+							setIsSubmitting(true)
+							try {
+								await onConfirm()
+							} finally {
+								setIsSubmitting(false)
+							}
+						}}
+						size="sm"
+					>
+						{isSubmitting && <Spinner data-icon="inline-start" />}
+						Купить
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	)
+}

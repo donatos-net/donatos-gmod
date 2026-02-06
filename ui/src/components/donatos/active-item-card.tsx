@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDonatosError } from '@/components/donatos/error-dialog'
 import { Button } from '@/components/ui/button'
 import {
 	Card,
@@ -7,7 +8,6 @@ import {
 	CardHeader,
 	CardTitle,
 } from '@/components/ui/card'
-import { useDonatosError } from '@/components/donatos/error-dialog'
 import { Progress } from '@/components/ui/progress'
 import { useFreezeItem, useUnfreezeItem } from '@/hooks/use-donatos-mutations'
 import type { ActiveItem } from '@/types/donatos'
@@ -47,7 +47,7 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 								<Button
 									onClick={() =>
 										unfreezeItem(item.id, {
-											onError: (error) => showError(getErrorMessage(error)),
+											onError: (error) => showError(error),
 										})
 									}
 									size="xs"
@@ -73,7 +73,7 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 			<FreezeConfirmDialog
 				onConfirm={() =>
 					freezeItem(item.id, {
-						onError: (error) => showError(getErrorMessage(error)),
+						onError: (error) => showError(error),
 					})
 				}
 				onOpenChange={setFreezeDialogOpen}
@@ -81,9 +81,4 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 			/>
 		</>
 	)
-}
-
-function getErrorMessage(error: unknown) {
-	if (error instanceof Error && error.message) return error.message
-	return 'Не удалось выполнить действие. Попробуйте еще раз.'
 }
