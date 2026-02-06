@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { ActiveItemCard } from '@/components/donatos/active-item-card'
 import { EmptyState } from '@/components/donatos/empty-state'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { usePlayerData } from '@/hooks/use-player-data'
 
 export const Route = createFileRoute('/donatos/active-items')({
@@ -40,12 +41,12 @@ function ActiveItemsTab() {
 	}
 
 	return (
-		<div className="h-full overflow-y-auto">
-			<div className="flex flex-col gap-2 p-2">
+		<ScrollArea className="h-full w-full flex-1">
+			<div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2 p-2">
 				{sortedItems.map((item) => (
 					<ActiveItemCard item={item} key={item.id} />
 				))}
 			</div>
-		</div>
+		</ScrollArea>
 	)
 }

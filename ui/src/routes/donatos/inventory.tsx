@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { EmptyState } from '@/components/donatos/empty-state'
 import { InventoryItemCard } from '@/components/donatos/inventory-item-card'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { usePlayerData } from '@/hooks/use-player-data'
 
 export const Route = createFileRoute('/donatos/inventory')({
@@ -24,12 +25,12 @@ function InventoryTab() {
 	}
 
 	return (
-		<div className="h-full overflow-y-auto">
-			<div className="grid grid-cols-2 gap-2 p-2">
+		<ScrollArea className="h-full w-full flex-1">
+			<div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2 p-2">
 				{playerData.inventoryItems.map((item) => (
 					<InventoryItemCard item={item} key={item.id} />
 				))}
 			</div>
-		</div>
+		</ScrollArea>
 	)
 }
