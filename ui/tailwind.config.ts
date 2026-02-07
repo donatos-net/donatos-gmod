@@ -10,6 +10,9 @@ export default {
 			fontFamily: {
 				sans: ['var(--font-sans)', ...defaultTheme.fontFamily.sans],
 			},
+			backdropBlur: {
+				xs: '2px',
+			},
 			borderRadius: {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',

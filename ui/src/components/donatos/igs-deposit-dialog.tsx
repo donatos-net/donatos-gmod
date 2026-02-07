@@ -11,6 +11,7 @@ import { FieldError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { netMessageToServer, openExternalUrl } from '@/lib/gmod-bridge'
+import { useDonatosDialog } from './dynamic-dialog'
 
 const QUICK_AMOUNTS = [100, 300, 500, 1000]
 
@@ -23,6 +24,7 @@ export function IgsDepositDialog({
 	initialSum,
 	onBack,
 }: IgsDepositDialogProps) {
+	const { closeDialog } = useDonatosDialog()
 	const [sum, setSum] = useState<number>(initialSum)
 	const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -38,6 +40,7 @@ export function IgsDepositDialog({
 		},
 		onSuccess: (data) => {
 			openExternalUrl(data.url)
+			closeDialog()
 		},
 		onError: (error) => {
 			setSubmitError(

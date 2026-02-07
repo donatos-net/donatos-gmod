@@ -13,7 +13,7 @@ function Spinner({
 			className={cn('size-4 animate-spin', className)}
 			icon={Loading03Icon}
 			role="status"
-			strokeWidth={Number(strokeWidth) ?? 2}
+			strokeWidth={Number(strokeWidth) || 2}
 			{...props}
 		/>
 	)
