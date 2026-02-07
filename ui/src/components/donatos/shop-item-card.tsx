@@ -133,9 +133,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 					{hasMultipleVariants ? (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
-								<Button size="sm" variant="secondary">
-									Купить
-								</Button>
+								<Button size="sm">Купить</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">
 								{item.variants?.map((variant) => {
@@ -157,7 +155,6 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							<Button
 								onClick={() => requestPurchase(firstVariant.id)}
 								size="sm"
-								variant="secondary"
 							>
 								Купить
 							</Button>
