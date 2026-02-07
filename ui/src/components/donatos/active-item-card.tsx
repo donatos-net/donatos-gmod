@@ -38,7 +38,7 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 
 	return (
 		<>
-			<Card className="bg-card" size="sm">
+			<Card className="ring-0" size="sm">
 				<CardHeader>
 					<CardTitle>{item.goods.name}</CardTitle>
 					{canInteract && (
@@ -51,17 +51,24 @@ export function ActiveItemCard({ item }: ActiveItemCardProps) {
 										})
 									}
 									size="xs"
+									variant="secondary"
 								>
 									Разморозить
 								</Button>
 							) : (
-								<Button onClick={() => setFreezeDialogOpen(true)} size="xs">
+								<Button
+									onClick={() => setFreezeDialogOpen(true)}
+									size="xs"
+									variant="secondary"
+								>
 									Заморозить
 								</Button>
 							)}
 						</CardAction>
 					)}
-					<p className="text-muted-foreground text-xs">{statusText}</p>
+					<p className="text-muted-foreground text-xs tracking-wide">
+						{statusText}
+					</p>
 				</CardHeader>
 				{item.expires && !item.isFrozen && (
 					<CardContent>

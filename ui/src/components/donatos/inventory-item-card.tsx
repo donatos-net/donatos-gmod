@@ -24,7 +24,7 @@ export function InventoryItemCard({ item }: InventoryItemCardProps) {
 	const durationText = formatDurationInParens(item.variant?.duration)
 
 	return (
-		<Card className="bg-card" size="sm">
+		<Card className="ring-0" size="sm">
 			<CardHeader>
 				<CardTitle>
 					{item.goods?.name ?? 'Deleted Item'}

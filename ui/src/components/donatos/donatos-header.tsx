@@ -24,6 +24,7 @@ import { useServerConfig } from '@/hooks/use-server-config'
 import { closeUi, openExternalUrl } from '@/lib/gmod-bridge'
 import { cn } from '@/lib/utils'
 import { Icon } from '../icon'
+import { ButtonGroup } from '../ui/button-group'
 
 export function DonatosHeader() {
 	const { data: playerData } = usePlayerData()
@@ -53,7 +54,7 @@ export function DonatosHeader() {
 	const isInventoryActive = matchRoute({ to: '/donatos/inventory' })
 	const isActiveItemsActive = matchRoute({ to: '/donatos/active-items' })
 	const navButtonClass =
-		'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground focus-visible:border-primary-foreground/30 focus-visible:ring-primary-foreground/30 dark:hover:bg-primary-foreground/20'
+		'px-2.5 text-foreground/70 hover:bg-background/45 dark:hover:bg-background/25 hover:text-foreground focus-visible:border-foreground/30 focus-visible:ring-foreground/30'
 	const navItems = [
 		{
 			to: '/donatos/shop' as const,
@@ -87,19 +88,18 @@ export function DonatosHeader() {
 			.join('') || '??'
 
 	return (
-		<div className="relative flex flex-col gap-0 overflow-hidden bg-background p-1.5 text-primary-foreground">
+		<div className="relative flex w-full flex-row gap-0 px-2 py-1.5 text-foreground">
 			<div
 				aria-hidden
-				className="donatos-animated-bg pointer-events-none absolute inset-0 opacity-60"
+				className="donatos-header-surface pointer-events-none absolute inset-0 opacity-60"
 			/>
-			<div className="relative z-10 flex items-center gap-1">
+			<div className="relative z-10 flex flex-1 items-center gap-1.5">
 				{navItems.map((item) => (
 					<Button
 						asChild
 						className={cn(
 							navButtonClass,
-							item.isActive &&
-								'bg-primary-foreground/20 text-primary-foreground',
+							item.isActive && 'bg-background/45 text-foreground/90',
 						)}
 						key={item.to}
 						size="sm"
@@ -110,8 +110,8 @@ export function DonatosHeader() {
 							{item.label}
 							{item.badgeCount && item.badgeCount > 0 ? (
 								<Badge
-									className="ml-1 h-4 min-w-4 bg-primary-foreground/15 px-1 text-[10px] text-primary-foreground leading-none"
-									variant="default"
+									className="ml-1 h-4 min-w-4 rounded-sm border-foreground/10 bg-foreground/20 px-1 text-[10px] text-foreground leading-none"
+									variant="secondary"
 								>
 									{item.badgeCount}
 								</Badge>
@@ -119,56 +119,50 @@ export function DonatosHeader() {
 						</Link>
 					</Button>
 				))}
+			</div>
 
-				{/* Right side buttons */}
-				<div className="ml-auto flex items-center gap-3">
-					<div className="inline-flex overflow-hidden rounded-md border border-primary-foreground/30">
-						<Button
-							className="rounded-none border-0 text-primary-foreground hover:bg-primary/80"
-							onClick={handleBalanceClick}
-							size="sm"
-							variant="outline"
-						>
-							Бонусы: {playerData?.player.balance ?? 0}
-						</Button>
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<Button
-									className="rounded-none border-0 border-primary-foreground/30 border-l text-primary-foreground hover:bg-primary/80"
-									size="sm"
-									variant="outline"
-								>
-									<Icon icon={MoreVerticalIcon} />
-								</Button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end">
-								<DropdownMenuItem onClick={handleBalanceClick}>
-									<Icon icon={PlusSignIcon} />
-									Пополнить баланс
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									disabled={!serverConfig?.igs.enabled}
-									onClick={handleIgsDepositClick}
-								>
-									<Icon icon={Coins02Icon} />
-									Другие способы
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					</div>
-					<Avatar size="sm" title={playerName || undefined}>
-						<AvatarImage alt={playerName || 'Player avatar'} src={avatarUrl} />
-						<AvatarFallback>{avatarFallbackText}</AvatarFallback>
-					</Avatar>
+			<div className="relative z-10 flex items-center gap-2.5 pl-2">
+				<ButtonGroup>
 					<Button
-						className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
-						onClick={() => closeUi()}
-						size="icon-sm"
-						variant="ghost"
+						className="dark:border-foreground/15 dark:bg-foreground/10"
+						onClick={handleBalanceClick}
+						size="sm"
+						variant="outline"
 					>
-						<Icon icon={Cancel01Icon}></Icon>
+						Бонусы: {playerData?.player.balance ?? 0}
 					</Button>
-				</div>
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Button
+								className="dark:border-foreground/15 dark:bg-foreground/10"
+								size="sm"
+								variant="outline"
+							>
+								<Icon icon={MoreVerticalIcon} />
+							</Button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem onClick={handleBalanceClick}>
+								<Icon icon={PlusSignIcon} />
+								Пополнить баланс
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={!serverConfig?.igs.enabled}
+								onClick={handleIgsDepositClick}
+							>
+								<Icon icon={Coins02Icon} />
+								Другие способы
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</ButtonGroup>
+				<Avatar size="sm" title={playerName || undefined}>
+					<AvatarImage alt={playerName || 'Player avatar'} src={avatarUrl} />
+					<AvatarFallback>{avatarFallbackText}</AvatarFallback>
+				</Avatar>
+				<Button onClick={() => closeUi()} size="icon-sm" variant="ghost">
+					<Icon icon={Cancel01Icon}></Icon>
+				</Button>
 			</div>
 		</div>
 	)

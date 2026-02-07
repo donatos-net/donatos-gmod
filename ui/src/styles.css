@@ -1,7 +1,7 @@
 @import "./chrome86-fixes.css";
 
 /* @import "@fontsource-variable/inter"; */
-@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap');
 
 /* @import "tw-animate-css";
 @import "shadcn/tailwind.css"; */
@@ -44,7 +44,7 @@
 		--sidebar-accent-foreground: oklch(0.21 0.006 285.885);
 		--sidebar-border: oklch(0.92 0.004 286.32);
 		--sidebar-ring: oklch(0.705 0.015 286.067);
-		--font-sans: "Inter", sans-serif;
+		--font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
 	}
 
 	.dark {
@@ -103,7 +103,7 @@
 	}
 }
 
-@keyframes donatos-gradient {
+@keyframes donatos-header-gradient {
 	0% {
 		background-position: 0% 50%;
 	}
@@ -118,15 +118,9 @@
 }
 
 @layer utilities {
-	.donatos-animated-bg {
+	.donatos-header-surface {
 		background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
 		background-size: 400% 400%;
-		animation: donatos-gradient 10s ease infinite;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.donatos-animated-bg {
-		animation: none;
+		animation: donatos-header-gradient 10s ease infinite;
 	}
 }

@@ -40,21 +40,26 @@ export function ShopItemsGrid({
 	)
 
 	return (
-		<div className="flex flex-col gap-4 p-2">
+		<div className="flex flex-col gap-7 p-4">
 			{visibleGroups.map((group) => {
 				if (group.goods.length === 0) {
 					return null
 				}
 
 				return (
-					<div className="flex flex-col gap-2" key={group.id}>
-						<p className="text-foreground text-sm">{group.name}</p>
-						<div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2">
+					<section className="flex flex-col gap-3" key={group.id}>
+						<div className="flex items-center gap-2">
+							<div className="h-4 w-0.5 rounded-full bg-foreground" />
+							<h3 className="font-semibold text-foreground text-sm tracking-tight">
+								{group.name}
+							</h3>
+						</div>
+						<div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3">
 							{group.goods.map((item) => (
 								<ShopItemCard item={item} key={item.id} />
 							))}
 						</div>
-					</div>
+					</section>
 				)
 			})}
 		</div>

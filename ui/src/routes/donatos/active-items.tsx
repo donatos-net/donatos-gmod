@@ -42,7 +42,7 @@ function ActiveItemsTab() {
 
 	return (
 		<ScrollArea className="h-full w-full flex-1">
-			<div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2 p-2">
+			<div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3 p-4">
 				{sortedItems.map((item) => (
 					<ActiveItemCard item={item} key={item.id} />
 				))}

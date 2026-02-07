@@ -126,14 +126,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	}
 
 	return (
-		<Card className="data-[size=sm]:gap-1" size="sm">
+		<Card className="ring-0" size="sm">
 			<CardHeader>
 				<CardTitle>{item.name}</CardTitle>
 				<CardAction>
 					{hasMultipleVariants ? (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
-								<Button size="xs" variant="outline">
+								<Button size="sm" variant="secondary">
 									Купить
 								</Button>
 							</DropdownMenuTrigger>
@@ -156,8 +156,8 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 						firstVariant && (
 							<Button
 								onClick={() => requestPurchase(firstVariant.id)}
-								size="xs"
-								variant="outline"
+								size="sm"
+								variant="secondary"
 							>
 								Купить
 							</Button>
@@ -172,19 +172,23 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 			</CardHeader>
 			<CardContent className="flex h-full flex-col">
 				{item.description && (
-					<div className="mb-2 whitespace-pre-wrap text-muted-foreground text-xs/relaxed">
+					<div className="mb-4 whitespace-pre-wrap text-muted-foreground text-xs/relaxed">
 						{item.description}
 					</div>
 				)}
 
-				<p className="mt-auto text-card-foreground/70 text-xs">
-					{hasMultipleVariants ? 'от ' : ''}
-					{firstVariant && formatPrice(firstVariant.price)}
-					{!hasMultipleVariants &&
-						firstVariant &&
-						!!firstVariant.duration &&
-						` / ${formatDuration(firstVariant.duration)}`}
-				</p>
+				<div className="mt-auto flex flex-col gap-0.5">
+					<p className="font-semibold text-foreground/90 text-sm [font-variant-numeric:tabular-nums]">
+						{firstVariant
+							? `${hasMultipleVariants ? 'от ' : ''}${formatPrice(firstVariant.price)}`
+							: '—'}
+					</p>
+					{!hasMultipleVariants && firstVariant && !!firstVariant.duration && (
+						<p className="text-muted-foreground text-xs">
+							Срок: {formatDuration(firstVariant.duration)}
+						</p>
+					)}
+				</div>
 			</CardContent>
 		</Card>
 	)
