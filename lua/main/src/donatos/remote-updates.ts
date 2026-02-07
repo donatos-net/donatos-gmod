@@ -2,6 +2,7 @@ import { netMessageToClient } from '@/donatos/net'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
+import { donatosPlayerServer } from '@/player/server'
 import { donatosHookId, donatosState } from '@/utils/state'
 
 let updatesSince: string | undefined
@@ -50,7 +51,7 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 			})
 
 			ply.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
-			await ply.Donatos()._sLoadRemoteData()
+			await donatosPlayerServer(ply).loadRemoteData()
 			netMessageToClient(ply, 'openUi', 'inventory')
 		}
 	}
@@ -58,7 +59,7 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 	for (const up of data.updatedPlayers) {
 		const ply = player.GetBySteamID64(up.externalId)
 		if (IsValid(ply)) {
-			await ply.Donatos()._sLoadRemoteData()
+			await donatosPlayerServer(ply).loadRemoteData()
 		}
 	}
 
@@ -73,12 +74,13 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 
 timer.Create(donatosHookId('timer-load-players'), 30, 0, async () => {
 	for (const ply of player.GetAll()) {
-		if (!ply.IsBot() && !ply.Donatos().IsLoaded) {
-			const { isError } = await ply.Donatos()._sLoadRemoteData()
+		if (!ply.IsBot() && !ply.Donatos().IsLoaded()) {
+			const dp = donatosPlayerServer(ply)
+			const { isError } = await dp.loadRemoteData()
 			if (isError) {
 				break
 			}
-			ply.Donatos()._sOnPlayerJoined()
+			dp.onPlayerJoined()
 		}
 	}
 })

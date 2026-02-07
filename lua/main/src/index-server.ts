@@ -3,6 +3,7 @@ import { handleServerMessage } from '@/donatos/net/server'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { meta } from '@/meta'
+import { donatosPlayerServer } from '@/player/server'
 import { log } from '@/utils/log'
 import { donatosHookId } from '@/utils/state'
 
@@ -18,10 +19,8 @@ hook.Add(
 			return
 		}
 
-		ply
-			.Donatos()
-			._sLoadRemoteData()
-			.then(() => ply.Donatos()._sOnPlayerJoined())
+		const p = donatosPlayerServer(ply)
+		p.loadRemoteData().then(() => p.onPlayerJoined())
 	},
 )
 
@@ -81,7 +80,7 @@ concommand.Add('donatos_update', async (ply: Player) => {
 })
 
 concommand.Add('donatos_activate_items', async (ply: Player) => {
-	for (const i of ply.Donatos().InventoryItems) {
+	for (const i of ply.Donatos().GetInventoryItems()) {
 		await handleServerMessage.activateItem(ply, { id: i.id })
 	}
 })

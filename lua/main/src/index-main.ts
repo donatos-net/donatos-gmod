@@ -43,9 +43,12 @@ if (file.Exists('donatos/config_sh.lua', 'LUA')) {
 }
 
 // re-init
-for (const p of player.GetAll()) {
-	if (p._donatos) {
-		p._donatos = DonatosPlayer.fromExisting(p._donatos)
+for (const ply of player.GetAll()) {
+	if (ply._donatos) {
+		const oldDonatos = ply._donatos
+		const newDonatos = new DonatosPlayer(ply)
+		newDonatos._remoteData = oldDonatos._remoteData
+		ply._donatos = newDonatos
 	}
 }
 

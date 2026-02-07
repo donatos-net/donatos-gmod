@@ -3,6 +3,7 @@ import { invokeDonatosItem } from '@/donatos/item'
 import { netMessageToClient, type ServerNetHandler } from '@/donatos/net'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
+import { donatosPlayerServer } from '@/player/server'
 import { log } from '@/utils/log'
 import { donatosState } from '@/utils/state'
 
@@ -33,7 +34,7 @@ type ServerActionHandlers = {
 
 export const handleServerMessage = {
 	requestSync: async (ply, input: undefined) => {
-		ply.Donatos()._sSyncPlayer()
+		donatosPlayerServer(ply).sync()
 		if (donatosState.remoteConfig.value) {
 			netMessageToClient(
 				undefined,
@@ -44,7 +45,7 @@ export const handleServerMessage = {
 		return ok(true)
 	},
 	requestRefresh: async (ply, input: undefined) => {
-		await ply.Donatos()._sLoadRemoteData()
+		await donatosPlayerServer(ply).loadRemoteData()
 		if (donatosState.remoteConfig.value) {
 			netMessageToClient(
 				undefined,
@@ -55,7 +56,7 @@ export const handleServerMessage = {
 		return ok(true)
 	},
 	purchaseGoods: async (ply, input: { goodsId: number; variantId: string }) => {
-		const playerId = ply.Donatos().ID
+		const playerId = ply.Donatos().GetID()
 		if (!playerId) {
 			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
 		}
@@ -72,21 +73,22 @@ export const handleServerMessage = {
 			return err(error)
 		}
 
-		await ply.Donatos()._sLoadRemoteData()
+		await donatosPlayerServer(ply).loadRemoteData()
 
 		ply.EmitSound('garrysmod/content_downloaded.wav', 75, 100, 0.3)
 
 		return ok(data)
 	},
 	activateItem: async (ply, input: { id: number }) => {
-		const playerId = ply.Donatos().ID
+		const playerId = ply.Donatos().GetID()
 		if (!playerId) {
 			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
 		}
 
 		const inventoryItem = ply
 			.Donatos()
-			.InventoryItems.find((i) => i.id === input.id)
+			.GetInventoryItems()
+			.find((i) => i.id === input.id)
 		if (!inventoryItem) {
 			return err('Ошибка: предмет не найден в инвентаре.')
 		}
@@ -145,12 +147,12 @@ export const handleServerMessage = {
 		}
 		ply.EmitSound('friends/friend_join.wav', 75, 100, 0.2)
 
-		void ply.Donatos()._sLoadRemoteData()
+		void donatosPlayerServer(ply).loadRemoteData()
 
 		return ok(true)
 	},
 	freezeActiveItem: async (ply, input: { id: number }) => {
-		const playerId = ply.Donatos().ID
+		const playerId = ply.Donatos().GetID()
 		if (!playerId) {
 			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
 		}
@@ -167,13 +169,14 @@ export const handleServerMessage = {
 			return err(error)
 		}
 
-		await ply.Donatos()._sLoadRemoteData()
-		ply.Donatos()._sOnPlayerJoined()
+		const dp = donatosPlayerServer(ply)
+		await dp.loadRemoteData()
+		dp.onPlayerJoined()
 
 		return ok(true)
 	},
 	unfreezeActiveItem: async (ply, input: { id: number }) => {
-		const playerId = ply.Donatos().ID
+		const playerId = ply.Donatos().GetID()
 		if (!playerId) {
 			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
 		}
@@ -190,8 +193,9 @@ export const handleServerMessage = {
 			return err(error)
 		}
 
-		await ply.Donatos()._sLoadRemoteData()
-		ply.Donatos()._sOnPlayerJoined()
+		const dp = donatosPlayerServer(ply)
+		await dp.loadRemoteData()
+		dp.onPlayerJoined()
 
 		return ok(true)
 	},
