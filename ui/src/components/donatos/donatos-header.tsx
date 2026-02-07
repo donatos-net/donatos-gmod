@@ -2,12 +2,14 @@ import {
 	BlockchainIcon,
 	Calendar02Icon,
 	Cancel01Icon,
+	Coins02Icon,
+	MoreVerticalIcon,
 	PlusSignIcon,
 	ShoppingBagIcon,
 } from '@hugeicons/core-free-icons'
 import { Link, useMatchRoute } from '@tanstack/react-router'
-import { DepositMethodDialog } from '@/components/donatos/deposit-method-dialog'
 import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
+import { IgsDepositDialog } from '@/components/donatos/igs-deposit-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,27 +28,24 @@ import { Icon } from '../icon'
 export function DonatosHeader() {
 	const { data: playerData } = usePlayerData()
 	const { data: serverConfig } = useServerConfig()
-	const { openDialog } = useDonatosDialog()
+	const { closeDialog, openDialog } = useDonatosDialog()
 	const matchRoute = useMatchRoute()
 
 	const handleBalanceClick = () => {
 		if (!playerData || !serverConfig) return
 
-		if (!serverConfig.igs.enabled) {
-			const payUrl = serverConfig.payUrl.replace(
-				'{id}',
-				playerData.player.externalId,
-			)
-			openExternalUrl(`${payUrl}&openDeposit=true`)
-			return
-		}
+		const payUrl = serverConfig.payUrl.replace(
+			'{id}',
+			playerData.player.externalId,
+		)
+		openExternalUrl(`${payUrl}&openDeposit=true`)
+	}
+
+	const handleIgsDepositClick = () => {
+		if (!serverConfig?.igs.enabled) return
 
 		openDialog(
-			<DepositMethodDialog
-				igsEnabled={serverConfig.igs.enabled}
-				payUrl={serverConfig.payUrl}
-				playerExternalId={playerData.player.externalId}
-			/>,
+			<IgsDepositDialog initialSum={100} onBack={() => closeDialog()} />,
 		)
 	}
 
@@ -93,14 +92,14 @@ export function DonatosHeader() {
 				aria-hidden
 				className="donatos-animated-bg pointer-events-none absolute inset-0 opacity-60"
 			/>
-			<div className="relative z-10 flex items-center gap-2">
+			<div className="relative z-10 flex items-center gap-1">
 				{navItems.map((item) => (
 					<Button
 						asChild
 						className={cn(
 							navButtonClass,
 							item.isActive &&
-								'bg-primary-foreground/15 text-primary-foreground ring-1 ring-primary-foreground/30',
+								'bg-primary-foreground/20 text-primary-foreground',
 						)}
 						key={item.to}
 						size="sm"
@@ -110,7 +109,10 @@ export function DonatosHeader() {
 							<Icon icon={item.icon} />
 							{item.label}
 							{item.badgeCount && item.badgeCount > 0 ? (
-								<Badge className="ml-1 bg-secondary/20" variant="default">
+								<Badge
+									className="ml-1 h-4 min-w-4 bg-primary-foreground/15 px-1 text-[10px] text-primary-foreground leading-none"
+									variant="default"
+								>
 									{item.badgeCount}
 								</Badge>
 							) : null}
@@ -120,35 +122,44 @@ export function DonatosHeader() {
 
 				{/* Right side buttons */}
 				<div className="ml-auto flex items-center gap-3">
-					<Button
-						className="border-primary-foreground/30 text-primary-foreground hover:bg-primary/80"
-						onClick={handleBalanceClick}
-						size="sm"
-						variant="outline"
-					>
-						Бонусы: {playerData?.player.balance ?? 0}
-					</Button>
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Avatar
-								className="cursor-pointer"
-								size="sm"
-								title={playerName || undefined}
-							>
-								<AvatarImage
-									alt={playerName || 'Player avatar'}
-									src={avatarUrl}
-								/>
-								<AvatarFallback>{avatarFallbackText}</AvatarFallback>
-							</Avatar>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							<DropdownMenuItem onClick={handleBalanceClick}>
-								<Icon icon={PlusSignIcon} />
-								Пополнить баланс
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+					<div className="inline-flex overflow-hidden rounded-md border border-primary-foreground/30">
+						<Button
+							className="rounded-none border-0 text-primary-foreground hover:bg-primary/80"
+							onClick={handleBalanceClick}
+							size="sm"
+							variant="outline"
+						>
+							Бонусы: {playerData?.player.balance ?? 0}
+						</Button>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button
+									className="rounded-none border-0 border-primary-foreground/30 border-l text-primary-foreground hover:bg-primary/80"
+									size="sm"
+									variant="outline"
+								>
+									<Icon icon={MoreVerticalIcon} />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								<DropdownMenuItem onClick={handleBalanceClick}>
+									<Icon icon={PlusSignIcon} />
+									Пополнить баланс
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									disabled={!serverConfig?.igs.enabled}
+									onClick={handleIgsDepositClick}
+								>
+									<Icon icon={Coins02Icon} />
+									Другие способы
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+					</div>
+					<Avatar size="sm" title={playerName || undefined}>
+						<AvatarImage alt={playerName || 'Player avatar'} src={avatarUrl} />
+						<AvatarFallback>{avatarFallbackText}</AvatarFallback>
+					</Avatar>
 					<Button
 						className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
 						onClick={() => closeUi()}
