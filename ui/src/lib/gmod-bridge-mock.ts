@@ -18,6 +18,16 @@ export function installMockBridge() {
 			console.log('[MockBridge] netMessageToServer', payload)
 
 			setTimeout(() => {
+				if (action === 'createIgsPaymentUrl') {
+					window.donatosNative?._resolveCallback(callbackId, {
+						success: true,
+						data: {
+							url: 'https://example.com/igs-pay/mock',
+						},
+					})
+					return
+				}
+
 				window.donatosNative?._resolveCallback(callbackId, {
 					success: true,
 					data: true,

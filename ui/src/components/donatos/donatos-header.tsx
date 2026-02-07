@@ -6,6 +6,8 @@ import {
 	ShoppingBagIcon,
 } from '@hugeicons/core-free-icons'
 import { Link, useMatchRoute } from '@tanstack/react-router'
+import { DepositMethodDialog } from '@/components/donatos/deposit-method-dialog'
+import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,15 +26,28 @@ import { Icon } from '../icon'
 export function DonatosHeader() {
 	const { data: playerData } = usePlayerData()
 	const { data: serverConfig } = useServerConfig()
+	const { openDialog } = useDonatosDialog()
 	const matchRoute = useMatchRoute()
 
 	const handleBalanceClick = () => {
 		if (!playerData || !serverConfig) return
-		const payUrl = serverConfig.payUrl.replace(
-			'{id}',
-			playerData.player.externalId,
+
+		if (!serverConfig.igs.enabled) {
+			const payUrl = serverConfig.payUrl.replace(
+				'{id}',
+				playerData.player.externalId,
+			)
+			openExternalUrl(`${payUrl}&openDeposit=true`)
+			return
+		}
+
+		openDialog(
+			<DepositMethodDialog
+				igsEnabled={serverConfig.igs.enabled}
+				payUrl={serverConfig.payUrl}
+				playerExternalId={playerData.player.externalId}
+			/>,
 		)
-		openExternalUrl(`${payUrl}&openDeposit=true`)
 	}
 
 	const isShopActive = matchRoute({ to: '/donatos/shop' })

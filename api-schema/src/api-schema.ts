@@ -7,6 +7,9 @@ export const serverApiSchema = {
 			name: z.string(),
 			updatedAt: z.date(),
 			payUrl: z.string(),
+			igs: z.object({
+				enabled: z.boolean(),
+			}),
 			goods: z
 				.object({
 					id: z.number(),
@@ -32,6 +35,16 @@ export const serverApiSchema = {
 					name: z.string(),
 				})
 				.array(),
+		}),
+	},
+	'server:igs-create-payment-url': {
+		input: z.object({
+			playerExternalId: z.string().min(1),
+			sum: z.coerce.number().positive(),
+			extra: z.string().min(1).max(255).optional(),
+		}),
+		output: z.object({
+			url: z.string().url(),
 		}),
 	},
 	'server:get-updates': {

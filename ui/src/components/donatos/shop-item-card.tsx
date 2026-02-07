@@ -1,4 +1,5 @@
 import { MoreVerticalIcon } from '@hugeicons/core-free-icons'
+import { DepositMethodDialog } from '@/components/donatos/deposit-method-dialog'
 import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
 import { useDonatosError } from '@/components/donatos/error-dialog'
 import { ShopActivateOfferDialog } from '@/components/donatos/shop-activate-offer-dialog'
@@ -24,7 +25,6 @@ import { usePlayerData } from '@/hooks/use-player-data'
 import { useServerConfig } from '@/hooks/use-server-config'
 import { formatDuration } from '@/lib/format-duration'
 import { formatPrice } from '@/lib/format-price'
-import { openExternalUrl } from '@/lib/gmod-bridge'
 import type { Good } from '@/types/donatos'
 
 interface ShopItemCardProps {
@@ -53,12 +53,14 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 				offer={{ requiredAmount, price }}
 				onConfirm={() => {
 					if (!playerData || !serverConfig) return
-					const payUrl = serverConfig.payUrl.replace(
-						'{id}',
-						playerData.player.externalId,
+					openDialog(
+						<DepositMethodDialog
+							depositAmount={requiredAmount}
+							igsEnabled={serverConfig.igs.enabled}
+							payUrl={serverConfig.payUrl}
+							playerExternalId={playerData.player.externalId}
+						/>,
 					)
-					openExternalUrl(`${payUrl}&openDeposit=${requiredAmount}`)
-					closeDialog()
 				}}
 			/>,
 		)

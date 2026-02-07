@@ -4,6 +4,9 @@ export const mockServerConfig: ServerConfig = {
 	name: 'Demo Server',
 	updatedAt: new Date(),
 	payUrl: 'https://example.com/pay/{id}',
+	igs: {
+		enabled: true,
+	},
 	goodsCategories: [
 		{ id: 1, name: 'VIP Ranks' },
 		{ id: 2, name: 'Weapons' },

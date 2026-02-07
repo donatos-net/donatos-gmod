@@ -55,6 +55,21 @@ export const handleServerMessage = {
 		}
 		return ok(true)
 	},
+	createIgsPaymentUrl: async (ply, input: { sum: number }) => {
+		const { isError, data, error } = await serverApiRequest(
+			'server:igs-create-payment-url',
+			{
+				playerExternalId: ply.SteamID64(),
+				sum: input.sum,
+			},
+		)
+
+		if (isError) {
+			return err(error)
+		}
+
+		return ok(data)
+	},
 	purchaseGoods: async (ply, input: { goodsId: number; variantId: string }) => {
 		const playerId = ply.Donatos().GetID()
 		if (!playerId) {

@@ -29,4 +29,10 @@ export type DonatosServerActions = {
 		input: { id: number }
 		output: ActionResult<true>
 	}
+	createIgsPaymentUrl: {
+		input: { sum: number }
+		output: ActionResult<
+			serverApiSchema['server:igs-create-payment-url']['output']
+		>
+	}
 }
