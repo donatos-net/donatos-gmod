@@ -1,11 +1,10 @@
 import type { serverApiSchema } from 'api-schema/src'
-import { donatosAddText } from '@/donatos/client-utils'
 import { type ClientNetHandler, clientNonce } from '@/donatos/net'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
-import { remoteConfig } from '@/donatos/remote-config'
 import type { DonatosUiTab } from '@/ui/web-panel'
 import { donatosWebUi, pushWebUiState } from '@/ui/web-panel'
-import { log } from '@/utils/log'
+import { donatosAddText, log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 const broadcastEnabled = CreateClientConVar(
 	'donatos_receive_announcements',
@@ -75,7 +74,7 @@ export const handleClientMessage = {
 		}
 	},
 	syncConfig: async (input: serverApiSchema['server:get-config']['output']) => {
-		remoteConfig.value = input
+		donatosState.remoteConfig.value = input
 		pushWebUiState('serverConfig', input)
 	},
 	syncPlayer: async (input: serverApiSchema['server:get-player']['output']) => {

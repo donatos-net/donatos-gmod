@@ -1,7 +1,7 @@
 import { netMessageToClient } from '@/donatos/net'
-import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
 import { log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 export async function loadRemoteConfig() {
 	log.info('Loading remote config...')
@@ -14,7 +14,7 @@ export async function loadRemoteConfig() {
 		return
 	}
 
-	remoteConfig.value = data
+	donatosState.remoteConfig.value = data
 	netMessageToClient(undefined, 'syncConfig', data)
 
 	log.info('Received new remote config')

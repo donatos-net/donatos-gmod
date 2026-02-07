@@ -3,8 +3,8 @@ import { handleServerMessage } from '@/donatos/net/server'
 import { fetchAddonReleases, installRelease } from '@/donatos/releases'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { meta } from '@/meta'
-import { donatosHookId } from '@/utils/addon'
 import { log } from '@/utils/log'
+import { donatosHookId } from '@/utils/state'
 
 donatosBootstrap?.addonVersionConVar?.SetString(meta.VERSION)
 

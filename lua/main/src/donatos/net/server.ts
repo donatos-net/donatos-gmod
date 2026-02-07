@@ -1,10 +1,10 @@
 import type { DonatosServerActions } from 'api-schema/src/server-actions'
-import { donatosItems, invokeDonatosItem } from '@/donatos/item'
+import { invokeDonatosItem } from '@/donatos/item'
 import { netMessageToClient, type ServerNetHandler } from '@/donatos/net'
-import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 type ActionResult<T> =
 	| { success: true; data: T }
@@ -34,15 +34,23 @@ type ServerActionHandlers = {
 export const handleServerMessage = {
 	requestSync: async (ply, input: undefined) => {
 		ply.Donatos()._sSyncPlayer()
-		if (remoteConfig.value) {
-			netMessageToClient(undefined, 'syncConfig', remoteConfig.value)
+		if (donatosState.remoteConfig.value) {
+			netMessageToClient(
+				undefined,
+				'syncConfig',
+				donatosState.remoteConfig.value,
+			)
 		}
 		return ok(true)
 	},
 	requestRefresh: async (ply, input: undefined) => {
 		await ply.Donatos()._sLoadRemoteData()
-		if (remoteConfig.value) {
-			netMessageToClient(undefined, 'syncConfig', remoteConfig.value)
+		if (donatosState.remoteConfig.value) {
+			netMessageToClient(
+				undefined,
+				'syncConfig',
+				donatosState.remoteConfig.value,
+			)
 		}
 		return ok(true)
 	},
@@ -84,7 +92,7 @@ export const handleServerMessage = {
 		}
 
 		if (inventoryItem.goods && inventoryItem.variant?.duration === undefined) {
-			const item = donatosItems[inventoryItem.goods.key]
+			const item = donatosState.items[inventoryItem.goods.key]
 			if (!item) {
 				return err(
 					'Ошибка: предмет не настроен. Обратитесь к администратору сервера.',

@@ -1,6 +1,6 @@
-import { persistedVar } from '@/utils/addon'
 import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 type DonatosItemInvokeData = {
 	goods: {
@@ -10,7 +10,7 @@ type DonatosItemInvokeData = {
 	}
 }
 
-interface DonatosItem {
+export interface DonatosItem {
 	key: string
 	_onActivate: ((ply: Player, data: DonatosItemInvokeData) => void)[]
 	_onPlayerJoin: ((ply: Player, data: DonatosItemInvokeData) => void)[]
@@ -28,15 +28,6 @@ interface DonatosItem {
 	}
 }
 
-export const donatosItems = persistedVar<Record<string, DonatosItem>>(
-	'items',
-	{},
-)
-export const knownSamRanks = persistedVar<Record<string, true>>(
-	'known_sam_ranks',
-	{},
-)
-
 export function donatosItem(key: string) {
 	const itm: DonatosItem = {
 		key,
@@ -53,7 +44,7 @@ export function donatosItem(key: string) {
 
 		SetSAMGroup: function (this, rank: string) {
 			this.meta.samRank = rank
-			knownSamRanks[rank] = true
+			donatosState.knownSamRanks[rank] = true
 			return this.OnPlayerJoin((ply) => {
 				;(
 					ply as Player & { sam_set_rank: (rank: string) => void }
@@ -71,7 +62,7 @@ export function donatosItem(key: string) {
 		meta: {},
 	}
 
-	donatosItems[key] = itm
+	donatosState.items[key] = itm
 	return itm
 }
 
@@ -87,7 +78,7 @@ export function invokeDonatosItem(
 		}
 	},
 ): Result<boolean, undefined> {
-	const item = donatosItems[key]
+	const item = donatosState.items[key]
 	if (!item || !IsValid(ply)) {
 		return result.ok(false)
 	}

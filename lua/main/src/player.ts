@@ -1,10 +1,11 @@
 import type { serverApiSchema } from 'api-schema/src'
-import { donatosItems, invokeDonatosItem, knownSamRanks } from '@/donatos/item'
+import { invokeDonatosItem } from '@/donatos/item'
 import { netMessageToClient } from '@/donatos/net'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { type Result, result } from '@/utils/lang'
 import { log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 type RemoteData = serverApiSchema['server:get-player']['output']
 
@@ -153,13 +154,16 @@ export class DonatosPlayer {
 					if (itm.isFrozen) {
 						continue
 					}
-					const donatosItem = donatosItems[itm.goods.key]
+					const donatosItem = donatosState.items[itm.goods.key]
 					if (donatosItem?.meta?.samRank) {
 						purchasedSamRanks[donatosItem.meta.samRank] = true
 					}
 				}
 
-				if (knownSamRanks[plySamRank] && !purchasedSamRanks[plySamRank]) {
+				if (
+					donatosState.knownSamRanks[plySamRank] &&
+					!purchasedSamRanks[plySamRank]
+				) {
 					log.info(
 						`Removing expired SAM rank ${plySamRank} from user ${ply.SteamID()}`,
 					)

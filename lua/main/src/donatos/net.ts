@@ -1,6 +1,6 @@
 import type { handleClientMessage } from '@/donatos/net/client'
 import type { handleServerMessage } from '@/donatos/net/server'
-import { persistedVar } from '@/utils/addon'
+import { donatosState } from '@/utils/state'
 
 // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type ServerNetHandler<I = any, O = any> = (
@@ -18,13 +18,7 @@ export type InferClientNetHandler<T extends ClientNetHandler> = {
 	in: Parameters<T>[0]
 }
 
-export const clientNonce = persistedVar<{
-	value: number
-	handlers: ((data: unknown) => void)[]
-}>('nonce', {
-	value: 1,
-	handlers: [],
-})
+export const clientNonce = donatosState.clientNonce
 
 export function netMessageToServer<T extends keyof typeof handleServerMessage>(
 	action: T,

@@ -1,9 +1,8 @@
 import { netMessageToClient } from '@/donatos/net'
-import { remoteConfig } from '@/donatos/remote-config'
 import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
-import { donatosHookId } from '@/utils/addon'
+import { donatosHookId, donatosState } from '@/utils/state'
 
 let updatesSince: string | undefined
 let serverUpdatedAt: string | undefined
@@ -63,7 +62,10 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 		}
 	}
 
-	if (serverUpdatedAt !== data.server.updatedAt || !remoteConfig.value) {
+	if (
+		serverUpdatedAt !== data.server.updatedAt ||
+		!donatosState.remoteConfig.value
+	) {
 		serverUpdatedAt = data.server.updatedAt
 		await loadRemoteConfig()
 	}

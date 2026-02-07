@@ -1,15 +1,12 @@
 export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 
 import { netMessageToServer } from '@/donatos/net'
-import { remoteConfig } from '@/donatos/remote-config'
-import { persistedVar } from '@/utils/addon'
 import { log } from '@/utils/log'
+import { donatosState } from '@/utils/state'
 
 const html = '__DONATOS_HTML__'
 
-const webPanelPersistedVar = persistedVar<{ panel?: DHTML }>('webPanel', {
-	panel: undefined,
-})
+const webPanelState = donatosState.webPanel
 
 createPanel()
 
@@ -38,16 +35,16 @@ function pushState(panel: DHTML, key: string, value: unknown) {
 }
 
 export function pushWebUiState(key: string, value: unknown) {
-	if (!isPanelValid(webPanelPersistedVar.panel)) {
+	if (!isPanelValid(webPanelState.panel)) {
 		return
 	}
 
-	pushState(webPanelPersistedVar.panel as DHTML, key, value)
+	pushState(webPanelState.panel as DHTML, key, value)
 }
 
 export function getPanelInstance() {
-	return isPanelValid(webPanelPersistedVar.panel)
-		? (webPanelPersistedVar.panel as DHTML)
+	return isPanelValid(webPanelState.panel)
+		? (webPanelState.panel as DHTML)
 		: undefined
 }
 
@@ -58,7 +55,7 @@ function createPanel() {
 	}
 
 	const panel = vgui.Create('DHTML') as DHTML
-	webPanelPersistedVar.panel = panel
+	webPanelState.panel = panel
 
 	// panel.SetPos(0, 0);
 	panel.SetSize(ScrW() / 2, ScrH() / 2)
@@ -97,7 +94,7 @@ function createPanel() {
 		panel.SetVisible(false)
 	})
 	panel.AddFunction('donatosLua', 'requestStateSync', () => {
-		pushState(panel, 'serverConfig', remoteConfig.value)
+		pushState(panel, 'serverConfig', donatosState.remoteConfig.value)
 
 		const remoteData = LocalPlayer().Donatos()._remoteData
 		if (remoteData.isLoaded) {
@@ -124,11 +121,11 @@ function createPanel() {
 
 export function donatosWebUi(tab?: string) {
 	// Create panel if not exists
-	if (!isPanelValid(webPanelPersistedVar.panel) || donatos.dev?.enabled) {
+	if (!isPanelValid(webPanelState.panel) || donatos.dev?.enabled) {
 		createPanel()
 	}
 
-	const panel = webPanelPersistedVar.panel as DHTML
+	const panel = webPanelState.panel as DHTML
 
 	// Show and focus panel
 	panel.SetVisible(true)
@@ -142,7 +139,7 @@ export function donatosWebUi(tab?: string) {
 }
 
 hook.Add('GUIMousePressed', 'donatos_web_ui', () => {
-	if (isPanelValid(webPanelPersistedVar.panel)) {
-		webPanelPersistedVar.panel?.SetVisible(false)
+	if (isPanelValid(webPanelState.panel)) {
+		webPanelState.panel?.SetVisible(false)
 	}
 })

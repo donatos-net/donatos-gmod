@@ -3,8 +3,6 @@ import type { donatosItem } from '@/donatos/item'
 import type { netMessageToServerCallback } from '@/donatos/net'
 import type { DonatosPlayer } from '@/player'
 import type { DonatosUiTab } from '@/ui/main'
-import type { ColorConfig } from '@/ui/ui-utils'
-import type { ButtonParams, ThemedUiConfig } from '@/utils/themed-ui'
 
 declare global {
 	declare let donatos: {
@@ -43,7 +41,7 @@ declare global {
 
 	declare let _donatos: {
 		_timersUuid?: string
-		_persistedVars: Record<string, unknown>
+		_state: Record<string, unknown>
 	}
 
 	interface Player {

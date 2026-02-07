@@ -1,6 +1,6 @@
 import { netMessageToServer, netMessageToServerCallback } from '@/donatos/net'
 import { donatosWebUi } from '@/ui/web-panel'
-import { donatosHookId } from '@/utils/addon'
+import { donatosHookId } from '@/utils/state'
 
 const openUi = (tab?: Parameters<typeof donatosWebUi>[0]) => {
 	return donatosWebUi(tab)
