@@ -10,9 +10,9 @@ export const Route = createFileRoute('/donatos/inventory')({
 })
 
 function InventoryTab() {
-	const { data: playerData } = usePlayerData()
+	const { data: playerData, isLoading } = usePlayerData()
 
-	if (!playerData) {
+	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center">
 				<p className="text-muted-foreground text-sm">Загрузка...</p>
@@ -20,7 +20,7 @@ function InventoryTab() {
 		)
 	}
 
-	if (playerData.inventoryItems.length === 0) {
+	if (!playerData || playerData.inventoryItems.length === 0) {
 		return <EmptyState message="Инвентарь пуст" />
 	}
 

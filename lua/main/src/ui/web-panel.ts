@@ -95,10 +95,13 @@ function createPanel() {
 	})
 	panel.AddFunction('donatosLua', 'requestStateSync', () => {
 		pushState(panel, 'serverConfig', donatosState.remoteConfig.value)
-
-		const remoteData = LocalPlayer().Donatos()._remoteData
-		if (remoteData.isLoaded) {
-			pushState(panel, 'playerData', remoteData.data)
+		const localPlayer = LocalPlayer()
+		if (IsValid(localPlayer)) {
+			pushState(panel, 'playerExternalId', localPlayer.SteamID64())
+			const remoteData = localPlayer.Donatos()._remoteData
+			if (remoteData.isLoaded) {
+				pushState(panel, 'playerData', remoteData.data)
+			}
 		}
 	})
 

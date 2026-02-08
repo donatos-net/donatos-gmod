@@ -44,5 +44,9 @@ export function installMockBridge() {
 	}
 
 	window.donatosNative?.setState('serverConfig', mockServerConfig)
+	window.donatosNative?.setState(
+		'playerExternalId',
+		mockPlayerData.player.externalId,
+	)
 	window.donatosNative?.setState('playerData', mockPlayerData)
 }

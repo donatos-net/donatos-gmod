@@ -20,6 +20,7 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { usePlayerData } from '@/hooks/use-player-data'
+import { usePlayerExternalId } from '@/hooks/use-player-external-id'
 import { useServerConfig } from '@/hooks/use-server-config'
 import { closeUi, openExternalUrl } from '@/lib/gmod-bridge'
 import { cn } from '@/lib/utils'
@@ -28,17 +29,16 @@ import { ButtonGroup } from '../ui/button-group'
 
 export function DonatosHeader() {
 	const { data: playerData } = usePlayerData()
+	const { data: playerExternalId } = usePlayerExternalId()
 	const { data: serverConfig } = useServerConfig()
 	const { closeDialog, openDialog } = useDonatosDialog()
 	const matchRoute = useMatchRoute()
+	const canUseBalanceActions = serverConfig && playerExternalId
 
 	const handleBalanceClick = () => {
-		if (!playerData || !serverConfig) return
+		if (!canUseBalanceActions) return
 
-		const payUrl = serverConfig.payUrl.replace(
-			'{id}',
-			playerData.player.externalId,
-		)
+		const payUrl = serverConfig.payUrl.replace('{id}', playerExternalId)
 		openExternalUrl(`${payUrl}&openDeposit=true`)
 	}
 
@@ -121,6 +121,7 @@ export function DonatosHeader() {
 				<ButtonGroup>
 					<Button
 						className="dark:border-foreground/15 dark:bg-foreground/10"
+						disabled={!canUseBalanceActions}
 						onClick={handleBalanceClick}
 						size="sm"
 						variant="outline"
@@ -138,7 +139,10 @@ export function DonatosHeader() {
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							<DropdownMenuItem onClick={handleBalanceClick}>
+							<DropdownMenuItem
+								disabled={!canUseBalanceActions}
+								onClick={handleBalanceClick}
+							>
 								<Icon icon={PlusSignIcon} />
 								Пополнить баланс
 							</DropdownMenuItem>

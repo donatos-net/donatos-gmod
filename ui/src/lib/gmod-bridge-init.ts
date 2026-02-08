@@ -12,6 +12,8 @@ export function initGmodBridge(queryClient: QueryClient) {
 
 	registerStateCallbacks({
 		playerData: (value) => queryClient.setQueryData(['player-data'], value),
+		playerExternalId: (value) =>
+			queryClient.setQueryData(['player-external-id'], value),
 		serverConfig: (value) => queryClient.setQueryData(['server-config'], value),
 	})
 

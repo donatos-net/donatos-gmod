@@ -1,7 +1,7 @@
 @import "./chrome86-fixes.css";
 
 /* @import "@fontsource-variable/inter"; */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap");
 
 /* @import "tw-animate-css";
 @import "shadcn/tailwind.css"; */
@@ -54,7 +54,7 @@
 		--card-foreground: oklch(0.985 0 0);
 		--popover: oklch(0.21 0.006 285.885);
 		--popover-foreground: oklch(0.985 0 0);
-		--primary: oklch(0.87 0.00 0);
+		--primary: oklch(0.87 0 0);
 		--primary-foreground: oklch(0.205 0 0);
 		--secondary: oklch(0.274 0.006 286.033);
 		--secondary-foreground: oklch(0.985 0 0);
@@ -119,11 +119,13 @@
 
 @layer utilities {
 	.donatos-header-surface {
-		background: linear-gradient(-45deg,
-				rgba(238, 119, 82, 0.6),
-				rgba(231, 60, 126, 0.6),
-				rgba(35, 166, 213, 0.6),
-				rgba(35, 213, 171, 0.6));
+		background: linear-gradient(
+			-45deg,
+			rgba(238, 119, 82, 0.6),
+			rgba(231, 60, 126, 0.6),
+			rgba(35, 166, 213, 0.6),
+			rgba(35, 213, 171, 0.6)
+		);
 		background-size: 400% 400%;
 		animation: donatos-header-gradient 10s ease infinite;
 	}

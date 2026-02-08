@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useActivateItem, usePurchaseItem } from '@/hooks/use-donatos-mutations'
 import { usePlayerData } from '@/hooks/use-player-data'
+import { usePlayerExternalId } from '@/hooks/use-player-external-id'
 import { useServerConfig } from '@/hooks/use-server-config'
 import { formatDuration } from '@/lib/format-duration'
 import { formatPrice } from '@/lib/format-price'
@@ -40,6 +41,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	const { showError } = useDonatosError()
 	const { openDialog, closeDialog } = useDonatosDialog()
 	const { data: playerData } = usePlayerData()
+	const { data: playerExternalId } = usePlayerExternalId()
 	const { data: serverConfig } = useServerConfig()
 
 	const firstVariant = item.variants?.[0]
@@ -48,15 +50,12 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 	const showDepositDialog = (requiredAmount: number, price: number) => {
 		openDialog(
 			<ShopDepositDialog
-				disabled={!playerData || !serverConfig}
+				disabled={!serverConfig || !playerExternalId}
 				itemName={item.name}
 				offer={{ requiredAmount, price }}
 				onConfirm={() => {
-					if (!playerData || !serverConfig) return
-					const payUrl = serverConfig.payUrl.replace(
-						'{id}',
-						playerData.player.externalId,
-					)
+					if (!serverConfig || !playerExternalId) return
+					const payUrl = serverConfig.payUrl.replace('{id}', playerExternalId)
 					openExternalUrl(`${payUrl}&openDeposit=${requiredAmount}`)
 				}}
 			/>,

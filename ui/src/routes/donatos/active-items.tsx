@@ -10,7 +10,7 @@ export const Route = createFileRoute('/donatos/active-items')({
 })
 
 function ActiveItemsTab() {
-	const { data: playerData } = usePlayerData()
+	const { data: playerData, isLoading } = usePlayerData()
 
 	const sortedItems = useMemo(() => {
 		if (!playerData) return []
@@ -28,7 +28,7 @@ function ActiveItemsTab() {
 		})
 	}, [playerData])
 
-	if (!playerData) {
+	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center">
 				<p className="text-muted-foreground text-sm">Загрузка...</p>
@@ -36,7 +36,7 @@ function ActiveItemsTab() {
 		)
 	}
 
-	if (sortedItems.length === 0) {
+	if (!playerData || sortedItems.length === 0) {
 		return <EmptyState message="У вас нет активных предметов" />
 	}
 
