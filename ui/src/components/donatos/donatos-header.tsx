@@ -88,12 +88,8 @@ export function DonatosHeader() {
 			.join('') || '??'
 
 	return (
-		<div className="relative flex w-full flex-row gap-0 px-2 py-1.5 text-foreground">
-			<div
-				aria-hidden
-				className="donatos-header-surface pointer-events-none absolute inset-0 opacity-60"
-			/>
-			<div className="relative z-10 flex flex-1 items-center gap-1.5">
+		<div className="donatos-header-surface flex w-full flex-row gap-0 px-2 py-1.5 text-foreground">
+			<div className="flex flex-1 items-center gap-1.5">
 				{navItems.map((item) => (
 					<Button
 						asChild
@@ -121,7 +117,7 @@ export function DonatosHeader() {
 				))}
 			</div>
 
-			<div className="relative z-10 flex items-center gap-2.5 pl-2">
+			<div className="flex items-center gap-2.5 pl-2">
 				<ButtonGroup>
 					<Button
 						className="dark:border-foreground/15 dark:bg-foreground/10"

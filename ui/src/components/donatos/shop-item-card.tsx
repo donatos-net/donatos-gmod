@@ -180,7 +180,7 @@ export function ShopItemCard({ item }: ShopItemCardProps) {
 							? `${hasMultipleVariants ? 'от ' : ''}${formatPrice(firstVariant.price)}`
 							: '—'}
 					</p>
-					{!hasMultipleVariants && firstVariant && (
+					{!hasMultipleVariants && firstVariant && firstVariant.duration && (
 						<p className="text-muted-foreground text-xs">
 							Срок: {formatDuration(firstVariant.duration)}
 						</p>

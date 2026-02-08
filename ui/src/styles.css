@@ -119,7 +119,11 @@
 
 @layer utilities {
 	.donatos-header-surface {
-		background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+		background: linear-gradient(-45deg,
+				rgba(238, 119, 82, 0.6),
+				rgba(231, 60, 126, 0.6),
+				rgba(35, 166, 213, 0.6),
+				rgba(35, 213, 171, 0.6));
 		background-size: 400% 400%;
 		animation: donatos-header-gradient 10s ease infinite;
 	}
