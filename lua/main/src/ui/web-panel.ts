@@ -246,7 +246,6 @@ export function donatosWebUi(tab?: string) {
 
 hook.Add('GUIMousePressed', 'donatos_web_ui', () => {
 	if (isPanelValid(webPanelState.panel)) {
-		markWebPanelUsed()
 		webPanelState.panel?.SetVisible(false)
 	}
 })

@@ -38,7 +38,7 @@ export class DonatosServerPlayer extends DonatosSharedPlayer {
 		netMessageToClient(this._ply, 'syncPlayer', data)
 
 		if (prevBalance && prevBalance < this.GetBalance()) {
-			this.print(`Ваш баланс пополнен на ${this.GetBalance() - prevBalance} р.`)
+			this.print(`Ваш баланс пополнен на ${this.GetBalance() - prevBalance}`)
 			this._ply.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
 		}
 
