@@ -11,6 +11,7 @@ declare global {
 			openUrl: (url: string) => void
 			closeUi: () => void
 			requestStateSync: () => void
+			uiReady: () => void
 		}
 		donatosNative?: {
 			_resolveCallback: (callbackId: number, result: unknown) => void

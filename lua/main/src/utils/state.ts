@@ -38,11 +38,16 @@ export function donatosHookId(name: string) {
 
 _donatos._timersUuid = CurTime().toString()
 
+const currentUuid = _donatos._timersUuid
+
+export function hasInstanceChanged() {
+	return currentUuid !== _donatos._timersUuid
+}
+
 export function delay(seconds: number): Promise<void> {
-	const uuid = _donatos._timersUuid
 	return new Promise((resolve) =>
 		timer.Simple(seconds, () => {
-			if (uuid === _donatos._timersUuid) {
+			if (!hasInstanceChanged()) {
 				resolve()
 			}
 		}),

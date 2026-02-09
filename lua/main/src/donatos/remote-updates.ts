@@ -3,23 +3,21 @@ import { serverApiRequest } from '@/donatos/server-api'
 import { sendDonatosMessage } from '@/donatos/server-utils'
 import { loadRemoteConfig } from '@/donatos/utils/load-remote-config'
 import { donatosPlayerServer } from '@/player/server'
-import { donatosHookId, donatosState } from '@/utils/state'
+import { log } from '@/utils/log'
+import { delay, donatosState } from '@/utils/state'
 
 let updatesSince: string | undefined
 let serverUpdatedAt: string | undefined
 
-timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
+async function performUpdates() {
 	const playerExternalIds: string[] = []
 	for (const p of player.GetAll()) {
 		playerExternalIds.push(p.SteamID64())
 	}
-	const { isError, data, error } = await serverApiRequest(
-		'server:get-updates:v2',
-		{
-			since: updatesSince,
-			playerExternalIds,
-		},
-	)
+	const { isError, data } = await serverApiRequest('server:get-updates:v2', {
+		since: updatesSince,
+		playerExternalIds,
+	})
 
 	if (isError) {
 		return
@@ -70,9 +68,19 @@ timer.Create(donatosHookId('timer-updates'), 10, 0, async () => {
 		serverUpdatedAt = data.server.updatedAt
 		await loadRemoteConfig()
 	}
-})
+}
 
-timer.Create(donatosHookId('timer-load-players'), 30, 0, async () => {
+async function scheduleUpdates() {
+	await delay(10)
+	try {
+		await performUpdates()
+	} catch (error) {
+		log.error(`performUpdates failed: ${tostring(error)}`)
+	}
+	void scheduleUpdates()
+}
+
+async function performLoadPlayers() {
 	for (const ply of player.GetAll()) {
 		if (!ply.IsBot() && !ply.Donatos().IsLoaded()) {
 			const dp = donatosPlayerServer(ply)
@@ -83,4 +91,17 @@ timer.Create(donatosHookId('timer-load-players'), 30, 0, async () => {
 			dp.onPlayerJoined()
 		}
 	}
-})
+}
+
+async function scheduleLoadPlayers() {
+	await delay(30)
+	try {
+		await performLoadPlayers()
+	} catch (error) {
+		log.error(`performLoadPlayers failed: ${tostring(error)}`)
+	}
+	void scheduleLoadPlayers()
+}
+
+void scheduleUpdates()
+void scheduleLoadPlayers()

@@ -8,6 +8,7 @@ type CallbackEntry = {
 let callbackIdCounter = 0
 const callbackMap = new Map<number, CallbackEntry>()
 const stateCallbacks: Record<string, (value: unknown) => void> = {}
+let uiReadyNotified = false
 
 export function installGmodBridge() {
 	if (window.donatosNative) {
@@ -95,4 +96,13 @@ export function requestStateSync() {
 	if (window.donatosLua?.requestStateSync) {
 		window.donatosLua.requestStateSync()
 	}
+}
+
+export function notifyUiReady() {
+	if (uiReadyNotified) {
+		return
+	}
+
+	uiReadyNotified = true
+	window.donatosLua?.uiReady()
 }

@@ -50,7 +50,7 @@ function ShopTab() {
 			/>
 			<ScrollArea className="min-h-0 w-full flex-1">
 				{totalItems === 0 || visibleItemCount === 0 ? (
-					<EmptyState message="No items available" />
+					<EmptyState message="Нет доступных предметов" />
 				) : (
 					<ShopItemsGrid
 						categories={config.goodsCategories}

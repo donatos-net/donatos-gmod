@@ -41,6 +41,7 @@ export function installMockBridge() {
 			window.close()
 		},
 		requestStateSync() {},
+		uiReady() {},
 	}
 
 	window.donatosNative?.setState('serverConfig', mockServerConfig)

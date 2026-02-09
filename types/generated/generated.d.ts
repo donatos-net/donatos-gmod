@@ -13557,7 +13557,7 @@ interface Panel {
    * <arg type="Panel" name="targetPanel">The panel object that was animated.</arg>
    * </callback>
    */
-  AlphaTo(alpha: number, duration: number, delay = 0, callback?: AnimationData): void
+  AlphaTo(alpha: number, duration: number, delay = 0, callback?: (data: AnimationData, panel: this) => void): void
 
   /**
    * [Client and Menu]
