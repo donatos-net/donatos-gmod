@@ -80,13 +80,11 @@ function createPanel() {
 		'DPanel',
 		panel,
 	) as LoadingOverlayPanel
-	let loadingOverlayFinalized = false
 
 	loadingOverlay.SetPos(0, 0)
 	loadingOverlay.SetSize(panel.GetWide(), panel.GetTall())
-	loadingOverlay.SetVisible(true)
 	loadingOverlay.SetAlpha(0)
-	loadingOverlay.AlphaTo(255, 0.2)
+	loadingOverlay.AlphaTo(255, 0.1)
 	loadingOverlay.SetZPos(32767)
 	loadingOverlay.Paint = function (this: DPanel, w: number, h: number) {
 		draw.RoundedBox(w * 0.01, 0, 0, w, h, Color(10, 12, 14, 254))
@@ -119,35 +117,17 @@ function createPanel() {
 		)
 	}
 
-	const setLoadingOverlayVisible = (isVisible: boolean) => {
-		if (
-			loadingOverlayFinalized ||
-			!loadingOverlay ||
-			!IsValid(loadingOverlay)
-		) {
+	const removeLoadingOverlay = () => {
+		if (!loadingOverlay || !IsValid(loadingOverlay)) {
 			return
 		}
 
 		loadingOverlay.Stop()
 
-		if (isVisible) {
-			loadingOverlay.SetVisible(true)
-			loadingOverlay.SetAlpha(255)
-			return
-		}
-
-		loadingOverlay.SetVisible(true)
-		const overlayToRemove = loadingOverlay
 		loadingOverlay.AlphaTo(0, 0.5, 0, (_, targetPanel: Panel) => {
-			const panelToRemove = targetPanel as LoadingOverlayPanel
-			if (!IsValid(panelToRemove)) {
-				return
-			}
-
-			panelToRemove.Remove()
-			loadingOverlayFinalized = true
-			if (loadingOverlay === overlayToRemove) {
-				loadingOverlay = undefined
+			loadingOverlay = undefined
+			if (IsValid(targetPanel)) {
+				targetPanel.Remove()
 			}
 		})
 	}
@@ -183,7 +163,7 @@ function createPanel() {
 		panel.SetVisible(false)
 	})
 	panel.AddFunction('donatosLua', 'uiReady', () => {
-		setLoadingOverlayVisible(false)
+		removeLoadingOverlay()
 	})
 	panel.AddFunction('donatosLua', 'requestStateSync', () => {
 		pushState(panel, 'serverConfig', donatosState.remoteConfig.value)
@@ -197,10 +177,6 @@ function createPanel() {
 		}
 	})
 
-	panel.OnBeginLoadingDocument = () => {
-		setLoadingOverlayVisible(true)
-	}
-
 	panel.OnDocumentReady = () => {
 		const zoom = math.min(ScrW() / 1920, ScrH() / 1080)
 		if (zoom > 1) {
@@ -209,7 +185,6 @@ function createPanel() {
 	}
 
 	const devUrl = donatos.dev?.enabled ? donatos.dev?.webUiUrl : undefined
-	setLoadingOverlayVisible(true)
 	if (devUrl && devUrl.length > 0) {
 		panel.OpenURL(devUrl)
 	} else {
