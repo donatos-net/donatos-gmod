@@ -2,18 +2,13 @@ export type DonatosUiTab = 'shop' | 'inventory' | 'activeItems' | 'profile'
 
 import { netMessageToServer } from '@/donatos/net'
 import { log } from '@/utils/log'
-import { delay, donatosState } from '@/utils/state'
+import { delay, donatosHookId, donatosState } from '@/utils/state'
 
 const html = '__DONATOS_HTML__'
 
 const webPanelState = donatosState.webPanel
 
-{
-	const old = getPanelInstance()
-	if (old) {
-		old.Remove()
-	}
-}
+destroyPanel()
 
 let webPanelLastUsedAt = RealTime()
 
@@ -21,9 +16,7 @@ function markWebPanelUsed() {
 	webPanelLastUsedAt = RealTime()
 }
 
-// createPanel()
-
-function isPanelValid(panel?: DHTML) {
+function isPanelValid(panel?: DHTML): panel is DHTML {
 	return panel !== undefined && IsValid(panel)
 }
 
@@ -52,7 +45,7 @@ export function pushWebUiState(key: string, value: unknown) {
 		return
 	}
 
-	pushState(webPanelState.panel as DHTML, key, value)
+	pushState(webPanelState.panel, key, value)
 }
 
 export function getPanelInstance() {
@@ -61,11 +54,15 @@ export function getPanelInstance() {
 		: undefined
 }
 
-function createPanel() {
-	const old = getPanelInstance()
-	if (old) {
-		old.Remove()
+function destroyPanel() {
+	if (IsValid(webPanelState.panel)) {
+		webPanelState.panel?.Remove()
 	}
+	webPanelState.panel = undefined
+}
+
+function createPanel() {
+	destroyPanel()
 
 	const panel = vgui.Create('DHTML') as DHTML
 	webPanelState.panel = panel
@@ -75,7 +72,6 @@ function createPanel() {
 	panel.SetKeyboardInputEnabled(true)
 	panel.SetMouseInputEnabled(true)
 	panel.Center()
-	panel.SetVisible(false) // Create in background
 
 	type LoadingOverlayPanel = DPanel & {
 		Paint?: (this: DPanel, w: number, h: number) => void
@@ -86,17 +82,17 @@ function createPanel() {
 	) as LoadingOverlayPanel
 	let loadingOverlayFinalized = false
 
-	loadingOverlay.Dock(DOCK.FILL)
+	loadingOverlay.SetPos(0, 0)
+	loadingOverlay.SetSize(panel.GetWide(), panel.GetTall())
 	loadingOverlay.SetVisible(true)
-	loadingOverlay.SetAlpha(255)
-	loadingOverlay.SetMouseInputEnabled(false)
-	loadingOverlay.SetKeyboardInputEnabled(false)
+	loadingOverlay.SetAlpha(0)
+	loadingOverlay.AlphaTo(255, 0.2)
 	loadingOverlay.SetZPos(32767)
 	loadingOverlay.Paint = function (this: DPanel, w: number, h: number) {
 		draw.RoundedBox(w * 0.01, 0, 0, w, h, Color(10, 12, 14, 254))
 
 		const barWidth = math.min(420, w * 0.7)
-		const barHeight = w * 0.005
+		const barHeight = math.min(10, w * 0.005)
 		const barX = (w - barWidth) / 2
 		const barY = h / 2 - barHeight / 2
 		const chunkWidth = barWidth * 0.28
@@ -226,12 +222,11 @@ function createPanel() {
 export function donatosWebUi(tab?: string) {
 	markWebPanelUsed()
 
-	// Create panel if not exists
-	if (!isPanelValid(webPanelState.panel) || donatos.dev?.enabled) {
+	if (donatos.dev?.enabled) {
 		createPanel()
 	}
 
-	const panel = webPanelState.panel as DHTML
+	const panel = getPanelInstance() ?? createPanel()
 
 	// Show and focus panel
 	panel.SetVisible(true)
@@ -244,10 +239,8 @@ export function donatosWebUi(tab?: string) {
 	return panel
 }
 
-hook.Add('GUIMousePressed', 'donatos_web_ui', () => {
-	if (isPanelValid(webPanelState.panel)) {
-		webPanelState.panel?.SetVisible(false)
-	}
+hook.Add('GUIMousePressed', donatosHookId('web_ui'), () => {
+	getPanelInstance()?.SetVisible(false)
 })
 
 function performGc() {
@@ -261,17 +254,11 @@ function performGc() {
 		return
 	}
 
-	const panel = panelRef as DHTML
-	if (panel.IsVisible()) {
+	if (panelRef.IsVisible() || RealTime() - webPanelLastUsedAt < 5 * 60) {
 		return
 	}
 
-	if (RealTime() - webPanelLastUsedAt < 5 * 60) {
-		return
-	}
-
-	panel.Remove()
-	webPanelState.panel = undefined
+	destroyPanel()
 }
 
 async function scheduleGc() {
