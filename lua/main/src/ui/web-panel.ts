@@ -184,6 +184,7 @@ function createPanel() {
 		}
 	}
 
+	// TODO: how to prevent shift click?
 	panel.OnChangeTargetURL = () => {}
 
 	const devUrl = donatos.dev?.enabled ? donatos.dev?.webUiUrl : undefined

@@ -7,7 +7,7 @@ import {
 	PlusSignIcon,
 	ShoppingBagIcon,
 } from '@hugeicons/core-free-icons'
-import { Link, useMatchRoute } from '@tanstack/react-router'
+import { useMatchRoute } from '@tanstack/react-router'
 import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
 import { IgsDepositDialog } from '@/components/donatos/igs-deposit-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -25,6 +25,7 @@ import { useServerConfig } from '@/hooks/use-server-config'
 import { closeUi, openExternalUrl } from '@/lib/gmod-bridge'
 import { cn } from '@/lib/utils'
 import { Icon } from '../icon'
+import { CustomLink } from '../link'
 import { ButtonGroup } from '../ui/button-group'
 
 export function DonatosHeader() {
@@ -101,7 +102,7 @@ export function DonatosHeader() {
 						size="sm"
 						variant="ghost"
 					>
-						<Link to={item.to}>
+						<CustomLink to={item.to}>
 							<Icon icon={item.icon} />
 							{item.label}
 							{item.badgeCount && item.badgeCount > 0 ? (
@@ -112,7 +113,7 @@ export function DonatosHeader() {
 									{item.badgeCount}
 								</Badge>
 							) : null}
-						</Link>
+						</CustomLink>
 					</Button>
 				))}
 			</div>
