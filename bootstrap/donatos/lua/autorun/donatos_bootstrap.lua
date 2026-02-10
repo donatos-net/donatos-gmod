@@ -11,6 +11,10 @@
 
 AddCSLuaFile()
 
+if file.Exists("donatos/config_sh.lua", "LUA") then
+	AddCSLuaFile("donatos/config_sh.lua")
+end
+
 if !donatosBootstrap then
 	donatosBootstrap = {}
 end

@@ -64,6 +64,8 @@ function destroyPanel() {
 function createPanel() {
 	destroyPanel()
 
+	log.debug('Creating Web UI')
+
 	const panel = vgui.Create('DHTML') as DHTML
 	webPanelState.panel = panel
 
@@ -185,8 +187,6 @@ function createPanel() {
 	}
 
 	// TODO: how to prevent shift click?
-	panel.OnChangeTargetURL = () => {}
-
 	const devUrl = donatos.dev?.enabled ? donatos.dev?.webUiUrl : undefined
 	if (devUrl && devUrl.length > 0) {
 		panel.OpenURL(devUrl)
