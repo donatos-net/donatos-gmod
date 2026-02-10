@@ -36,7 +36,7 @@ function pushState(panel: DHTML, key: string, value: unknown) {
 	const payload = util.TableToJSON({ value })
 	const safeKey = string.JavascriptSafe(key)
 	const safePayload = string.JavascriptSafe(payload ?? '{}')
-	const js = `window.donatosNative.setState?.('${safeKey}', JSON.parse('${safePayload}').value)`
+	const js = `window.donatosNative?.setState?.('${safeKey}', JSON.parse('${safePayload}').value)`
 	panel.QueueJavascript(js)
 }
 
