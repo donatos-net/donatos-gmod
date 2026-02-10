@@ -184,6 +184,8 @@ function createPanel() {
 		}
 	}
 
+	panel.OnChangeTargetURL = () => {}
+
 	const devUrl = donatos.dev?.enabled ? donatos.dev?.webUiUrl : undefined
 	if (devUrl && devUrl.length > 0) {
 		panel.OpenURL(devUrl)
