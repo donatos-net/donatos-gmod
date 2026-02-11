@@ -15,7 +15,9 @@ interface AddonRelease {
 }
 
 export const localReleaseJson = 'donatos/release.json'
-export const localBundlePath = 'donatos/bundle.txt'
+export const localBundlePath = CLIENT
+	? 'donatos/bundle.txt'
+	: 'donatos/bundle.server.txt'
 
 export async function fetchAddonReleases(): Promise<Result<AddonApiResponse>> {
 	const res = await httpRequest({
