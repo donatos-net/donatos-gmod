@@ -85,11 +85,11 @@ export const handleClientMessage = {
 
 if (CLIENT) {
 	net.Receive('donatos', () => {
-		const [action, data] = util.JSONToTable(net.ReadString()) as [
+		const response = util.JSONToTable(net.ReadString()) as [
 			keyof typeof handleClientMessage,
 			unknown,
 		]
 		// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-		handleClientMessage[action]?.(data as any)
+		handleClientMessage[response[0]]?.(response[1] as any)
 	})
 }

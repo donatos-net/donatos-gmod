@@ -1,5 +1,4 @@
 import { GiftIcon, MoreHorizontalIcon } from '@hugeicons/core-free-icons'
-import { useDonatosDialog } from '@/components/donatos/dynamic-dialog'
 import { useDonatosError } from '@/components/donatos/error-dialog'
 import { InventoryGiftDialog } from '@/components/donatos/inventory-gift-dialog'
 import { Icon } from '@/components/icon'
@@ -20,10 +19,10 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
-import { useActivateItem, useGiftItem } from '@/hooks/use-donatos-mutations'
-import { useOnlinePlayers } from '@/hooks/use-online-players'
+import { useActivateItem } from '@/hooks/use-donatos-mutations'
 import { formatDurationInParens } from '@/lib/format-duration'
 import type { InventoryItem } from '@/types/donatos'
+import { useDonatosDialog } from './dynamic-dialog'
 
 interface InventoryItemCardProps {
 	item: InventoryItem
@@ -31,34 +30,13 @@ interface InventoryItemCardProps {
 
 export function InventoryItemCard({ item }: InventoryItemCardProps) {
 	const { mutate: activateItem, isPending: isActivating } = useActivateItem()
-	const { mutateAsync: giftItem } = useGiftItem()
-	const { data: onlinePlayers = [], isLoading: isLoadingPlayers } =
-		useOnlinePlayers()
-	// const { mutate: dropItem } = useDropItem();
+	const { openDialog } = useDonatosDialog()
 	const { showError } = useDonatosError()
-	const { openDialog, closeDialog } = useDonatosDialog()
 
 	const durationText = formatDurationInParens(item.variant?.duration)
 
 	const openGiftDialog = () => {
-		openDialog(
-			<InventoryGiftDialog
-				isLoadingPlayers={isLoadingPlayers}
-				itemName={item.goods?.name ?? 'этот предмет'}
-				onConfirm={async (gifteeExternalId) => {
-					try {
-						await giftItem({
-							itemId: item.id,
-							gifteeExternalId,
-						})
-						closeDialog()
-					} catch (error) {
-						showError(error)
-					}
-				}}
-				players={onlinePlayers}
-			/>,
-		)
+		openDialog(<InventoryGiftDialog item={item} />)
 	}
 
 	return (

@@ -16,34 +16,34 @@ import {
 	SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import type { OnlinePlayer } from '@/types/donatos'
+import { useGiftItem } from '@/hooks/use-donatos-mutations'
+import { useOnlinePlayers } from '@/hooks/use-online-players'
+import type { InventoryItem } from '@/types/donatos'
+import { useDonatosDialog } from './dynamic-dialog'
+import { useDonatosError } from './error-dialog'
 
-interface InventoryGiftDialogProps {
-	itemName: string
-	players: OnlinePlayer[]
-	isLoadingPlayers: boolean
-	onConfirm: (gifteeExternalId: string) => Promise<void> | void
-}
+export function InventoryGiftDialog({ item }: { item: InventoryItem }) {
+	const { closeDialog } = useDonatosDialog()
+	const { showError } = useDonatosError()
+	const { data: onlinePlayers = [], isLoading: isLoadingPlayers } =
+		useOnlinePlayers()
+	const { mutateAsync: giftItem } = useGiftItem()
 
-export function InventoryGiftDialog({
-	itemName,
-	players,
-	isLoadingPlayers,
-	onConfirm,
-}: InventoryGiftDialogProps) {
 	const [selectedPlayerExternalId, setSelectedPlayerExternalId] = useState('')
 	const [isSubmitting, setIsSubmitting] = useState(false)
 
 	const selectedPlayer = useMemo(
 		() =>
-			players.find((player) => player.externalId === selectedPlayerExternalId),
-		[players, selectedPlayerExternalId],
+			onlinePlayers.find(
+				(player) => player.externalId === selectedPlayerExternalId,
+			),
+		[onlinePlayers, selectedPlayerExternalId],
 	)
 
 	const submitDisabled =
 		isSubmitting ||
 		isLoadingPlayers ||
-		players.length === 0 ||
+		onlinePlayers.length === 0 ||
 		selectedPlayerExternalId.length === 0
 
 	return (
@@ -51,7 +51,8 @@ export function InventoryGiftDialog({
 			<DialogHeader>
 				<DialogTitle>Подарить предмет</DialogTitle>
 				<DialogDescription>
-					Выберите игрока, которому хотите подарить {itemName}.
+					Выберите игрока, которому хотите подарить{' '}
+					{item.goods?.name ?? 'этот предмет'}.
 				</DialogDescription>
 			</DialogHeader>
 
@@ -60,7 +61,7 @@ export function InventoryGiftDialog({
 					<Spinner />
 					Загружаем список игроков...
 				</div>
-			) : players.length === 0 ? (
+			) : onlinePlayers.length === 0 ? (
 				<p className="text-muted-foreground text-xs">
 					На сервере нет доступных игроков для подарка.
 				</p>
@@ -73,7 +74,7 @@ export function InventoryGiftDialog({
 						<SelectValue placeholder="Выберите игрока" />
 					</SelectTrigger>
 					<SelectContent className="max-h-56" position="popper">
-						{players.map((player) => (
+						{onlinePlayers.map((player) => (
 							<SelectItem key={player.externalId} value={player.externalId}>
 								<div className="flex items-center gap-2">
 									<Avatar className="size-5">
@@ -105,7 +106,15 @@ export function InventoryGiftDialog({
 
 						setIsSubmitting(true)
 						try {
-							await onConfirm(selectedPlayer.externalId)
+							try {
+								await giftItem({
+									itemId: item.id,
+									gifteeExternalId: selectedPlayer.externalId,
+								})
+								closeDialog()
+							} catch (error) {
+								showError(error)
+							}
 						} finally {
 							setIsSubmitting(false)
 						}
