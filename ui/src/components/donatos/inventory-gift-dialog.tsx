@@ -1,9 +1,5 @@
 import { useMemo, useState } from 'react'
-import {
-	Avatar,
-	AvatarFallback,
-	AvatarImage,
-} from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
 	DialogClose,
@@ -40,9 +36,7 @@ export function InventoryGiftDialog({
 
 	const selectedPlayer = useMemo(
 		() =>
-			players.find(
-				(player) => player.externalId === selectedPlayerExternalId,
-			),
+			players.find((player) => player.externalId === selectedPlayerExternalId),
 		[players, selectedPlayerExternalId],
 	)
 
@@ -78,21 +72,21 @@ export function InventoryGiftDialog({
 					<SelectTrigger className="w-full">
 						<SelectValue placeholder="Выберите игрока" />
 					</SelectTrigger>
-						<SelectContent>
-							{players.map((player) => (
-								<SelectItem key={player.externalId} value={player.externalId}>
-									<div className="flex items-center gap-2">
-										<Avatar size="sm">
-											<AvatarImage src={player.avatarUrl} />
-											<AvatarFallback>
-												{player.name.slice(0, 1).toUpperCase()}
-											</AvatarFallback>
-										</Avatar>
-										<span>{player.name}</span>
-									</div>
-								</SelectItem>
-							))}
-						</SelectContent>
+					<SelectContent>
+						{players.map((player) => (
+							<SelectItem key={player.externalId} value={player.externalId}>
+								<div className="flex items-center gap-2">
+									<Avatar className="size-5">
+										<AvatarImage src={player.avatarUrl} />
+										<AvatarFallback>
+											{player.name.slice(0, 1).toUpperCase()}
+										</AvatarFallback>
+									</Avatar>
+									<span>{player.name}</span>
+								</div>
+							</SelectItem>
+						))}
+					</SelectContent>
 				</Select>
 			)}
 
