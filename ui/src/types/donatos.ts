@@ -30,3 +30,9 @@ export type PlayerData = NonNullable<
 export type ServerConfig = NonNullable<
 	serverApiSchema['server:get-config']['output']
 >
+
+export interface OnlinePlayer {
+	externalId: string
+	name: string
+	avatarUrl?: string
+}

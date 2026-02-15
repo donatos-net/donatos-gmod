@@ -65,6 +65,44 @@ export function useActivateItem() {
 	})
 }
 
+export function useGiftItem() {
+	const queryClient = useQueryClient()
+	const inGame = isInGame()
+
+	return useMutation({
+		mutationFn: async ({
+			itemId,
+			gifteeExternalId,
+		}: {
+			itemId: number
+			gifteeExternalId: string
+		}) => {
+			if (inGame) {
+				const result = await netMessageToServer('giftItem', {
+					id: itemId,
+					gifteeExternalId,
+				})
+				if (!result.success) {
+					throw new Error(result.error)
+				}
+				return result.data
+			}
+
+			console.log('Gift item:', itemId, gifteeExternalId)
+			await new Promise((resolve) => setTimeout(resolve, 500))
+			return {
+				gifteeExternalId,
+				item: { id: itemId, name: 'Mock' },
+			}
+		},
+		onSuccess: () => {
+			if (!inGame) {
+				queryClient.invalidateQueries({ queryKey: ['player-data'] })
+			}
+		},
+	})
+}
+
 export function useFreezeItem() {
 	const queryClient = useQueryClient()
 	const inGame = isInGame()

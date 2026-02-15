@@ -137,14 +137,8 @@ function createPanel() {
 	panel.AddFunction(
 		'donatosLua',
 		'netMessageToServer',
-		(callbackId: number, action: string, dataJson: string) => {
-			const data = util.JSONToTable(dataJson)
-			if (data === undefined) {
-				queueJsonCallback(panel, '_rejectCallback', callbackId, {
-					error: 'Invalid JSON payload',
-				})
-				return
-			}
+		(callbackId: number, action: string, dataJson?: string) => {
+			const data = dataJson ? util.JSONToTable(dataJson) : undefined
 
 			netMessageToServer(action as never, data as never)
 				.then((result) => {

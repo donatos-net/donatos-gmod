@@ -21,6 +21,10 @@ export type DonatosServerActions = {
 		input: { id: number }
 		output: ActionResult<true>
 	}
+	giftItem: {
+		input: { id: number; gifteeExternalId: string }
+		output: ActionResult<serverApiSchema['player:gift-item']['output']>
+	}
 	freezeActiveItem: {
 		input: { id: number }
 		output: ActionResult<true>
@@ -33,6 +37,16 @@ export type DonatosServerActions = {
 		input: { sum: number }
 		output: ActionResult<
 			serverApiSchema['server:igs-create-payment-url']['output']
+		>
+	}
+	getOnlinePlayers: {
+		input: undefined
+		output: ActionResult<
+			Array<{
+				externalId: string
+				name: string
+				avatarUrl?: string
+			}>
 		>
 	}
 }

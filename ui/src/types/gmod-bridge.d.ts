@@ -6,7 +6,7 @@ declare global {
 			netMessageToServer: (
 				callbackId: number,
 				action: string,
-				dataJson: string,
+				dataJson?: string,
 			) => void
 			openUrl: (url: string) => void
 			closeUi: () => void

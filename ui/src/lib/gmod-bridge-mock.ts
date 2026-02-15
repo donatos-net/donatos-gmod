@@ -14,7 +14,10 @@ export function installMockBridge() {
 
 	window.donatosLua = {
 		netMessageToServer(callbackId, action, dataJson) {
-			const payload: MockResponse = { action, data: JSON.parse(dataJson) }
+			const payload: MockResponse = {
+				action,
+				data: dataJson ? JSON.parse(dataJson) : undefined,
+			}
 			console.log('[MockBridge] netMessageToServer', payload)
 
 			setTimeout(() => {

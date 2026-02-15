@@ -166,6 +166,60 @@ export const handleServerMessage = {
 
 		return ok(true)
 	},
+	giftItem: async (ply, input: { id: number; gifteeExternalId: string }) => {
+		const playerId = ply.Donatos().GetID()
+		if (!playerId) {
+			return err('Ошибка: данные игрока не загружены. Попробуйте позднее.')
+		}
+
+		const inventoryItem = ply
+			.Donatos()
+			.GetInventoryItems()
+			.find((i) => i.id === input.id)
+		if (!inventoryItem) {
+			return err('Ошибка: предмет не найден в инвентаре.')
+		}
+
+		if (input.gifteeExternalId === ply.SteamID64()) {
+			return err('Нельзя подарить предмет самому себе.')
+		}
+
+		const giftee = player
+			.GetAll()
+			.find((target) => target.SteamID64() === input.gifteeExternalId)
+		if (!giftee) {
+			return err('Игрок не найден на сервере.')
+		}
+
+		const { isError, data, error } = await serverApiRequest('player:gift-item', {
+			playerId: playerId,
+			itemId: input.id,
+			gifteeExternalId: input.gifteeExternalId,
+		})
+
+		if (isError) {
+			return err(error)
+		}
+
+		void donatosPlayerServer(ply).loadRemoteData()
+		void donatosPlayerServer(giftee).loadRemoteData()
+
+		sendDonatosMessage({
+			receiver: ply,
+			args: [
+				`Вы подарили предмет "${inventoryItem.goods?.name ?? 'предмет'}" игроку `,
+				giftee,
+				'.',
+			],
+		})
+
+		sendDonatosMessage({
+			receiver: giftee,
+			args: [ply, ` подарил вам предмет "${inventoryItem.goods?.name ?? 'предмет'}".`],
+		})
+
+		return ok(data)
+	},
 	freezeActiveItem: async (ply, input: { id: number }) => {
 		const playerId = ply.Donatos().GetID()
 		if (!playerId) {
@@ -214,6 +268,48 @@ export const handleServerMessage = {
 
 		return ok(true)
 	},
+	getOnlinePlayers: async (ply, input: undefined) => {
+		const players = player.GetAll()
+		const onlinePlayers: Array<{
+			externalId: string
+			name: string
+			avatarUrl?: string
+		}> = []
+
+		for (const target of players) {
+			const externalId = target.SteamID64()
+			if (
+				target === ply ||
+				!externalId ||
+				externalId.length === 0 ||
+				externalId === '0'
+			) {
+				continue
+			}
+
+			const avatarUrl =
+				target.Donatos()._remoteData.data?.player.externalMeta?.avatarUrl ??
+				undefined
+
+			onlinePlayers.push({
+				externalId,
+				name: target.Nick(),
+				avatarUrl,
+			})
+		}
+
+		onlinePlayers.sort((a, b) => {
+			if (a.name < b.name) {
+				return -1
+			}
+			if (a.name > b.name) {
+				return 1
+			}
+			return 0
+		})
+
+		return ok(onlinePlayers)
+	},
 } satisfies ServerActionHandlers
 
 if (SERVER) {
@@ -226,12 +322,25 @@ if (SERVER) {
 		]
 
 		try {
-			const result = await handleServerMessage[action](ply, data as never)
+			const handler = handleServerMessage[action]
+			if (!handler) {
+				netMessageToClient(ply, 'resultFromServer', [
+					nonce,
+					err('Unknown action'),
+				])
+				return
+			}
+
+			const result = await handler(ply, data as never)
 
 			netMessageToClient(ply, 'resultFromServer', [nonce, result])
 		} catch (e) {
 			log.error(`Error in handleServerMessage[${action}]:`)
 			print(e)
+			netMessageToClient(ply, 'resultFromServer', [
+				nonce,
+				err('Внутренняя ошибка сервера. Повторите попытку позже.'),
+			])
 		}
 	})
 }

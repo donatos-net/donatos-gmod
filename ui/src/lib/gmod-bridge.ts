@@ -55,7 +55,7 @@ export function netMessageToServer<T extends keyof DonatosServerActions>(
 			resolve: resolve as (value: unknown) => void,
 		})
 
-		const dataJson = JSON.stringify(data)
+		const dataJson = data === undefined ? undefined : JSON.stringify(data)
 		window.donatosLua.netMessageToServer(callbackId, action, dataJson)
 	})
 }

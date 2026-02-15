@@ -224,13 +224,14 @@ export const serverApiSchema = {
 				.optional(),
 		}),
 	},
-	'player:drop-item': {
+	'player:gift-item': {
 		input: z.object({
 			playerId: z.number(),
 			itemId: z.number(),
+			gifteeExternalId: z.string().min(1),
 		}),
 		output: z.object({
-			token: z.string(),
+			gifteeExternalId: z.string(),
 			item: z.object({
 				id: z.number(),
 				name: z.string(),
