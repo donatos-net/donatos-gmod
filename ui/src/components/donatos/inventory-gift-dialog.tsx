@@ -72,7 +72,7 @@ export function InventoryGiftDialog({
 					<SelectTrigger className="w-full">
 						<SelectValue placeholder="Выберите игрока" />
 					</SelectTrigger>
-					<SelectContent>
+					<SelectContent className="max-h-56" position="popper">
 						{players.map((player) => (
 							<SelectItem key={player.externalId} value={player.externalId}>
 								<div className="flex items-center gap-2">
