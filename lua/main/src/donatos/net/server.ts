@@ -191,11 +191,14 @@ export const handleServerMessage = {
 			return err('Игрок не найден на сервере.')
 		}
 
-		const { isError, data, error } = await serverApiRequest('player:gift-item', {
-			playerId: playerId,
-			itemId: input.id,
-			gifteeExternalId: input.gifteeExternalId,
-		})
+		const { isError, data, error } = await serverApiRequest(
+			'player:gift-item',
+			{
+				playerId: playerId,
+				itemId: input.id,
+				gifteeExternalId: input.gifteeExternalId,
+			},
+		)
 
 		if (isError) {
 			return err(error)
@@ -215,8 +218,13 @@ export const handleServerMessage = {
 
 		sendDonatosMessage({
 			receiver: giftee,
-			args: [ply, ` подарил вам предмет "${inventoryItem.goods?.name ?? 'предмет'}".`],
+			args: [
+				ply,
+				` подарил вам предмет "${inventoryItem.goods?.name ?? 'предмет'}".`,
+			],
 		})
+
+		giftee.EmitSound('garrysmod/save_load4.wav', 75, 100, 0.25)
 
 		return ok(data)
 	},
