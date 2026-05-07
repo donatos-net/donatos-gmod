@@ -10,7 +10,7 @@ declare global {
 		Item?: typeof donatosItem
 
 		// client
-		OpenUI?: (tab?: DonatosUiTab) => void
+		OpenUI?: (this: void, tab?: DonatosUiTab) => void
 		NetMessageToServer?: typeof netMessageToServerCallback
 
 		GetRemoteConfig?: () =>

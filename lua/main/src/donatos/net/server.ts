@@ -128,6 +128,7 @@ export const handleServerMessage = {
 			)
 		}
 
+		// TODO: handle request error
 		const { isError, data, error } = await serverApiRequest(
 			'player:activate-item',
 			{

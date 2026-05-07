@@ -85,6 +85,9 @@ export class DonatosServerPlayer extends DonatosSharedPlayer {
 					ply.sam_get_nwvar?.('rank', 'user') ??
 					ply.GetUserGroup()
 				const purchasedSamRanks: Record<string, true> = {}
+				let highestRank:
+					| NonNullable<RemoteData>['activeItems'][number]
+					| undefined
 
 				for (const itm of this.GetActiveItems()) {
 					if (itm.isFrozen) {
@@ -93,6 +96,10 @@ export class DonatosServerPlayer extends DonatosSharedPlayer {
 					const donatosItem = donatosState.items[itm.goods.key]
 					if (donatosItem?.meta?.samRank) {
 						purchasedSamRanks[donatosItem.meta.samRank] = true
+
+						if (!highestRank || itm.activatedAt > highestRank.activatedAt) {
+							highestRank = itm
+						}
 					}
 				}
 
@@ -104,6 +111,13 @@ export class DonatosServerPlayer extends DonatosSharedPlayer {
 						`Removing expired SAM rank ${plySamRank} from user ${ply.SteamID()}`,
 					)
 					ply.sam_set_rank('user')
+				}
+
+				if (highestRank) {
+					const donatosItem = donatosState.items[highestRank.goods.key]
+					if (donatosItem?.meta?.samRank) {
+						ply.sam_set_rank(donatosItem.meta.samRank)
+					}
 				}
 			}
 		}
