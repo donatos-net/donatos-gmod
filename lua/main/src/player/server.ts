@@ -113,7 +113,8 @@ export class DonatosServerPlayer extends DonatosSharedPlayer {
 					ply.sam_set_rank('user')
 				}
 
-				if (highestRank) {
+				// dont override currently assigned custom rank
+				if (plySamRank === 'user' && highestRank) {
 					const donatosItem = donatosState.items[highestRank.goods.key]
 					if (donatosItem?.meta?.samRank) {
 						ply.sam_set_rank(donatosItem.meta.samRank)
