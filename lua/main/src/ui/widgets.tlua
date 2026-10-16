@@ -275,9 +275,10 @@ interface DonatosUiButton {
 	-- Heights: lg 40, md 36 (the default), sm 32, xs 28.
 	size?: "lg" | "md" | "sm" | "xs";
 	active?: boolean;
-	-- Tabs: how much of the tab the sliding selection covers (0-1). Under it the text and
-	-- badge turn dark, so they stay readable while it moves.
-	selection?: () => number;
+	-- Tabs: where the sliding selection is, as its left and right edges in the tab's own x.
+	-- Under it the text and badge are drawn dark, clipped to its edges, so they stay
+	-- readable while it moves.
+	selection?: () => (number, number);
 	badge?: number;
 	pending?: boolean;
 	disabled?: boolean;
@@ -318,24 +319,24 @@ local function buttonMetrics(options: DonatosUiButton): (number, number)
 	return width, height
 end
 
-local TAB_HOVER_INK = theme.fade(colors.text, 0.7)
+local TAB_HOVER_INK = theme.fade(colors.barText, 0.7)
 
 local function buttonColors(options: DonatosUiButton, hovered: boolean): (Color | nil, Color)
 	local variant = options.variant or "primary"
 	if variant == "primary" then
-		return hovered and colors.accentHover or colors.accent, colors.text
+		return hovered and colors.accentHover or colors.accent, colors.accentInk
 	elseif variant == "secondary" then
 		return hovered and colors.defaultHover or colors.default, colors.text
 	elseif variant == "soft" then
 		return hovered and colors.accentSoftHover or colors.accentSoft, colors.accentText
 	elseif variant == "light" then
-		return hovered and colors.inverseHover or colors.inverse, colors.inverseText
+		return hovered and colors.barPillHover or colors.barPill, colors.barPillText
 	elseif variant == "shade" then
-		return hovered and colors.barSelected or colors.barShade, colors.text
+		return hovered and colors.barSelected or colors.barShade, colors.barText
 	elseif variant == "segment" then
 		-- HeroUI's tabs: the tab list draws the selected indicator (white here); an unselected
 		-- tab dims to 70% while hovered.
-		return nil, hovered and TAB_HOVER_INK or colors.text
+		return nil, hovered and TAB_HOVER_INK or colors.barText
 	end
 	-- ghost
 	return hovered and colors.default or nil, hovered and colors.text or colors.muted
@@ -362,42 +363,8 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 	local hover = theme.tween(0)
 	local press = theme.tween(1)
 
-	local function paintContent(self: DButton, w: number, h: number)
-		local alpha = options.disabled and 0.5 or 1
-		local base, baseInk = buttonColors(options, false)
-		local hot, hotInk = buttonColors(options, true)
-		local t = hover.value()
-		local fill = theme.mix(base, hot, t)
-		if fill ~= nil then
-			theme.box(h / 2, 0, 0, w, h, theme.fade(fill, alpha))
-		end
-		local ink = theme.mix(baseInk, hotInk, t) or baseInk
-		local selection = options.selection
-		local selected = selection ~= nil and math.Clamp(selection(), 0, 1) or 0
-		if selected > 0 then
-			ink = theme.mix(ink, colors.inverseText, selected) or ink
-		end
-		ink = theme.fade(ink, alpha)
-
-		if options.pending then
-			theme.spinner(w / 2, h / 2, h * 0.24, ink)
-			return
-		end
-
-		if options.select then
-			local font = theme.font("body")
-			local padX = px(14)
-			local chevron = px(16)
-			local label = options.label or ""
-			local _, textHeight = theme.textSize(label, font)
-			surface.SetFont(font)
-			surface.SetTextColor(options.placeholder and colors.muted or ink)
-			surface.SetTextPos(padX, (h - textHeight) / 2)
-			surface.DrawText(label)
-			theme.icon("chevronDown", w - padX - chevron, (h - chevron) / 2, chevron, colors.muted)
-			return
-		end
-
+	-- The icon, label and badge, centred; `under` the white selection of a tab.
+	local function paintLabel(w: number, h: number, ink: Color, under: boolean)
 		local font = buttonFont(options)
 		local labelWidth = 0
 		if options.label ~= nil then
@@ -428,11 +395,59 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 			local badgeFill, badgeInk = colors.barShade, colors.text
 			if options.variant == "segment" then
 				-- White on the gradient, dark under the white selection.
-				badgeFill = theme.mix(colors.inverse, colors.inverseText, selected) or colors.inverse
-				badgeInk = theme.mix(colors.inverseText, colors.text, selected) or colors.inverseText
+				badgeFill = under and colors.barPillText or colors.barPill
+				badgeInk = under and colors.barText or colors.barPillText
 			end
 			theme.box(bh / 2, bx, by, bw, bh, badgeFill)
 			draw.SimpleText(badgeText, theme.font("chip"), bx + bw / 2, by + bh / 2, badgeInk, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+	end
+
+	local function paintContent(self: DButton, w: number, h: number)
+		local alpha = options.disabled and 0.5 or 1
+		local base, baseInk = buttonColors(options, false)
+		local hot, hotInk = buttonColors(options, true)
+		local t = hover.value()
+		local fill = theme.mix(base, hot, t)
+		if fill ~= nil then
+			theme.box(h / 2, 0, 0, w, h, theme.fade(fill, alpha))
+		end
+		local ink = theme.fade(theme.mix(baseInk, hotInk, t) or baseInk, alpha)
+
+		if options.pending then
+			theme.spinner(w / 2, h / 2, h * 0.24, ink)
+			return
+		end
+
+		if options.select then
+			local font = theme.font("body")
+			local padX = px(14)
+			local chevron = px(16)
+			local label = options.label or ""
+			local _, textHeight = theme.textSize(label, font)
+			surface.SetFont(font)
+			surface.SetTextColor(options.placeholder and colors.muted or ink)
+			surface.SetTextPos(padX, (h - textHeight) / 2)
+			surface.DrawText(label)
+			theme.icon("chevronDown", w - padX - chevron, (h - chevron) / 2, chevron, colors.muted)
+			return
+		end
+
+		paintLabel(w, h, ink, false)
+		local selection = options.selection
+		if selection == nil then
+			return
+		end
+		local from, to = selection()
+		from, to = math.max(math.floor(from), 0), math.min(math.ceil(to), w)
+		if from < to then
+			-- Again in dark, cut to the selection: the selection's edge splits a glyph rather
+			-- than the whole label taking a colour in between, which would fade it out on
+			-- both the white selection and the gradient.
+			local sx, sy = self:LocalToScreen(0, 0)
+			render.SetScissorRect(sx + from, sy, sx + to, sy + h, true)
+			paintLabel(w, h, theme.fade(colors.barPillText, alpha), true)
+			render.SetScissorRect(0, 0, 0, 0, false)
 		end
 	end
 
@@ -532,7 +547,9 @@ local function switch(parent: Panel, options: DonatosUiSwitch): DonatosUiBlock
 		theme.box(th / 2, 0, 0, tw, th, theme.mix(colors.default, colors.accent, track.value()) or colors.default)
 		local thumb = px(18)
 		local inset = px(3)
-		theme.box(thumb / 2, inset + (tw - thumb - inset * 2) * position.value(), inset, thumb, thumb, colors.inverse)
+		-- White, or the accent's ink on a white accent.
+		local knob = theme.mix(colors.barPill, colors.accentInk, track.value()) or colors.barPill
+		theme.box(thumb / 2, inset + (tw - thumb - inset * 2) * position.value(), inset, thumb, thumb, knob)
 
 		local x = tw + px(12)
 		local labelFont = theme.font("medium")
@@ -585,20 +602,10 @@ local function closeDropdown(): boolean
 	return false
 end
 
--- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
-local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
+-- A popover's frame: a DMenu, so it closes on a click outside it like any menu (and on Escape,
+-- through closeDropdown), drawn as HeroUI's popover.
+local function popoverShell(): DMenu
 	local menu = DermaMenu(false, nil)
-	local font = theme.font("body")
-	local itemHeight = px(32)
-	local avatarSize = px(20)
-	local width = math.max(minWidth or 0, px(160))
-	for _, item in ipairs(items) do
-		local textWidth = theme.textSize(item.label, font)
-		width = math.max(width, textWidth + px(32) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
-	end
-
-	menu:SetMinimumWidth(width)
-	menu:SetMaxHeight(px(280))
 	-- HeroUI's popover entrance: 150ms ease, fading in and growing from 0.9 at its top edge.
 	local enter = theme.tween(0)
 	enter.to(1, 0.15, "smooth")
@@ -617,6 +624,30 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 		theme.coverBehind("menu", self, enter.value())
 		return true
 	end
+	return menu
+end
+
+-- Opens `menu` (`width` wide) under `anchor`, aligned to its right edge (or left).
+local function openUnder(menu: DMenu, anchor: Panel, width: number, alignLeft?: boolean)
+	local ax, ay = anchor:LocalToScreen(0, 0)
+	local x = alignLeft and ax or ax + anchor:GetWide() - width
+	menu:Open(x, ay + anchor:GetTall() + px(6), false, anchor)
+	openDropdown = menu
+end
+
+-- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
+local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
+	local menu = popoverShell()
+	local font = theme.font("body")
+	local itemHeight = px(32)
+	local avatarSize = px(20)
+	local width = math.max(minWidth or 0, px(160))
+	for _, item in ipairs(items) do
+		local textWidth = theme.textSize(item.label, font)
+		width = math.max(width, textWidth + px(32) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
+	end
+	menu:SetMinimumWidth(width)
+	menu:SetMaxHeight(px(280))
 
 	-- DMenu stacks its items edge to edge; spacers pad it above and below, so a hovered item's
 	-- highlight stays inside the rounded border.
@@ -667,10 +698,19 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 
 	spacer()
 
-	local ax, ay = anchor:LocalToScreen(0, 0)
-	local x = alignLeft and ax or ax + anchor:GetWide() - width
-	menu:Open(x, ay + anchor:GetTall() + px(6), false, anchor)
-	openDropdown = menu
+	openUnder(menu, anchor, width, alignLeft)
+	return menu
+end
+
+-- A popover under `anchor`, `width` wide, aligned to its right edge: `build` fills `parent`
+-- and returns its height. Clicks inside it leave it open.
+local function popover(anchor: Panel, width: number, build: (parent: Panel, width: number) => number): DMenu
+	local menu = popoverShell()
+	local body = blankPanel(menu)
+	body:SetSize(width, build(body, width))
+	menu:SetMinimumWidth(width)
+	menu:AddPanel(body)
+	openUnder(menu, anchor, width)
 	return menu
 end
 
@@ -824,12 +864,24 @@ interface DonatosUiFloating {
 	place: (areaWidth: number, areaHeight: number) => void;
 }
 
+-- What a dialog grows out of (a shop card): it morphs from there into the dialog, and back
+-- into it on closing.
+interface DonatosUiOrigin {
+	-- Where it is on the screen; nil once it is gone (the page was rebuilt).
+	rect: () => [number, number, number, number] | nil;
+	-- Paints it at its own size at (0, 0); shown fading out as the morph sets off.
+	paint: (w: number, h: number) => void;
+	-- While the dialog is out (true) the origin isn't drawn: it has turned into the dialog.
+	hide: (hidden: boolean) => void;
+}
+
 interface DonatosUiDialogHost {
 	-- Shows `dialog` in place of the one showing; `stacked` puts it over that one instead, and
 	-- closing it brings the one under it back as it was.
 	show: (dialog: DonatosUiDialog, stacked?: boolean) => void;
-	-- Shows a dialog built by `build` (the parent is the dimmed overlay).
-	showCustom: (build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean) => void;
+	-- Shows a dialog built by `build` (the parent is the dimmed overlay); from `origin`, it
+	-- grows out of that.
+	showCustom: (build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean, origin?: DonatosUiOrigin) => void;
 	-- Closes the top dialog.
 	close: () => void;
 	-- Whether a dialog is showing (and not already on its way out).
@@ -845,7 +897,24 @@ local type DialogLayer = {
 	-- 0 hidden, 1 shown: the entrance and exit fade and scale.
 	presence: DonatosTween;
 	exiting: boolean;
+	origin?: DonatosUiOrigin;
+	-- 0 at the origin, 1 in place; the way there and back, after which the dialog's own
+	-- presence goes on as usual.
+	morph: DonatosTween;
+	-- The origin's screen rect the morph goes from or back to.
+	from?: [number, number, number, number];
 }
+
+-- The morph from an origin: 350ms there and 300ms back, ease-out-quart like the gallery's
+-- zoom. The dialog is stretched from the origin's place to its own, with the origin's
+-- picture over it fading out on the first part of the way.
+local MORPH_IN, MORPH_OUT = 0.35, 0.3
+
+-- 0 up to `from`, 1 from `to`, smooth in between.
+local function ramp(t: number, from: number, to: number): number
+	local x = math.Clamp((t - from) / (to - from), 0, 1)
+	return x * x * (3 - 2 * x)
+end
 
 local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	local overlay = blankPanel(frame)
@@ -857,17 +926,46 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	-- 100ms.
 	local backdrop = theme.tween(0)
 
+	-- Bottom first. A dialog shown stacked hides the one under it; a dialog on its way out
+	-- stays here until its exit is over.
+	local layers: DialogLayer[] = {}
+
+	-- A dialog on its way between its origin and its place: a picture of it stretched over
+	-- the rect in between (its child panels can't be drawn scaled, as each is clipped to its
+	-- own place), the origin's picture over that at first.
+	local function paintMorph(layer: DialogLayer, from: [number, number, number, number], origin: DonatosUiOrigin, m: number)
+		local sx, sy = overlay:LocalToScreen(0, 0)
+		local fx, fy, fw, fh = from[1] - sx, from[2] - sy, from[3], from[4]
+		local tx, ty, tw, th = layer.panel:GetBounds()
+		local x, y, w, h = Lerp(m, fx, tx), Lerp(m, fy, ty), Lerp(m, fw, tw), Lerp(m, fh, th)
+		theme.paintSnapshot(layer.panel, x, y, w, h)
+		local shown = 1 - ramp(m, 0, 0.45)
+		if shown > 0 then
+			theme.captureBehind("morph", shown)
+			local pushed = theme.pushMap(overlay, x, y, w / math.max(fw, 1), h / math.max(fh, 1))
+			origin.paint(fw, fh)
+			theme.popScale(pushed)
+			theme.coverBehind("morph", overlay, shown)
+		end
+	end
+
 	overlay.Paint = function(self: Panel, w: number, h: number): boolean
 		local fill = theme.mix(nil, colors.overlay, backdrop.value())
 		if fill ~= nil then
 			theme.box(radius, 0, 0, w, h, fill)
 		end
+		for _, layer in ipairs(layers) do
+			local m = layer.morph.value()
+			local from, origin = layer.from, layer.origin
+			local morphing = m < 1 and from ~= nil and origin ~= nil
+			-- Drawn by the morph until it is in place.
+			layer.panel:SetPaintedManually(morphing)
+			if morphing and from ~= nil and origin ~= nil and layer.panel:IsVisible() then
+				paintMorph(layer, from, origin, m)
+			end
+		end
 		return true
 	end
-
-	-- Bottom first. A dialog shown stacked hides the one under it; a dialog on its way out
-	-- stays here until its exit is over.
-	local layers: DialogLayer[] = {}
 
 	-- The top dialog that is not leaving.
 	local function top(): DialogLayer | nil
@@ -883,6 +981,10 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	local function remove(layer: DialogLayer)
 		if IsValid(layer.panel) then
 			layer.panel:Remove()
+		end
+		local origin = layer.origin
+		if origin ~= nil and layer.from ~= nil then
+			origin.hide(false)
 		end
 		for i, other in ipairs(layers) do
 			if other == layer then
@@ -909,10 +1011,20 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 			return
 		end
 		layer.exiting = true
-		layer.presence.to(0, 0.1, "outQuad")
+		-- Back into its origin if that is still there.
+		local origin = layer.origin
+		local from = origin and origin.rect()
+		if from ~= nil then
+			layer.from = from
+			layer.morph.to(0, MORPH_OUT, "outQuart")
+		else
+			layer.presence.to(0, 0.1, "outQuad")
+		end
 		local under = top()
 		if under ~= nil then
 			reveal(under)
+		elseif from ~= nil then
+			backdrop.to(0, MORPH_OUT, "smooth")
 		else
 			backdrop.to(0, 0.1, "out")
 		end
@@ -921,7 +1033,7 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	overlay.Think = function(self: Panel)
 		for i = #layers, 1, -1 do
 			local layer = assert(layers[i])
-			if layer.exiting and layer.presence.done() and (top() ~= nil or backdrop.done()) then
+			if layer.exiting and layer.presence.done() and layer.morph.done() and (top() ~= nil or backdrop.done()) then
 				remove(layer)
 			end
 		end
@@ -943,7 +1055,7 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 		overlay:InvalidateLayout()
 	end
 
-	local function showCustom(build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean)
+	local function showCustom(build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean, origin?: DonatosUiOrigin)
 		local showing = overlay:IsVisible()
 		if stacked then
 			local covered = top()
@@ -967,14 +1079,25 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 
 		local floating = build(overlay, relayout)
 		local panel = floating.panel
-		local layer: DialogLayer = { panel = panel, place = floating.place, presence = theme.tween(0), exiting = false }
+		local from = origin and origin.rect()
+		local layer: DialogLayer = {
+			panel = panel,
+			place = floating.place,
+			presence = theme.tween(0),
+			exiting = false,
+			origin = origin,
+			morph = theme.tween(from ~= nil and 0 or 1),
+			from = from,
+		}
 		table.insert(layers, layer)
 
 		local scaled = false
+		local opacity = 0
 		local paint = panel.Paint
 		panel.Paint = function(self: Panel, w: number, h: number): boolean
 			local t = layer.presence.value()
-			theme.captureBehind("dialog", t)
+			opacity = t
+			theme.captureBehind("dialog", opacity)
 			local scale = layer.exiting and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1)
 			scaled = theme.pushScale(self, scale, w / 2, h / 2)
 			return paint(self, w, h)
@@ -982,13 +1105,21 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 		panel.PaintOver = function(self: Panel, w: number, h: number): boolean
 			theme.popScale(scaled)
 			scaled = false
-			theme.coverBehind("dialog", self, layer.presence.value())
+			theme.coverBehind("dialog", self, opacity)
 			return true
 		end
 
 		floating.place(overlay:GetSize())
 		backdrop.to(1, 0.15, "out")
-		layer.presence.to(1, 0.25, "outQuad")
+		if origin ~= nil and from ~= nil then
+			origin.hide(true)
+			panel:SetPaintedManually(true)
+			-- The morph brings it in; it is there at full size from the start.
+			layer.presence.set(1)
+			layer.morph.to(1, MORPH_IN, "outQuart")
+		else
+			layer.presence.to(1, 0.25, "outQuad")
+		end
 		overlay:SetVisible(true)
 		overlay:MoveToFront()
 	end
@@ -1065,6 +1196,7 @@ return {
 	column = column,
 	switch = switch,
 	dropdown = dropdown,
+	popover = popover,
 	closeDropdown = closeDropdown,
 	progress = progress,
 	textEntry = textEntry,

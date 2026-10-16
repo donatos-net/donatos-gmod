@@ -149,7 +149,7 @@ end
 -- The item dialog's pictures: a 16:9 frame that slides between them (250ms), with arrows at
 -- its sides and dots at its foot when there is more than one. It wraps around. Images load
 -- as their slides come near.
-local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: string)
+local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: string, origin?: DonatosUiOrigin)
 	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
 		local variants = good.variants or {}
 		local selected: DonatosGoodsVariant | nil = variants[1]
@@ -493,7 +493,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				layoutAside(ASIDE_WIDTH, h - pad * 2)
 			end,
 		}
-	end)
+	end, false, origin)
 end
 
 ------------------------------------------------------------------------------ cards
@@ -551,10 +551,13 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 			local x, pw = w * (1 - SHOWCASE_PHOTO), w * SHOWCASE_PHOTO
 			surface.SetDrawColor(faded(OPAQUE_WHITE))
 			surface.DrawTexturedRectUV(math.Round(x), 0, math.Round(pw), h, images.cover(cover.width, cover.height, pw, h))
-			-- Twice: GMod blends in linear light, so one near-opaque shade still lets a bright
-			-- photo show through where it begins.
-			theme.shade(x - 1, 0, pw * 0.8, h, fill, "left", 1)
-			theme.shade(x - 1, 0, pw * 0.5, h, fill, "left", 1)
+			-- Into a dark card twice: GMod blends in linear light, so one near-opaque dark shade
+			-- still lets a bright photo show through where it begins. A light card's one shade
+			-- spans the whole photo, as a fade to white shows more gently than one to dark.
+			theme.shade(x - 1, 0, pw * (theme.light and 1 or 0.8), h, fill, "left", 1)
+			if not theme.light then
+				theme.shade(x - 1, 0, pw * 0.5, h, fill, "left", 1)
+			end
 		else
 			local _, _, iw, ih = images.contain(cover.width, cover.height, w * SHOWCASE_BOX_W, h * SHOWCASE_BOX_H)
 			local tilt = cover.width / cover.height >= SHOWCASE_TILT_ASPECT and SHOWCASE_TILT or 0
@@ -576,7 +579,8 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		local nameHeight = theme.fontHeight(nameFont)
 		for i, line in ipairs(nameLines) do
 			local y = padY + (i - 1) * lineHeight + (lineHeight - nameHeight) / 2
-			if photo then
+			-- Dark text over a photo faded to white needs no shadow.
+			if photo and not theme.light then
 				draw.SimpleText(line, nameFont, padX, y + 1, TEXT_SHADOW)
 			end
 			draw.SimpleText(line, nameFont, padX, y, colors.text)
@@ -584,7 +588,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		if chipText ~= nil then
 			local x, y = w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
 			if photo then
-				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.text)
+				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.barText)
 			else
 				widgets.chip(chipText, x, y, chipBackground, chipForeground)
 			end
@@ -609,7 +613,12 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		end
 	end
 
+	-- While its dialog is out the card has turned into it.
+	local hidden = false
 	card.Paint = function(self: DButton, w: number, h: number): boolean
+		if hidden then
+			return true
+		end
 		local hovered = self:IsHovered()
 		hover.to(hovered and 1 or 0, 0.15, "smooth")
 		ring.to(hovered and 1 or 0, 0.15, "out")
@@ -619,8 +628,24 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		theme.popScale(scaled)
 		return true
 	end
+	-- The dialog grows out of the card and shrinks back into it.
+	local origin: DonatosUiOrigin = {
+		rect = function(): [number, number, number, number] | nil
+			if not IsValid(card) or not card:IsVisible() then
+				return nil
+			end
+			local x, y = card:LocalToScreen(0, 0)
+			return { x, y, card:GetWide(), card:GetTall() }
+		end,
+		paint = function(w: number, h: number)
+			paintCard(card, w, h)
+		end,
+		hide = function(value: boolean)
+			hidden = value
+		end,
+	}
 	card.DoClick = function(self: DButton)
-		itemDialog(ctx, good, sectionName)
+		itemDialog(ctx, good, sectionName, origin)
 	end
 
 	return {

@@ -101,6 +101,113 @@ local indicatorX = theme.tween(0)
 local indicatorW = theme.tween(0)
 
 local render: () => void = function() end
+-- The account popover under the bar's balance: the player, a top-up and the colour scheme,
+-- which each player picks for themselves (kept between sessions). A scheme picked shows at
+-- once: the colours change in place and the bar and page are built again from them, with the
+-- popover still open over them.
+local function openAccount(anchor: Panel, ctx: DonatosMenuContext)
+	widgets.popover(anchor, px(296), function(parent: Panel, width: number): number
+		local pad = px(16)
+		local y = pad
+
+		local ply = LocalPlayer()
+		local face = px(40)
+		if IsValid(ply) then
+			local avatar = widgets.avatar(parent, face, ply, function(): Color[]
+				return { colors.surface }
+			end)
+			avatar:SetPos(pad, y)
+		end
+		local name = IsValid(ply) and ply:Nick() or ""
+		local who = widgets.painted(parent, face, function(w: number, h: number)
+			local data = remoteData()
+			local balance = data and data.player.balance or 0
+			local nameFont, balanceFont = theme.font("medium"), theme.font("small")
+			draw.SimpleText(name, nameFont, 0, h / 2 - px(1), colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+			draw.SimpleText(`${views.formatNumber(balance)} ${views.bonuses(balance)}`, balanceFont, 0, h / 2 + px(2), colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+		end)
+		who.panel:SetPos(pad + face + px(12), y)
+		who.panel:SetSize(width - pad * 2 - face - px(12), face)
+		y = y + face + px(14)
+
+		local topUp = widgets.button(parent, {
+			label = "Пополнить баланс",
+			icon = "plus",
+			variant = "primary",
+			disabled = not canPay(),
+			onClick = function()
+				widgets.closeDropdown()
+				views.topUp(ctx)
+			end,
+		})
+		topUp:SetPos(pad, y)
+		topUp:SetWide(width - pad * 2)
+		y = y + topUp:GetTall() + pad
+
+		local line = widgets.painted(parent, 1, function(w: number, h: number)
+			surface.SetDrawColor(colors.separator)
+			surface.DrawRect(0, 0, w, h)
+		end)
+		line.panel:SetPos(0, y)
+		line.panel:SetSize(width, 1)
+		y = y + 1 + px(14)
+
+		-- The swatches, one per scheme; the heading names the one hovered, else the current.
+		local schemes = theme.schemes()
+		local swatches: DButton[] = {}
+		local heading = widgets.painted(parent, px(18), function(w: number, h: number)
+			local shown = theme.scheme
+			for i, swatch in ipairs(swatches) do
+				if swatch:IsHovered() then
+					shown = assert(schemes[i]).name
+				end
+			end
+			local label = ""
+			for _, entry in ipairs(schemes) do
+				if entry.name == shown then
+					label = entry.label
+				end
+			end
+			local font = theme.font("small")
+			draw.SimpleText("Оформление", font, 0, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(label, font, w, h / 2, colors.textSoft, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		end)
+		heading.panel:SetPos(pad, y)
+		heading.panel:SetSize(width - pad * 2, px(18))
+		y = y + px(18) + px(12)
+
+		local size = px(32)
+		local gap = (width - pad * 2 - size * #schemes) / math.max(#schemes - 1, 1)
+		for i, entry in ipairs(schemes) do
+			local swatch = vgui.Create("DButton", parent) as DButton
+			swatch:SetText("")
+			swatch:SetSize(size, size)
+			swatch:SetPos(math.Round(pad + (i - 1) * (size + gap)), y)
+			local hover = theme.tween(0)
+			swatch.Paint = function(self: DButton, w: number, h: number): boolean
+				local picked = entry.name == theme.scheme
+				hover.to(self:IsHovered() and 1 or 0, 0.15, "smooth")
+				-- The current one is ringed, a hovered one faintly.
+				local ring = picked and colors.text or theme.mix(nil, colors.defaultHover, hover.value())
+				if ring ~= nil then
+					theme.box(w / 2, 0, 0, w, h, ring)
+					theme.box(w / 2 - px(2), px(2), px(2), w - px(4), h - px(4), colors.surface)
+				end
+				local inset = px(4)
+				theme.outlined(w / 2 - inset, inset, inset, w - inset * 2, h - inset * 2, entry.swatch, colors.frameRing)
+				return true
+			end
+			swatch.DoClick = function(self: DButton)
+				if entry.name ~= theme.scheme then
+					theme.setScheme(entry.name)
+					render()
+				end
+			end
+			table.insert(swatches, swatch)
+		end
+		return y + size + pad
+	end)
+end
 
 -- The open window's dialog host, for Escape.
 local frameDialogs: DonatosUiDialogHost | nil = nil
@@ -121,7 +228,7 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 	tabs.Paint = function(self: Panel, w: number, h: number): boolean
 		theme.box(h / 2, 0, 0, w, h, colors.barTabs)
 		local inset = px(4)
-		theme.box((h - inset * 2) / 2, indicatorX.value(), inset, indicatorW.value(), h - inset * 2, colors.inverse)
+		theme.box((h - inset * 2) / 2, indicatorX.value(), inset, indicatorW.value(), h - inset * 2, colors.barPill)
 		return true
 	end
 	local tabSpecs: { tab: DonatosMenuTab; label: string; icon: DonatosIcon; badge?: number }[] = {
@@ -139,15 +246,9 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 			variant = "segment",
 			active = current.tab == spec.tab,
 			badge = spec.badge,
-			selection = function(): number
-				local btn = tabButton
-				if btn == nil then
-					return 0
-				end
-				local left, right = btn:GetX(), btn:GetX() + btn:GetWide()
-				local from = indicatorX.value()
-				local covered = math.min(right, from + indicatorW.value()) - math.max(left, from)
-				return math.max(covered, 0) / math.max(btn:GetWide(), 1)
+			selection = function(): (number, number)
+				local left = indicatorX.value() - (tabButton and tabButton:GetX() or 0)
+				return left, left + indicatorW.value()
 			end,
 			onClick = function()
 				ctx.showTab(spec.tab)
@@ -156,37 +257,47 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 		table.insert(tabButtons, tabButton)
 	end
 
-	local wallet = widgets.blankPanel(bar)
+	-- The account: avatar and balance in one pill, opening the account popover.
 	local balanceValue = data and data.player.balance or 0
 	local balanceText = views.formatNumber(balanceValue)
 	local balanceUnit = views.bonuses(balanceValue)
-	wallet.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.box(h / 2, 0, 0, w, h, colors.barShade)
-		local font = theme.font("medium")
-		local y = (h - theme.fontHeight(font)) / 2
-		draw.SimpleText(balanceText, font, px(14), y, colors.text)
-		draw.SimpleText(balanceUnit, font, px(14) + theme.textSize(`${balanceText} `, font), y, colors.textDim)
-		return true
-	end
-	local topUp = widgets.button(wallet, {
-		label = "Пополнить",
-		size = "xs",
-		variant = "light",
-		disabled = not canPay(),
-		onClick = function()
-			views.topUp(ctx)
-		end,
-	})
-
+	local account = vgui.Create("DButton", bar) as DButton
+	account:SetText("")
+	local accountHover = theme.tween(0)
 	local ply = LocalPlayer()
-	local avatarSize = px(32)
+	local face = px(28)
 	local avatar: Panel | nil = nil
 	if IsValid(ply) then
-		avatar = widgets.avatar(bar, avatarSize, ply, function(): Color[]
-			local holder = avatar
-			local center = (holder and holder:GetX() or 0) + avatarSize / 2
-			return { colors.glass, theme.gradientAt(center, bar:GetWide()) }
+		avatar = widgets.avatar(account, face, ply, function(): Color[]
+			local center = account:GetX() + px(4) + face / 2
+			local behind = { colors.window, theme.gradientAt(center, bar:GetWide()), colors.barShade }
+			local hovered = accountHover.value()
+			if hovered > 0 then
+				table.insert(behind, theme.fade(colors.barHover, hovered))
+			end
+			return behind
 		end)
+		avatar:SetPos(px(4), px(4))
+		avatar:SetMouseInputEnabled(false)
+	end
+	local textX = avatar ~= nil and px(4) + face + px(10) or px(14)
+	account.Paint = function(self: DButton, w: number, h: number): boolean
+		accountHover.to(self:IsHovered() and 1 or 0, 0.15, "smooth")
+		theme.box(h / 2, 0, 0, w, h, colors.barShade)
+		local hovered = accountHover.value()
+		if hovered > 0 then
+			theme.box(h / 2, 0, 0, w, h, theme.fade(colors.barHover, hovered))
+		end
+		local font = theme.font("medium")
+		local y = (h - theme.fontHeight(font)) / 2
+		draw.SimpleText(balanceText, font, textX, y, colors.barText)
+		draw.SimpleText(balanceUnit, font, textX + theme.textSize(`${balanceText} `, font), y, colors.barTextDim)
+		local chevron = px(16)
+		theme.icon("chevronDown", w - px(10) - chevron, (h - chevron) / 2, chevron, colors.barTextDim)
+		return true
+	end
+	account.DoClick = function(self: DButton)
+		openAccount(self, ctx)
 	end
 
 	local close = widgets.button(bar, { icon = "close", size = "sm", variant = "shade", onClick = ctx.close })
@@ -214,18 +325,10 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 
 		local right = w - px(14) - close:GetWide()
 		close:SetPos(right, (h - close:GetTall()) / 2)
-		right = right - px(12)
-		local holder = avatar
-		if holder ~= nil then
-			right = right - avatarSize
-			holder:SetPos(right, (h - avatarSize) / 2)
-			right = right - px(12)
-		end
-		local balanceWidth = px(14) + theme.textSize(`${balanceText} ${balanceUnit}`, theme.font("medium")) + px(10) + topUp:GetWide() + px(4)
-		right = right - balanceWidth
-		wallet:SetPos(right, (h - px(36)) / 2)
-		wallet:SetSize(balanceWidth, px(36))
-		topUp:SetPos(balanceWidth - px(4) - topUp:GetWide(), (px(36) - topUp:GetTall()) / 2)
+		local accountWidth = textX + theme.textSize(`${balanceText} ${balanceUnit}`, theme.font("medium")) + px(8) + px(16) + px(10)
+		right = right - px(12) - accountWidth
+		account:SetPos(right, (h - px(36)) / 2)
+		account:SetSize(accountWidth, px(36))
 	end
 
 	return bar
@@ -246,9 +349,8 @@ local function create(): Panel
 	frame.Paint = function(self: Panel, w: number, h: number): boolean
 		local t = windowIn.value()
 		theme.captureBehind("window", t)
-		theme.blur(self, w, h, px(RADIUS), 1 - gallery.cover())
 		scaled = theme.pushScale(self, closing and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1), w / 2, h / 2)
-		theme.box(px(RADIUS), 0, 0, w, h, colors.glass)
+		theme.box(px(RADIUS), 0, 0, w, h, colors.window)
 		return true
 	end
 	frame.PaintOver = function(self: Panel, w: number, h: number): boolean

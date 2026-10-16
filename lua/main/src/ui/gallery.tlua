@@ -13,7 +13,6 @@ local OPAQUE_WHITE = Color(255, 255, 255, 255)
 local VIEWER_W, VIEWER_H = 960, 580
 -- In the carousel a transparent picture takes this share of the frame, over stripes.
 local CUTOUT_FIT = 0.84
-local STRIPE = theme.translucent(255, 255, 255, 7)
 
 -- Diagonal stripes over the box at (x, y), for a transparent picture to sit on; clip to the
 -- box first, as the stripes run past its edges.
@@ -40,7 +39,7 @@ local function stripes(x: number, y: number, w: number, h: number, opacity: numb
 		stripeCache = cache
 	end
 	draw.NoTexture()
-	surface.SetDrawColor(opacity >= 1 and STRIPE or theme.fade(STRIPE, opacity))
+	surface.SetDrawColor(opacity >= 1 and colors.stripe or theme.fade(colors.stripe, opacity))
 	-- Anchored to the box, so the stripes slide with it.
 	stripeOffset:SetTranslation(Vector(math.Round(x), math.Round(y), 0))
 	cam.PushModelMatrix(stripeOffset, true)
@@ -51,7 +50,7 @@ local function stripes(x: number, y: number, w: number, h: number, opacity: numb
 end
 local BLACK = Color(0, 0, 0, 255)
 -- The carousel's other dots (40% white on the web).
-local DOT = theme.translucent(255, 255, 255, 102)
+local DOT = theme.overDark(255, 255, 255, 102)
 -- The viewer's backdrop over the game and the menu.
 local VIEWER_SHADE = theme.translucent(0, 0, 0, 216)
 
@@ -322,7 +321,7 @@ local function openViewer(pictures: DonatosGoodsImage[], start: number, link?: V
 		if many then
 			images.image(pictureAt(pictures, first + 1).full)
 			local current = math.Round(slide.target()) % count + 1
-			draw.SimpleText(`${current} / ${count}`, theme.font("smallMedium"), w / 2, ay + ah + px(24), shown >= 1 and colors.text or theme.fade(colors.text, shown), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText(`${current} / ${count}`, theme.font("smallMedium"), w / 2, ay + ah + px(24), shown >= 1 and colors.barText or theme.fade(colors.barText, shown), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
 		return true
 	end
@@ -533,7 +532,7 @@ local function carousel(parent: Panel, pictures: DonatosGoodsImage[]): Panel
 				-- How current dot `i` is: 1 at rest on its picture, in between while sliding.
 				local distance = math.abs((position - i + count / 2) % count - count / 2)
 				local current = math.max(1 - distance, 0)
-				local color = current >= 1 and colors.text or current <= 0 and DOT or theme.mix(DOT, colors.text, current) or DOT
+				local color = current >= 1 and colors.barText or current <= 0 and DOT or theme.mix(DOT, colors.barText, current) or DOT
 				theme.box(size / 2, x + i * (size + gap), y, size, size, color)
 			end
 		end

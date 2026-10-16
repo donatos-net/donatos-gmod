@@ -226,6 +226,9 @@ interface DonatosClientMessages {
 -- Globals.
 ------------------------------------------------------------------------------
 
+-- The menu's colour schemes (ui/theme.tlua).
+type DonatosColorScheme = "ocean" | "emerald" | "amber" | "graphite" | "light"
+
 interface DonatosConfig {
 	apiEndpoint?: string;
 	apiToken?: string;

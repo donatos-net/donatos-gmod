@@ -25,7 +25,7 @@ donatos-gmod/
 │       │   ├── donatos/          # Net handlers, API calls, releases, remote updates
 │       │   ├── player/           # Player objects (shared + server methods)
 │       │   ├── ui/               # VGUI menu (client only)
-│       │   │   ├── theme.tlua    # HeroUI v3 colours, fonts, scale, rounded boxes, blur, icons
+│       │   │   ├── theme.tlua    # HeroUI v3 colours, fonts, scale, rounded boxes, icons
 │       │   │   ├── widgets.tlua  # Layout blocks, pill buttons, chips, switch, search, dialogs
 │       │   │   ├── views.tlua    # Page context, formatting, empty states, top-up
 │       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog with its image carousel
@@ -52,7 +52,7 @@ donatos-gmod/
 
 ### Menu
 - GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DScrollPanel` / `DMenu` / `DTextEntry`,
-  all painted by `ui/theme.tlua` helpers (HeroUI v3's dark theme over a blurred glass window)
+  all painted by `ui/theme.tlua` helpers (HeroUI v3's look, in the player's colour scheme)
 - Bun package manager for the tooling
 
 ## Key Runtime Flows
@@ -113,6 +113,20 @@ that reinstall the addon.
 - Handlers: `lua/main/src/donatos/net/server.tlua`
 - Used by the menu: `purchaseGoods`, `activateItem`, `giftItem`, `getOnlinePlayers`,
   `freezeActiveItem`, `unfreezeActiveItem`, `createIgsPaymentUrl`, `getHistory`
+
+## Colour schemes
+
+Each player picks the menu's scheme in the account popover (the avatar-and-balance pill in the top
+bar, which also holds the top-up): `ocean` (default), `emerald`, `amber`, `graphite` or `light`,
+kept in the archived client convar `donatos_color_scheme`. A scheme is themed the way HeroUI v3
+does it: its light or dark theme (`HEROUI_LIGHT` / `HEROUI_DARK` in `theme.tlua`, the values of
+`@heroui/styles`' `themes/default/variables.css` in sRGB) plus an accent and the text on it; the
+hover, soft and soft-text shades are HeroUI's `color-mix(in oklab, ...)` formulas (`mixOklab`).
+The top bar's gradient and a dark scheme's grey tint are ours. `theme.setScheme` refills
+`theme.colors` in place and the popover re-renders the bar and page (staying open over them), so
+colours derived from the scheme must not be cached at module level (ones that are the same in
+every scheme, made with `theme.overDark`, can be). The top bar keeps white text and a white
+selection in every scheme (`colors.bar*`); text on an accent fill is `colors.accentInk`.
 
 ## Drawing notes
 

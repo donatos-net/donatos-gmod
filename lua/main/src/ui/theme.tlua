@@ -1,5 +1,5 @@
--- Client: visual tokens for the donatos menu (a dark shadcn-style theme), scaled to the screen,
--- and the drawing and text helpers every widget shares.
+-- Client: visual tokens for the donatos menu (HeroUI v3's look, in the colour scheme the player
+-- picks), scaled to the screen, and the drawing and text helpers every widget shares.
 
 local theme = {}
 
@@ -60,17 +60,199 @@ end
 -- that shows like the web's `alpha`. Near-black scales whatever is below, which has a closed form
 -- (1 - (1 - a)^2.2); anything else is matched over the menu background, and is close over
 -- lighter surfaces.
-local BLEND_BASE: number[] = { 14, 14, 16 }
+local DARK_BASE: number[] = { 14, 14, 16 }
+-- The light window: HeroUI's --background with the light scheme's tint.
+local LIGHT_BASE: number[] = { 233, 233, 233 }
+
+------------------------------------------------------------------------------ colour schemes
+
+local type Rgb = [number, number, number]
+
+-- The menu's colour schemes, one picked by each player. A scheme is HeroUI's way of theming:
+-- its light or dark theme with an accent (`--accent` and `--accent-foreground`, the text on
+-- it), the shades HeroUI derives from those worked out the same way below. Ours on top: `tint`
+-- shifts the theme's greys (toward a dark scheme's hue, or a step darker for the light one),
+-- and `gradient` is the top bar's four drifting stops (`vivid` the same at full strength, for
+-- progress bars).
+local type DonatosScheme = {
+	-- In the menu's picker, with a colour to show it by.
+	label: string;
+	swatch: Rgb;
+	light: boolean;
+	accent: Rgb;
+	accentForeground: Rgb;
+	tint: Rgb;
+	-- The stops as colours, shown over the background at `strength` (or as given, when 1).
+	gradient: Rgb[];
+	strength: number;
+	-- Progress bars' stops, when not the gradient's at full strength.
+	vivid?: Rgb[];
+}
+
+local SCHEME_ORDER: DonatosColorScheme[] = { "ocean", "emerald", "amber", "graphite", "light" }
+
+local SNOW: Rgb = { 252, 252, 252 }
+local ECLIPSE: Rgb = { 24, 24, 27 }
+
+local SCHEMES: Table<DonatosColorScheme, DonatosScheme> = {
+	-- HeroUI's accent blue under a bar of cyan, that blue, indigo and teal ("ocean").
+	ocean = {
+		label = "Океан",
+		swatch = { 4, 133, 247 },
+		light = false,
+		accent = { 4, 133, 247 },
+		accentForeground = SNOW,
+		tint = { 0, 0, 0 },
+		gradient = { { 6, 182, 212 }, { 4, 133, 247 }, { 99, 102, 241 }, { 20, 184, 166 } },
+		strength = 0.6,
+	},
+	emerald = {
+		label = "Изумруд",
+		swatch = { 16, 185, 129 },
+		light = false,
+		accent = { 5, 150, 105 },
+		accentForeground = SNOW,
+		tint = { -2, 3, 0 },
+		gradient = { { 16, 185, 129 }, { 13, 148, 136 }, { 5, 150, 105 }, { 20, 184, 166 } },
+		strength = 0.6,
+	},
+	amber = {
+		label = "Янтарь",
+		swatch = { 245, 130, 20 },
+		light = false,
+		accent = { 234, 88, 12 },
+		accentForeground = SNOW,
+		tint = { 3, 1, -3 },
+		gradient = { { 234, 88, 12 }, { 217, 119, 6 }, { 245, 158, 11 }, { 194, 65, 12 } },
+		strength = 0.6,
+	},
+	-- No colour: a grey bar, and white as the accent with dark text on it.
+	graphite = {
+		label = "Графит",
+		swatch = { 113, 113, 122 },
+		light = false,
+		accent = SNOW,
+		accentForeground = ECLIPSE,
+		tint = { 0, 0, 0 },
+		gradient = { { 40, 40, 44 }, { 52, 52, 57 }, { 36, 36, 40 }, { 47, 47, 52 } },
+		strength = 1,
+		vivid = { { 161, 161, 170 }, { 228, 228, 231 }, { 113, 113, 122 }, { 212, 212, 216 } },
+	},
+	-- HeroUI's light theme under the ocean bar, a little deeper so white text holds on it.
+	light = {
+		label = "Светлая",
+		swatch = { 244, 244, 245 },
+		light = true,
+		accent = { 4, 133, 247 },
+		accentForeground = SNOW,
+		-- A step below HeroUI's whites: over a game a full-white window glares.
+		tint = { -12, -12, -12 },
+		gradient = { { 6, 182, 212 }, { 4, 133, 247 }, { 99, 102, 241 }, { 20, 184, 166 } },
+		strength = 0.85,
+	},
+}
+
+-- HeroUI v3's themes (@heroui/styles, themes/default/variables.css), its oklch values in sRGB,
+-- with the soft fills' strengths and how much foreground goes into soft text. The rest are
+-- ours, for parts HeroUI has no colour for, kept in the same greys.
+local type DonatosBase = {
+	background: Rgb;
+	foreground: Rgb;
+	surface: Rgb;
+	surfaceSecondary: Rgb;
+	default: Rgb;
+	muted: Rgb;
+	separator: Rgb;
+	success: Rgb;
+	danger: Rgb;
+	backdrop: number;
+	soft: number;
+	softHover: number;
+	-- color-mix(accent, foreground) weights of --accent-soft-foreground.
+	softInk: number;
+	-- Ours.
+	panel: Rgb;
+	group: Rgb;
+	ring: Rgb;
+	textSoft: Rgb;
+	faint: Rgb;
+	inverseMuted: Rgb;
+}
+
+local HEROUI_DARK: DonatosBase = {
+	background = { 6, 6, 7 },
+	foreground = SNOW,
+	surface = { 24, 24, 27 },
+	surfaceSecondary = { 35, 35, 37 },
+	default = { 39, 39, 42 },
+	muted = { 159, 159, 169 },
+	separator = { 33, 33, 36 },
+	success = { 23, 201, 100 },
+	danger = { 219, 59, 62 },
+	backdrop = 0.6,
+	soft = 0.12,
+	softHover = 0.16,
+	softInk = 0.8,
+	panel = { 18, 18, 20 },
+	group = { 28, 28, 30 },
+	ring = { 46, 46, 49 },
+	textSoft = { 212, 212, 216 },
+	faint = { 113, 113, 122 },
+	inverseMuted = { 82, 82, 91 },
+}
+
+local HEROUI_LIGHT: DonatosBase = {
+	background = { 245, 245, 245 },
+	foreground = ECLIPSE,
+	surface = { 255, 255, 255 },
+	surfaceSecondary = { 239, 239, 240 },
+	default = { 235, 235, 236 },
+	muted = { 113, 113, 122 },
+	separator = { 228, 228, 231 },
+	success = { 23, 201, 100 },
+	danger = { 255, 56, 60 },
+	backdrop = 0.5,
+	soft = 0.15,
+	softHover = 0.2,
+	softInk = 0.7,
+	-- Between the window (--background) and a dialog's white surface, as it sits on both.
+	panel = { 250, 250, 250 },
+	group = { 239, 239, 240 },
+	-- HeroUI's --border.
+	ring = { 222, 222, 224 },
+	textSoft = { 63, 63, 70 },
+	faint = { 161, 161, 170 },
+	inverseMuted = { 161, 161, 170 },
+}
+
+-- The player's choice, kept between sessions (ocean by default); the account popover changes
+-- it with theme.setScheme.
+local schemeConVar = CreateClientConVar("donatos_color_scheme", "ocean", true, false, "Цветовая схема меню Donatos: light, ocean, emerald, amber или graphite")
+
+local function schemeNamed(name: string): (DonatosColorScheme, DonatosScheme)
+	local picked = SCHEMES[name as DonatosColorScheme]
+	if picked ~= nil then
+		return name as DonatosColorScheme, picked
+	end
+	return "ocean", assert(SCHEMES.ocean)
+end
+
+local schemeName, scheme = schemeNamed(schemeConVar:GetString())
+theme.scheme = schemeName
+theme.light = scheme.light
+
+-- Translucent colours are matched over the window's background.
+local BLEND_BASE: number[] = scheme.light and LIGHT_BASE or DARK_BASE
 local webAlphas: Table<Color, number> = setmetatable({}, { __mode = "k" })
 
-local function blendAlpha(color: Color, alpha: number): number
+local function blendAlpha(color: Color, alpha: number, over?: number[]): number
 	local a = math.Clamp(alpha / 255, 0, 1)
 	if math.max(color.r, color.g, color.b) <= 16 then
 		return math.Round((1 - (1 - a) ^ 2.2) * 255)
 	end
 	local best, spread = a, 0
 	for i, channel in ipairs({ color.r, color.g, color.b }) do
-		local baseShown = assert(BLEND_BASE[i])
+		local baseShown = assert((over or BLEND_BASE)[i])
 		local base = toLinear(lift(baseShown))
 		local top = toLinear(channel)
 		if math.abs(top - base) > spread then
@@ -92,6 +274,17 @@ end
 
 theme.translucent = translucent
 
+-- The same for what is drawn over something dark in every scheme: the top bar, a picture,
+-- the viewer's shade.
+local function overDark(r: number, g: number, b: number, alpha: number): Color
+	local color = Color(r, g, b, 255)
+	color.a = blendAlpha(color, alpha, DARK_BASE)
+	webAlphas[color] = alpha
+	return color
+end
+
+theme.overDark = overDark
+
 -- `color` with its web alpha scaled by `factor` (for disabled and fading states).
 function theme.fade(color: Color, factor: number): Color
 	local faded = Color(color.r, color.g, color.b, 255)
@@ -101,60 +294,175 @@ function theme.fade(color: Color, factor: number): Color
 	return faded
 end
 
--- HeroUI v3's dark theme, as the menu's design uses it.
-theme.colors = {
-	-- The window: near-black glass over the blurred game (rgba(4, 4, 5, 0.88) on the web).
-	glass = translucent(lift(4), lift(4), lift(5), 224),
-	frameRing = translucent(255, 255, 255, 30),
-	surface = shown(24, 24, 27),
-	surfaceHover = shown(31, 31, 34),
-	-- HeroUI's surface-secondary: a table's frame and header.
-	surfaceSecondary = shown(35, 35, 37),
-	surfaceRing = shown(46, 46, 49),
-	panel = shown(18, 18, 20),
-	group = shown(28, 28, 30),
-	default = shown(39, 39, 42),
-	defaultHover = shown(52, 52, 57),
-	separator = shown(33, 33, 36),
-	text = Color(252, 252, 252),
-	textSoft = Color(212, 212, 216),
-	textDim = translucent(255, 255, 255, 191),
-	muted = Color(159, 159, 169),
-	faint = Color(113, 113, 122),
-	accent = Color(4, 133, 247),
-	accentHover = Color(30, 147, 248),
-	accentText = Color(24, 142, 247),
-	accentSoft = translucent(4, 133, 247, 31),
-	accentSoftHover = translucent(4, 133, 247, 51),
-	success = Color(41, 205, 112),
-	successSoft = translucent(23, 201, 100, 38),
-	danger = Color(248, 113, 113),
-	inverse = Color(252, 252, 252),
-	inverseHover = Color(228, 228, 231),
-	inverseText = shown(6, 6, 7),
-	inverseMuted = Color(82, 82, 91),
-	-- On the gradient top bar.
-	barShade = translucent(0, 0, 0, 77),
-	barTabs = translucent(0, 0, 0, 56),
-	barHover = translucent(255, 255, 255, 20),
-	barSelected = translucent(255, 255, 255, 56),
-	overlay = translucent(0, 0, 0, 140),
-	scrollGrip = translucent(255, 255, 255, 40),
-	selection = translucent(96, 165, 250, 120),
-}
-
--- Header gradient stops ("ocean": cyan, the accent blue, indigo, teal) at 0.6 alpha,
--- composited over the background.
-local function overBackground(r: number, g: number, b: number): Color
-	return shown(Lerp(0.6, 14, r), Lerp(0.6, 14, g), Lerp(0.6, 16, b))
+-- sRGB to and from Oklab, for HeroUI's color-mix(in oklab, ...).
+local function encode(linear: number): number
+	local x = math.Clamp(linear, 0, 1)
+	return math.Round(255 * (x <= 0.0031308 and 12.92 * x or 1.055 * x ^ (1 / 2.4) - 0.055))
 end
 
-local GRADIENT: Color[] = {
-	overBackground(6, 182, 212),
-	overBackground(4, 133, 247),
-	overBackground(99, 102, 241),
-	overBackground(20, 184, 166),
-}
+local function toOklab(c: Rgb): (number, number, number)
+	local r, g, b = toLinear(c[1]), toLinear(c[2]), toLinear(c[3])
+	local l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ^ (1 / 3)
+	local m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ^ (1 / 3)
+	local s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ^ (1 / 3)
+	return 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+end
+
+local function fromOklab(lightness: number, a: number, b: number): Rgb
+	local l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ^ 3
+	local m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ^ 3
+	local s = (lightness - 0.0894841775 * a - 1.2914855480 * b) ^ 3
+	return {
+		encode(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+		encode(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+		encode(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
+	}
+end
+
+-- color-mix(in oklab, x p, y q), the weights scaled to add up to 1 as CSS does.
+local function mixOklab(x: Rgb, p: number, y: Rgb, q: number): Rgb
+	local t = q / (p + q)
+	local l1, a1, b1 = toOklab(x)
+	local l2, a2, b2 = toOklab(y)
+	return fromOklab(Lerp(t, l1, l2), Lerp(t, a1, a2), Lerp(t, b1, b2))
+end
+
+-- The scheme's colours: HeroUI v3's tokens, under HeroUI's names where it has one.
+local function schemeColors()
+	local light = scheme.light
+	local base = light and HEROUI_LIGHT or HEROUI_DARK
+	local accent = scheme.accent
+	local foreground = base.foreground
+
+	-- A grey of the base, shifted by the scheme's tint.
+	local function grey(c: Rgb): Rgb
+		local tint = scheme.tint
+		return { c[1] + tint[1], c[2] + tint[2], c[3] + tint[3] }
+	end
+
+	local function opaque(c: Rgb): Color
+		return shown(c[1], c[2], c[3])
+	end
+
+	-- color-mix(in oklab, c `share`, transparent): `c` at that web alpha.
+	local function seeThrough(c: Rgb, share: number): Color
+		return translucent(c[1], c[2], c[3], share * 255)
+	end
+
+	local surfaceTone = grey(base.surface)
+	local defaultTone = grey(base.default)
+
+	return {
+		-- The window: --background.
+		window = opaque(grey(base.background)),
+		frameRing = light and translucent(0, 0, 0, 22) or translucent(255, 255, 255, 30),
+		surface = opaque(surfaceTone),
+		-- --surface-hover.
+		surfaceHover = opaque(mixOklab(surfaceTone, 92, foreground, 8)),
+		-- A table's frame and header.
+		surfaceSecondary = opaque(grey(base.surfaceSecondary)),
+		-- A hovered card's ring.
+		surfaceRing = opaque(grey(base.ring)),
+		panel = opaque(grey(base.panel)),
+		group = opaque(grey(base.group)),
+		default = opaque(defaultTone),
+		-- --default-hover.
+		defaultHover = opaque(mixOklab(defaultTone, 96, foreground, 4)),
+		separator = opaque(grey(base.separator)),
+		text = opaque(foreground),
+		textSoft = opaque(base.textSoft),
+		muted = opaque(base.muted),
+		faint = opaque(base.faint),
+		accent = opaque(accent),
+		-- --accent-hover.
+		accentHover = opaque(mixOklab(accent, 90, scheme.accentForeground, 10)),
+		-- --accent-foreground.
+		accentInk = opaque(scheme.accentForeground),
+		-- --accent-soft-foreground: the accent as text, on its soft fill.
+		accentText = opaque(mixOklab(accent, base.softInk * 100, foreground, 30)),
+		accentSoft = seeThrough(accent, base.soft),
+		accentSoftHover = seeThrough(accent, base.softHover),
+		success = opaque(base.success),
+		successSoft = seeThrough(base.success, base.soft),
+		danger = opaque(base.danger),
+		-- --background-inverse (a selected chip) and the background as text on it.
+		inverse = opaque(foreground),
+		inverseHover = opaque(mixOklab(foreground, 90, base.background, 10)),
+		inverseText = opaque(base.background),
+		inverseMuted = opaque(base.inverseMuted),
+		-- On the gradient top bar, the same in every scheme: white text, a white selection.
+		barText = opaque(SNOW),
+		barTextDim = overDark(255, 255, 255, 191),
+		barPill = opaque(SNOW),
+		barPillHover = Color(228, 228, 231),
+		barPillText = opaque(HEROUI_DARK.background),
+		barShade = overDark(0, 0, 0, 77),
+		barTabs = overDark(0, 0, 0, 56),
+		barHover = overDark(255, 255, 255, 20),
+		barSelected = overDark(255, 255, 255, 56),
+		-- --backdrop, behind a dialog.
+		overlay = translucent(0, 0, 0, base.backdrop * 255),
+		-- --scrollbar-thumb.
+		scrollGrip = seeThrough(foreground, 0.15),
+		selection = seeThrough(accent, 0.45),
+		-- Behind a transparent picture in the carousel.
+		stripe = seeThrough(foreground, light and 0.04 or 0.028),
+	}
+end
+
+-- Header gradient stops at the scheme's strength, composited over the dark background.
+local function overBackground(c: Rgb): Color
+	local t = scheme.strength
+	if t >= 1 then
+		return shown(c[1], c[2], c[3])
+	end
+	return shown(Lerp(t, 14, c[1]), Lerp(t, 14, c[2]), Lerp(t, 16, c[3]))
+end
+
+local GRADIENT: Color[] = {}
+-- The same stops at full strength, for progress bars.
+local VIVID: Color[] = {}
+
+local function fillGradients()
+	table.Empty(GRADIENT)
+	table.Empty(VIVID)
+	for _, stop in ipairs(scheme.gradient) do
+		table.insert(GRADIENT, overBackground(stop))
+	end
+	for _, stop in ipairs(scheme.vivid or scheme.gradient) do
+		table.insert(VIVID, Color(stop[1], stop[2], stop[3], 255))
+	end
+end
+
+theme.colors = schemeColors()
+fillGradients()
+
+-- Switches to scheme `name` and remembers it. The colours change in place, so modules holding
+-- theme.colors see them on their next paint; the menu then renders again.
+function theme.setScheme(name: DonatosColorScheme)
+	schemeName, scheme = schemeNamed(name)
+	theme.scheme = schemeName
+	theme.light = scheme.light
+	BLEND_BASE = scheme.light and LIGHT_BASE or DARK_BASE
+	local colors = theme.colors as unknown as Table<string, Color>
+	for key, value in pairs(schemeColors() as unknown as Table<string, Color>) do
+		colors[key] = value
+	end
+	fillGradients()
+	schemeConVar:SetString(schemeName)
+end
+
+-- The schemes for the menu's picker, in order, each with a colour to show it by.
+function theme.schemes(): { name: DonatosColorScheme; label: string; swatch: Color }[]
+	local list: { name: DonatosColorScheme; label: string; swatch: Color }[] = {}
+	for _, name in ipairs(SCHEME_ORDER) do
+		local entry = assert(SCHEMES[name])
+		table.insert(list, { name = name, label = entry.label, swatch = Color(entry.swatch[1], entry.swatch[2], entry.swatch[3], 255) })
+	end
+	return list
+end
 
 local scale = 1
 
@@ -407,9 +715,11 @@ function theme.box(
 )
 	x, y, w, h = math.Round(x), math.Round(y), math.Round(w), math.Round(h)
 	local r = math.min(math.Round(radius), math.floor(math.min(w, h) / 2))
+	-- Before drawing, as in theme.ring.
+	local mask = r > 0 and cornerMask(r, "inside") or nil
 	surface.SetDrawColor(color)
 	draw.NoTexture()
-	if r <= 0 then
+	if mask == nil then
 		surface.DrawRect(x, y, w, h)
 		return
 	end
@@ -417,7 +727,6 @@ function theme.box(
 	surface.DrawRect(x, y + r, r, h - r * 2)
 	surface.DrawRect(x + w - r, y + r, r, h - r * 2)
 
-	local mask = cornerMask(r, "inside")
 	local corners: { on: boolean; cx: number; cy: number; fx: boolean; fy: boolean }[] = {
 		{ on = tl ~= false, cx = x, cy = y, fx = false, fy = false },
 		{ on = tr ~= false, cx = x + w - r, cy = y, fx = true, fy = false },
@@ -502,16 +811,18 @@ function theme.ring(
 	local rtr = (tr ~= false and r > 0) and r or 0
 	local rbl = (bl ~= false and r > 0) and r or 0
 	local rbr = (br ~= false and r > 0) and r or 0
+	-- Before drawing: the first use of a radius bakes its mask, which leaves the draw colour
+	-- opaque white.
+	local mask = r > 0 and cornerMask(r, "ring") or nil
 	surface.SetDrawColor(color)
 	draw.NoTexture()
 	surface.DrawRect(x + rtl, y, w - rtl - rtr, 1)
 	surface.DrawRect(x + rbl, y + h - 1, w - rbl - rbr, 1)
 	surface.DrawRect(x, y + math.max(rtl, 1), 1, h - math.max(rtl, 1) - math.max(rbl, 1))
 	surface.DrawRect(x + w - 1, y + math.max(rtr, 1), 1, h - math.max(rtr, 1) - math.max(rbr, 1))
-	if r <= 0 then
+	if mask == nil then
 		return
 	end
-	local mask = cornerMask(r, "ring")
 	if rtl > 0 then
 		drawCorner(mask, x, y, r, false, false)
 	end
@@ -531,14 +842,6 @@ function theme.outlined(radius: number, x: number, y: number, w: number, h: numb
 	theme.box(radius, x, y, w, h, fill)
 	theme.ring(radius, x, y, w, h, border)
 end
-
--- The same stops at full strength, for progress bars.
-local VIVID: Color[] = {
-	Color(6, 182, 212),
-	Color(4, 133, 247),
-	Color(99, 102, 241),
-	Color(20, 184, 166),
-}
 
 local function sampleGradient(stops: Color[], t: number): Color
 	local position = math.Clamp(t, 0, 1) * (#stops - 1)
@@ -703,6 +1006,60 @@ function theme.pushScale(panel: Panel, scale: number, ox: number, oy: number): b
 	return true
 end
 
+-- A screen-sized texture that panels are painted into off the screen.
+local snapshotMaterials: Table<string, IMaterial> = {}
+
+local function snapshotMaterial(): IMaterial
+	local key = `${ScrW()}x${ScrH()}`
+	local cached = snapshotMaterials[key]
+	if cached ~= nil then
+		return cached
+	end
+	-- Clamped, no mips, no LOD; filtered, as it is drawn scaled.
+	local texture = GetRenderTargetEx(`donatos_snapshot_${key}`, ScrW(), ScrH(), RT_SIZE_FULL_FRAME_BUFFER, MATERIAL_RT_DEPTH_NONE, 4 + 8 + 256 + 512, 0, IMAGE_FORMAT_BGRA8888)
+	local material = CreateMaterial(`donatos_snapshot_${key}`, "UnlitGeneric", {
+		["$basetexture"] = texture:GetName(),
+		["$translucent"] = 1,
+		["$vertexalpha"] = 1,
+		["$vertexcolor"] = 1,
+	})
+	snapshotMaterials[key] = material
+	return material
+end
+
+-- Paints `panel` (painted manually, with its children) off the screen and draws that picture
+-- into (x, y, w, h) of the panel being painted, stretched to fit.
+function theme.paintSnapshot(panel: Panel, x: number, y: number, w: number, h: number)
+	local material = snapshotMaterial()
+	local texture = material:GetTexture("$basetexture")
+	render.ClearRenderTarget(texture, Color(0, 0, 0, 0))
+	render.PushRenderTarget(texture)
+	render.OverrideAlphaWriteEnable(true, true)
+	panel:PaintManual()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+	local px0, py0 = panel:LocalToScreen(0, 0)
+	local pw, ph = panel:GetSize()
+	local tw, th = texture:Width(), texture:Height()
+	surface.SetMaterial(material)
+	surface.SetDrawColor(255, 255, 255, 255)
+	surface.DrawTexturedRectUV(x, y, w, h, px0 / tw, py0 / th, (px0 + pw) / tw, (py0 + ph) / th)
+end
+
+-- Draws what is painted next at `panel`'s (0, 0) at its (x, y) instead, scaled by (sx, sy):
+-- a picture of something stretched over another place. Undo with `theme.popScale`.
+function theme.pushMap(panel: Panel, x: number, y: number, sx: number, sy: number): boolean
+	local ox, oy = panel:LocalToScreen(0, 0)
+	local matrix = Matrix()
+	matrix:Translate(Vector(ox + x, oy + y, 0))
+	matrix:Scale(Vector(sx, sy, 1))
+	matrix:Translate(Vector(-ox, -oy, 0))
+	cam.PushModelMatrix(matrix, true)
+	render.PushFilterMag(TEXFILTER.ANISOTROPIC)
+	render.PushFilterMin(TEXFILTER.ANISOTROPIC)
+	return true
+end
+
 function theme.popScale(pushed: boolean)
 	if pushed then
 		render.PopFilterMin()
@@ -761,9 +1118,7 @@ function theme.coverBehind(name: string, panel: Panel, opacity: number)
 	DisableClipping(clipping)
 end
 
------------------------------------------------------------------------------- blur
-
-local blurMaterial = Material("pp/blurscreen")
+------------------------------------------------------------------------------ round clip
 
 -- The points of a rounded rectangle at (x, y), for a stencil mask. Kept by geometry, since
 -- the same boxes are masked every frame.
@@ -827,56 +1182,40 @@ function theme.popRoundClip()
 	render.SetStencilEnable(false)
 end
 
--- Blurs what is on screen behind `panel` (drawn first in its Paint), inside a rounded box of
--- `radius`. The design's 64px backdrop blur is approximated with three passes. `opacity`
--- (0-1) fades the blur, which Panel:SetAlpha doesn't.
-function theme.blur(panel: Panel, w: number, h: number, radius: number, opacity?: number)
-	local strength = opacity or 1
-	if strength <= 0 then
-		return
-	end
-	local sx, sy = panel:LocalToScreen(0, 0)
-	theme.pushRoundClip(0, 0, w, h, radius)
-	surface.SetMaterial(blurMaterial)
-	surface.SetDrawColor(255, 255, 255, math.Round(255 * strength))
-	for pass = 1, 3 do
-		-- Weaker as well as fainter: whether pp/blurscreen honours the draw alpha varies.
-		blurMaterial:SetFloat("$blur", pass * 2.5 * strength)
-		blurMaterial:Recompute()
-		render.UpdateScreenEffectTexture()
-		surface.DrawTexturedRect(-sx, -sy, ScrW(), ScrH())
-	end
-	theme.popRoundClip()
-end
-
 ------------------------------------------------------------------------------ shades
 
 -- A linear fade from full to none along one axis (128 steps), baked like the corner masks.
--- Each texel's web alpha is converted as a near-black colour's is (see blendAlpha): shades
--- are dark.
+-- Each texel's web alpha is converted for the colour the shade is in (see blendAlpha): as a
+-- near-black colour's for a dark shade; a light one needs far less in linear light (white over
+-- dark: a^2.2), or the fade comes on early as a milky haze, and is eased at its ends.
 local RAMP_SIZE = 128
 local ramps: Table<string, DonatosMask> = {}
 
-local function rampMask(axis: "x" | "y"): DonatosMask
-	local cached = ramps[axis]
+local function rampMask(axis: "x" | "y", light: boolean): DonatosMask
+	local key = `${axis}${light and "light" or "dark"}`
+	local cached = ramps[key]
 	if cached ~= nil then
 		return cached
 	end
-	local mask = bakeMask(`donatos_ramp_v1_${axis}`, RAMP_SIZE, function(x: number, y: number): number
+	local mask = bakeMask(`donatos_ramp_v3_${key}`, RAMP_SIZE, function(x: number, y: number): number
 		local a = 1 - ((axis == "x" and x or y) + 0.5) / RAMP_SIZE
+		if light then
+			-- Eased in and out too: a light fade that starts at full pace reads as an edge.
+			return (a * a * (3 - 2 * a)) ^ 1.6 * 255
+		end
 		return (1 - (1 - a) ^ 2.2) * 255
 	end)
-	ramps[axis] = mask
+	ramps[key] = mask
 	return mask
 end
 
 type DonatosSide = "top" | "bottom" | "left" | "right"
 
--- Darkens the box at (x, y) with `color`, as a CSS linear-gradient from `color` at `side`
+-- Covers the box at (x, y) with `color`, as a CSS linear-gradient from `color` at `side`
 -- (at `strength`, 0-1) to transparent at the far side.
 function theme.shade(x: number, y: number, w: number, h: number, color: Color, side: DonatosSide, strength: number)
 	local horizontal = side == "left" or side == "right"
-	local mask = rampMask(horizontal and "x" or "y")
+	local mask = rampMask(horizontal and "x" or "y", math.max(color.r, color.g, color.b) > 128)
 	local e = mask.extent
 	local flip = side == "bottom" or side == "right"
 	surface.SetMaterial(mask.material)
