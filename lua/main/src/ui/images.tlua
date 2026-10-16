@@ -181,7 +181,9 @@ end
 
 -- A transparent picture floats over a soft light behind it (on dark cards, where a dark
 -- picture would sink into the card) and casts a soft shadow on the card below it.
-local LIGHT = Color(255, 255, 255, 255)
+-- The light's alpha is converted like a translucent colour's (see theme.translucent): white
+-- over a dark card blends in linear light, where a web alpha shows several times as strong.
+local LIGHT = theme.overDark(255, 255, 255, 0.05 * 255)
 local SHADOW = Color(0, 0, 0, 255)
 local OPAQUE_WHITE = Color(255, 255, 255, 255)
 
@@ -190,7 +192,7 @@ local OPAQUE_WHITE = Color(255, 255, 255, 255)
 local function floating(material: IMaterial, cx: number, cy: number, iw: number, ih: number, tilt: number, opacity: number)
 	local size = math.max(iw, ih)
 	if not theme.light then
-		theme.spot(cx - size * 0.6, cy - size * 0.6, size * 1.2, size * 1.2, LIGHT, 0.14 * opacity)
+		theme.spot(cx - size * 0.6, cy - size * 0.6, size * 1.2, size * 1.2, LIGHT, LIGHT.a / 255 * opacity)
 	end
 	local foot = cy + ih / 2
 	theme.spot(cx - iw * 0.45, foot - size * 0.08, iw * 0.9, size * 0.16, SHADOW, (theme.light and 0.18 or 0.5) * opacity)
