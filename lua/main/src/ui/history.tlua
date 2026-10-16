@@ -1,4 +1,4 @@
--- Client: «История», the player's balance history: «Пополнено всего», then the operations
+-- Client: «История», the player's balance history: «Оплачено всего», then the operations
 -- grouped by day, newest first, a page of the API's entries at a time.
 
 local netMessage = require("donatos.net")
@@ -19,8 +19,8 @@ local type HistoryCache = {
 	-- nil until the first page arrives.
 	entries: DonatosHistoryEntry[] | nil;
 	nextCursor: number | nil;
-	-- From the newest page; nil from an API without it.
-	toppedUp: number | nil;
+	-- Rubles paid, from the newest page; nil from an API without it.
+	ordersTotal: number | nil;
 	loading: boolean;
 	-- The last request's error, and its cursor for «Повторить».
 	error: string | nil;
@@ -51,7 +51,7 @@ local function fetch(ctx: DonatosMenuContext, cache: HistoryCache, cursor: numbe
 			cache.nextCursor = result.data.nextCursor
 			if cursor == nil then
 				local summary = result.data.summary
-				cache.toppedUp = summary and summary.toppedUp
+				cache.ordersTotal = summary and summary.ordersTotal
 			end
 		else
 			cache.error = result.error ~= "" and result.error or "Не удалось загрузить историю"
@@ -77,7 +77,7 @@ local function cacheFor(ctx: DonatosMenuContext, data: NonNullable<DonatosRemote
 		balance = player.balance,
 		entries = cache ~= nil and cache.playerId == player.id and cache.entries or nil,
 		nextCursor = nil,
-		toppedUp = cache ~= nil and cache.playerId == player.id and cache.toppedUp or nil,
+		ordersTotal = cache ~= nil and cache.playerId == player.id and cache.ordersTotal or nil,
 		loading = false,
 		error = nil,
 		failedCursor = nil,
@@ -251,10 +251,11 @@ local function dayHeading(parent: Panel, title: string): DonatosUiBlock
 	end)
 end
 
--- «Пополнено всего»: the bonuses the player has bought, in a card above the days.
-local function summaryCard(parent: Panel, toppedUp: number): DonatosUiBlock
-	local value = views.formatNumber(toppedUp)
-	local unit = views.bonuses(toppedUp)
+-- «Оплачено всего»: the rubles the player has paid in successful orders (as the dashboard
+-- counts them), in a card above the days.
+local function summaryCard(parent: Panel, ordersTotal: number): DonatosUiBlock
+	local value = views.formatNumber(ordersTotal)
+	local unit = "₽"
 	return widgets.painted(parent, px(76), function(w: number, h: number)
 		local cardWidth = math.min(w, px(320))
 		theme.box(px(CARD_RADIUS), 0, 0, cardWidth, h, colors.surface)
@@ -265,7 +266,7 @@ local function summaryCard(parent: Panel, toppedUp: number): DonatosUiBlock
 		local textX = x + box + px(14)
 		local priceFont = theme.font("price")
 		local unitFont = theme.font("smallMedium")
-		draw.SimpleText("Пополнено всего", theme.font("small"), textX, h / 2 - px(1), colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
+		draw.SimpleText("Оплачено всего", theme.font("small"), textX, h / 2 - px(1), colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_BOTTOM)
 		local valueY = h / 2 + px(1)
 		draw.SimpleText(value, priceFont, textX, valueY, colors.text)
 		draw.SimpleText(unit, unitFont, textX + theme.textSize(value, priceFont) + px(5), theme.baseline(valueY, priceFont, unitFont), colors.muted)
@@ -391,9 +392,9 @@ local function page(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 		else
 			local scrollArea = widgets.scroll(body, function(canvas: Panel): DonatosUiBlock
 				local content, add = widgets.stack(canvas, px(8), px(24), px(20))
-				local toppedUp = cache.toppedUp
-				if toppedUp ~= nil then
-					add(summaryCard(content.panel, toppedUp))
+				local ordersTotal = cache.ordersTotal
+				if ordersTotal ~= nil then
+					add(summaryCard(content.panel, ordersTotal))
 				end
 				if lines ~= nil then
 					for _, day in ipairs(byDay(lines)) do

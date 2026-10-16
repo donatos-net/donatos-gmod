@@ -154,8 +154,8 @@ interface DonatosServerApi {
 			}[];
 			-- Present when there are older entries.
 			nextCursor?: number;
-			-- With the newest page only: bonuses bought, less refunds and chargebacks.
-			summary?: { toppedUp: number };
+			-- With the newest page only: rubles paid in successful orders.
+			summary?: { ordersTotal: number };
 		};
 	};
 }
