@@ -433,6 +433,16 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 		return true
 	end
 
+	-- DMenu stacks its items edge to edge; spacers give it the web menu's 4 of padding (p-1)
+	-- above and below, so a hovered item's highlight stays inside the rounded border.
+	local function spacer()
+		local panel = blankPanel(menu)
+		panel:SetTall(px(4))
+		panel:SetMouseInputEnabled(false)
+		menu:AddPanel(panel)
+	end
+
+	spacer()
 	for _, item in ipairs(items) do
 		local option = menu:AddOption("", function()
 			if not item.disabled then
@@ -461,6 +471,8 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 			return true
 		end
 	end
+
+	spacer()
 
 	local ax, ay = anchor:LocalToScreen(0, 0)
 	local x = alignLeft and ax or ax + anchor:GetWide() - width
