@@ -1,8 +1,8 @@
 -- Globals the addon shares with config files and other addons, and the wire
--- contracts it shares with the donatos.net API and the web UI.
+-- contracts it shares with the donatos.net API and between the server and the menu.
 
 ------------------------------------------------------------------------------
--- donatos.net server API (mirrors api-schema/src/api-schema.ts).
+-- donatos.net server API.
 -- Payloads travel as JSON, so dates arrive as strings and JSON null as nil.
 ------------------------------------------------------------------------------
 
@@ -131,7 +131,7 @@ type DonatosInventoryItem = NonNullable<DonatosRemoteData>["inventoryItems"][num
 type DonatosActiveItem = NonNullable<DonatosRemoteData>["activeItems"][number]
 
 ------------------------------------------------------------------------------
--- UI -> Lua -> server actions (mirrors api-schema/src/server-actions.ts).
+-- Menu -> server actions.
 ------------------------------------------------------------------------------
 
 type DonatosActionResult<T> =

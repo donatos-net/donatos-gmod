@@ -1,4 +1,4 @@
--- Server: actions the client (and the web UI through it) requests over the `donatos` net message.
+-- Server: actions the client (and the menu through it) requests over the `donatos` net message.
 
 local item = require("donatos.item")
 local netMessage = require("donatos.net")

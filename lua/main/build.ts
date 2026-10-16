@@ -2,9 +2,10 @@
 // chunk behind a bundle-local `require` (tlua has no bundler).
 //
 // The bootstrap runs the bundle with RunString, so it must be a single self-contained file.
-import { Glob } from 'bun'
+
 import fs from 'node:fs'
 import path from 'node:path'
+import { Glob } from 'bun'
 
 const root = import.meta.dir
 const outDir = path.join(root, 'out')
@@ -30,7 +31,8 @@ const rewrites: Record<string, (source: string) => string> = {
 			['"$BUILD_NUMBER$"', process.env.GITHUB_RUN_NUMBER],
 			['"$COMMIT_HASH$"', process.env.GITHUB_SHA],
 		].reduce(
-			(text, [placeholder, value]) => replaceOnce(text, placeholder as string, luaString(value ?? '')),
+			(text, [placeholder, value]) =>
+				replaceOnce(text, placeholder as string, luaString(value ?? '')),
 			source,
 		),
 }
@@ -76,26 +78,50 @@ const parts = [
 	'\treturn value',
 	'end',
 ]
-for (const [name, source] of [...modules].sort(([a], [b]) => a.localeCompare(b))) {
-	parts.push(`__modules[${luaString(name)}] = function(...)`, source.trimEnd(), 'end')
+for (const [name, source] of [...modules].sort(([a], [b]) =>
+	a.localeCompare(b),
+)) {
+	parts.push(
+		`__modules[${luaString(name)}] = function(...)`,
+		source.trimEnd(),
+		'end',
+	)
 }
 parts.push(`return require(${luaString(entry)})`, '')
 
 fs.mkdirSync(path.dirname(bundlePath), { recursive: true })
 fs.writeFileSync(bundlePath, parts.join('\n'))
-console.log(`build: packed ${modules.size} modules into ${path.relative(root, bundlePath)}`)
+console.log(
+	`build: packed ${modules.size} modules into ${path.relative(root, bundlePath)}`,
+)
 
-function replaceOnce(source: string, placeholder: string, replacement: string): string {
+function replaceOnce(
+	source: string,
+	placeholder: string,
+	replacement: string,
+): string {
 	const index = source.indexOf(placeholder)
 	if (index === -1 || source.indexOf(placeholder, index + 1) !== -1) {
 		throw new Error(`Expected exactly one ${placeholder} in the module.`)
 	}
-	return source.slice(0, index) + replacement + source.slice(index + placeholder.length)
+	return (
+		source.slice(0, index) +
+		replacement +
+		source.slice(index + placeholder.length)
+	)
 }
 
 function luaString(value: string): string {
-	const escaped = value.replace(/[\\"\x00-\x1f\x7f]/g, (c) =>
-		c === '\\' || c === '"' ? `\\${c}` : `\\${c.charCodeAt(0).toString().padStart(3, '0')}`,
-	)
+	let escaped = ''
+	for (const c of value) {
+		const code = c.charCodeAt(0)
+		if (c === '\\' || c === '"') {
+			escaped += `\\${c}`
+		} else if (code < 0x20 || code === 0x7f) {
+			escaped += `\\${code.toString().padStart(3, '0')}`
+		} else {
+			escaped += c
+		}
+	}
 	return `"${escaped}"`
 }

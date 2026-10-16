@@ -1,4 +1,4 @@
--- Client: visual tokens for the donatos menu (the web UI's dark theme), scaled to the screen,
+-- Client: visual tokens for the donatos menu (a dark shadcn-style theme), scaled to the screen,
 -- and the drawing and text helpers every widget shares.
 
 local theme = {}
@@ -127,7 +127,7 @@ theme.colors = {
 
 local colors = theme.colors
 
--- Header gradient stops: the web UI's colours at 0.6 alpha, composited over the background.
+-- Header gradient stops: the design's colours at 0.6 alpha, composited over the background.
 local function overBackground(r: number, g: number, b: number): Color
 	return shown(Lerp(0.6, 14, r), Lerp(0.6, 14, g), Lerp(0.6, 16, b))
 end

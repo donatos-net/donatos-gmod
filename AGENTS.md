@@ -8,10 +8,6 @@ Donatos is a Garry's Mod donation/shop addon with:
 2. An in-game menu built with GMod VGUI (Derma panels painted by hand), also in tlua
 3. API and net contracts as tlua types in `lua/main/src/donatos.d.tlua`
 
-The React web UI (`ui/`) and its Zod schemas (`api-schema/`) are the previous DHTML-based menu.
-They are no longer built or shipped; the VGUI menu was ported from them and they remain only as
-a reference (`bun run dev` in `ui/` still shows the mock-data version).
-
 This repository is a Bun workspace.
 
 ## Workspace Structure
@@ -21,10 +17,6 @@ donatos-gmod/
 ├── bootstrap/                    # Runtime bootstrap addon that downloads/runs bundle.lua
 │   └── donatos/lua/autorun/
 │       └── donatos_bootstrap.lua
-├── api-schema/                   # Legacy: Zod schemas for the old React UI (not shipped)
-│   └── src/
-│       ├── api-schema.ts
-│       └── server-actions.ts
 ├── lua/
 │   ├── autorun/donatos-dev.lua   # Dev loader: includes lua/main/dist/bundle.lua if present
 │   └── main/                     # tlua addon source
@@ -42,7 +34,6 @@ donatos-gmod/
 │       │   └── main.tlua, client.tlua, server.tlua  # Entry points
 │       ├── tluaconfig.json
 │       └── build.ts              # tlua -> out/, packs modules into dist/bundle.lua
-├── ui/                           # Legacy: the old React DHTML UI (not shipped)
 └── package.json                  # Workspace root
 ```
 
@@ -56,7 +47,7 @@ donatos-gmod/
 
 ### Menu
 - GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DScrollPanel` / `DMenu` / `DTextEntry`,
-  all painted by `ui/theme.tlua` helpers to match the old web UI's dark shadcn look
+  all painted by `ui/theme.tlua` helpers (a dark shadcn-style look)
 - Bun package manager for the tooling
 
 ## Key Runtime Flows
