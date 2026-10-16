@@ -4,9 +4,13 @@
 
 Donatos is a Garry's Mod donation/shop addon with:
 
-1. Backend logic written in tlua (typed Lua, `@tlua/cli`) and compiled to Lua
-2. A React web UI rendered inside a GMod `DHTML` panel
-3. Shared API contracts: Zod schemas in `api-schema` for the UI, mirrored as tlua types in `lua/main/src/donatos.d.tlua`
+1. Addon logic written in tlua (typed Lua, `@tlua/cli`) and compiled to Lua
+2. An in-game menu built with GMod VGUI (Derma panels painted by hand), also in tlua
+3. API and net contracts as tlua types in `lua/main/src/donatos.d.tlua`
+
+The React web UI (`ui/`) and its Zod schemas (`api-schema/`) are the previous DHTML-based menu.
+They are no longer built or shipped; the VGUI menu was ported from them and they remain only as
+a reference (`bun run dev` in `ui/` still shows the mock-data version).
 
 This repository is a Bun workspace.
 
@@ -17,7 +21,7 @@ donatos-gmod/
 ├── bootstrap/                    # Runtime bootstrap addon that downloads/runs bundle.lua
 │   └── donatos/lua/autorun/
 │       └── donatos_bootstrap.lua
-├── api-schema/                   # Zod schemas and server action typings (used by the UI)
+├── api-schema/                   # Legacy: Zod schemas for the old React UI (not shipped)
 │   └── src/
 │       ├── api-schema.ts
 │       └── server-actions.ts
@@ -25,24 +29,20 @@ donatos-gmod/
 │   ├── autorun/donatos-dev.lua   # Dev loader: includes lua/main/dist/bundle.lua if present
 │   └── main/                     # tlua addon source
 │       ├── src/
-│       │   ├── donatos.d.tlua    # Globals + API/net contracts (mirror of api-schema)
+│       │   ├── donatos.d.tlua    # Globals + API/net contracts
 │       │   ├── donatos/          # Net handlers, API calls, releases, remote updates
 │       │   ├── player/           # Player objects (shared + server methods)
-│       │   ├── ui/web-panel.tlua # DHTML panel + JS bridge registration
+│       │   ├── ui/               # VGUI menu (client only)
+│       │   │   ├── theme.tlua    # Colours, fonts, scale, rounded boxes, icons
+│       │   │   ├── widgets.tlua  # Layout blocks, buttons, cards, dropdowns, dialogs
+│       │   │   ├── views.tlua    # Shop / inventory / active items tabs and their dialogs
+│       │   │   └── menu.tlua     # Window, header, tabs; open / refresh
+│       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
 │       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
 │       │   └── main.tlua, client.tlua, server.tlua  # Entry points
 │       ├── tluaconfig.json
-│       └── build.ts              # tlua -> out/, packs modules + inlines UI HTML into dist/bundle.lua
-├── ui/                           # React + TanStack Router + Query UI
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── donatos/
-│   │   │   └── ui/
-│   │   ├── hooks/
-│   │   ├── lib/
-│   │   ├── routes/
-│   │   └── types/
-│   └── vite.config.ts
+│       └── build.ts              # tlua -> out/, packs modules into dist/bundle.lua
+├── ui/                           # Legacy: the old React DHTML UI (not shipped)
 └── package.json                  # Workspace root
 ```
 
@@ -54,13 +54,10 @@ donatos-gmod/
 - Async: coroutines (`suspend` functions, `utils/async.tlua`)
 - Transport: GMod `net` messages
 
-### Frontend
-- React 19
-- Vite 7 + `vite-plugin-singlefile`
-- TanStack Router (file routes)
-- TanStack Query
-- Tailwind + Radix/Shadcn-style components
-- Bun package manager
+### Menu
+- GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DScrollPanel` / `DMenu` / `DTextEntry`,
+  all painted by `ui/theme.tlua` helpers to match the old web UI's dark shadcn look
+- Bun package manager for the tooling
 
 ## Key Runtime Flows
 
@@ -81,63 +78,41 @@ donatos-gmod/
 
 Important nuance: current bootstrap code verifies SHA256 only for pre-existing local cached bundle path before using it. Newly downloaded HTTP/net bundles are executed without a post-download SHA256 check.
 
-### 2) UI embedding and bridge
-- File: `lua/main/src/ui/web-panel.ts`
-- Lua creates a `DHTML` panel and registers JS callbacks via `AddFunction` on `window.donatosLua`:
-  - `netMessageToServer(callbackId, action, dataJson)`
-  - `openUrl(url)`
-  - `closeUi()`
-  - `requestStateSync()`
-- UI bridge in `ui/src/lib/gmod-bridge.ts` installs `window.donatosNative` with:
-  - callback resolver/rejector
-  - `setState(key, value)` for push updates
+### 2) Menu
+- Entry: `lua/main/src/ui/menu.tlua` (`open(tab)`, `refresh()`); opened by the `donatos`
+  console command, the menu key (`config.menuKeyBind`, F6 by default), the context-menu
+  desktop icon, `donatos.OpenUI(tab)` and the server's `openUi` net message.
+- The frame is built once and kept hidden between uses (removed after 5 idle minutes, or
+  rebuilt on every open when `donatos.dev.enabled`). Each render rebuilds the header and the
+  current tab from state; scroll position is kept per tab.
+- Layout uses blocks (`{ panel, layout(width) -> height }`) from `widgets.tlua` rather than
+  docking, so cards and wrapped text size to the available width.
+- Dialogs (`widgets.dialogHost`) sit over the frame; actions answer through net callbacks.
 
 ### 3) State sync model
-- Push from Lua -> UI:
-  - `syncConfig` -> `donatosNative.setState('serverConfig', data)`
-  - `syncPlayer` -> `donatosNative.setState('playerData', data)`
-- UI bridge init: `ui/src/lib/gmod-bridge-init.ts`
-  - Registers Query cache setters for `['server-config']` and `['player-data']`
-  - Uses mock bridge only when not in-game (`window.donatosLua` missing)
+- The server pushes state to clients over the `donatos` net message:
+  - `syncConfig` -> `state.remoteConfig.value`
+  - `syncPlayer` -> `LocalPlayer():Donatos()._remoteData`
+  - both call `menu.refresh()`, which re-renders if the menu is open
+- The client sends `requestSync` on load and on `InitPostEntity`.
 
-### 4) UI actions (UI -> Lua)
-- Typed action contracts: `api-schema/src/server-actions.ts`
-- Implemented server handlers: `lua/main/src/donatos/net/server.tlua`
-- Currently wired in UI mutations (`ui/src/hooks/use-donatos-mutations.ts`):
-  - `purchaseGoods`
-  - `activateItem`
-  - `freezeActiveItem`
-  - `unfreezeActiveItem`
+### 4) Menu actions (client -> server)
+- `donatos.NetMessageToServer(action, data, callback)` (`lua/main/src/donatos/net.tlua`)
+- Typed contracts: `DonatosServerActions` in `lua/main/src/donatos.d.tlua`
+- Handlers: `lua/main/src/donatos/net/server.tlua`
+- Used by the menu: `purchaseGoods`, `activateItem`, `giftItem`, `getOnlinePlayers`,
+  `freezeActiveItem`, `unfreezeActiveItem`, `createIgsPaymentUrl`
 
-## UI Structure
+## Drawing notes
 
-### Routes
-- `ui/src/routes/donatos.tsx` - layout (header + providers)
-- `ui/src/routes/donatos/index.tsx` - redirect to `/donatos/shop`
-- `ui/src/routes/donatos/shop.tsx`
-- `ui/src/routes/donatos/inventory.tsx`
-- `ui/src/routes/donatos/active-items.tsx`
-
-### Main Components
-- Header/nav: `ui/src/components/donatos/donatos-header.tsx`
-- Shop cards/grid/dialogs:
-  - `ui/src/components/donatos/shop-item-card.tsx`
-  - `ui/src/components/donatos/shop-items-grid.tsx`
-  - `ui/src/components/donatos/shop-purchase-confirm-dialog.tsx`
-  - `ui/src/components/donatos/shop-deposit-dialog.tsx`
-  - `ui/src/components/donatos/shop-activate-offer-dialog.tsx`
-- Inventory: `ui/src/components/donatos/inventory-item-card.tsx`
-- Active items: `ui/src/components/donatos/active-item-card.tsx`
-
-## Data Layer
-
-- `ui/src/hooks/use-server-config.ts`
-- `ui/src/hooks/use-player-data.ts`
-- Mock data source: `ui/src/lib/mock-data.ts`
-
-Behavior:
-- In mock mode (`window.__donatosMock === true`), hooks run query functions with simulated delay.
-- In-game mode, state is mainly push-driven from Lua bridge; queries are disabled and cache is populated via `setState` callbacks.
+GMod's 2D pipeline differs from a browser in ways the theme corrects for:
+- Dark greys are crushed (drawing 16 shows 8). Theme colours are written as they should
+  appear and lifted through a measured response curve (`shown(r, g, b)` in `theme.tlua`).
+- Translucent colours blend in linear light, so a web alpha comes out much stronger (white
+  at 24/255 over black shows 86, not 24). Translucent theme colours are declared with the
+  web alpha via `translucent(...)`, which converts it; use `theme.fade` to scale them.
+- `draw.RoundedBox` corners are aliased; `theme.box` / `theme.ring` / `theme.outlined`
+  draw anti-aliased corners from render-target masks.
 
 ## Dev Workflow
 
@@ -146,21 +121,13 @@ Behavior:
 bun install
 ```
 
-## UI only
-```bash
-cd ui
-bun run dev
-```
-- Dev URL: `http://localhost:3000/donatos`
-
 ## Lua bundle build
 ```bash
 cd lua/main
 bun run check   # type-check only
 bun run build
 ```
-- `build` runs `tlua` into `out/` (one `.lua` per module), builds the UI, and packs
-  everything into `lua/main/dist/bundle.lua` behind a bundle-local `require`
+- `build` runs `tlua` into `out/` (one `.lua` per module) and packs the modules into `lua/main/dist/bundle.lua` behind a bundle-local `require`
   (tlua has no bundler). `$VERSION$`-style placeholders are substituted in the
   `meta` module only, from `DONATOS_ADDON_VERSION`, `GITHUB_RUN_NUMBER`, `GITHUB_SHA`;
   a local build has an empty version and skips update checks.
@@ -173,17 +140,16 @@ bun run build
 
 ## Conventions and Notes
 
-1. Keep API contract updates synchronized across:
-- `api-schema/src/api-schema.ts`
-- `api-schema/src/server-actions.ts`
-- `lua/main/src/donatos.d.tlua` (the tlua mirror of both)
-- Lua net handlers (`lua/main/src/donatos/net/server.tlua`)
-- UI mutations/hooks (`ui/src/hooks/*`)
+1. Keep contract updates synchronized across:
+- `lua/main/src/donatos.d.tlua` (API payloads, `DonatosServerActions`, `DonatosClientMessages`)
+- Lua net handlers (`lua/main/src/donatos/net/server.tlua`, `net/client.tlua`)
+- The menu views that call them (`lua/main/src/ui/views.tlua`)
 
-2. UI is designed for Chromium 86 target (see `ui/vite.config.ts`), matching GMod's embedded browser constraints.
+2. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
+map in `lua/main/src/donatos/net/server.tlua`.
 
-3. Do not assume mock-mode behavior equals in-game behavior. In-game state arrives through `requestStateSync` + push updates, not normal HTTP fetching.
+3. The menu is client-only; anything it shows must arrive through `syncConfig` / `syncPlayer`
+or a net callback.
 
-4. If adding new UI -> Lua action, update both:
-- TS typing in `api-schema/src/server-actions.ts` and `DonatosServerActions` in `lua/main/src/donatos.d.tlua`
-- Lua server action handler map in `lua/main/src/donatos/net/server.tlua`
+4. Size things with `theme.px(...)` (scaled from a 900px-high reference) and fonts with
+`theme.font(...)`; both are rebuilt on `OnScreenSizeChanged`.

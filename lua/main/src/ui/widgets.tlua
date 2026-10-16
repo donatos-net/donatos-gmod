@@ -1,0 +1,767 @@
+-- Client: the menu's building blocks. A block is a panel that lays itself out for a given
+-- width and reports the height it needs; containers (stack, grid, card) compose blocks.
+-- Option tables passed to widgets stay live: painting reads them every frame, so changing
+-- `options.pending` or `options.variant` updates the widget in place.
+
+local theme = require("ui.theme")
+
+local colors = theme.colors
+local px = theme.px
+
+interface DonatosUiBlock {
+	panel: Panel;
+	-- Positions the block's children for `width` and returns the height it needs.
+	layout: (width: number) => number;
+}
+
+local function blankPanel(parent: Panel): Panel
+	local panel = vgui.Create("DPanel", parent)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		return true
+	end
+	return panel
+end
+
+------------------------------------------------------------------------------ text
+
+interface DonatosUiTextOptions {
+	text: string;
+	font: string;
+	color: Color;
+	leading?: number;
+	align?: "left" | "center";
+}
+
+local function text(parent: Panel, options: DonatosUiTextOptions): DonatosUiBlock
+	local panel = vgui.Create("DPanel", parent)
+	panel:SetMouseInputEnabled(false)
+	local lines: string[] = {}
+	local lineHeight = 0
+	local fontHeight = 0
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		surface.SetFont(options.font)
+		surface.SetTextColor(options.color)
+		local inset = (lineHeight - fontHeight) / 2
+		for i, line in ipairs(lines) do
+			local x = 0
+			if options.align == "center" then
+				local lineWidth = surface.GetTextSize(line)
+				x = (w - lineWidth) / 2
+			end
+			surface.SetTextPos(x, (i - 1) * lineHeight + inset)
+			surface.DrawText(line)
+		end
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			lines = theme.wrap(options.text, options.font, width)
+			fontHeight = theme.fontHeight(options.font)
+			lineHeight = math.Round(fontHeight * (options.leading or 1.3))
+			return #lines * lineHeight
+		end,
+	}
+end
+
+-- A fixed-height block that draws with `paint`.
+local function painted(parent: Panel, height: number, paint: (w: number, h: number) => void): DonatosUiBlock
+	local panel = vgui.Create("DPanel", parent)
+	panel:SetMouseInputEnabled(false)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		paint(w, h)
+		return true
+	end
+	return {
+		panel = panel,
+		layout = function(): number
+			return height
+		end,
+	}
+end
+
+------------------------------------------------------------------------------ containers
+
+-- Blocks top to bottom with `gap` between them.
+local function stack(parent: Panel, gap: number, padding?: number): (DonatosUiBlock, (child: DonatosUiBlock) => void)
+	local panel = blankPanel(parent)
+	local children: DonatosUiBlock[] = {}
+	local pad = padding or 0
+
+	local block: DonatosUiBlock = {
+		panel = panel,
+		layout = function(width: number): number
+			local y = pad
+			for i, child in ipairs(children) do
+				local h = child.layout(width - pad * 2)
+				child.panel:SetPos(pad, y)
+				child.panel:SetSize(width - pad * 2, h)
+				y = y + h + (i < #children and gap or 0)
+			end
+			return y + pad
+		end,
+	}
+	return block, function(child: DonatosUiBlock)
+		table.insert(children, child)
+	end
+end
+
+-- Auto-filling columns at least `minWidth` wide; every cell in a row takes the row's height.
+local function grid(parent: Panel, minWidth: number, gap: number): (DonatosUiBlock, (child: DonatosUiBlock) => void)
+	local panel = blankPanel(parent)
+	local children: DonatosUiBlock[] = {}
+
+	local block: DonatosUiBlock = {
+		panel = panel,
+		layout = function(width: number): number
+			local columns = math.max(1, math.floor((width + gap) / (minWidth + gap)))
+			local cellWidth = (width - gap * (columns - 1)) / columns
+			local y = 0
+			local rowStart = 1
+			while rowStart <= #children do
+				local rowEnd = math.min(rowStart + columns - 1, #children)
+				local rowHeight = 0
+				for i = rowStart, rowEnd do
+					local child = assert(children[i])
+					rowHeight = math.max(rowHeight, child.layout(math.floor(cellWidth)))
+				end
+				for i = rowStart, rowEnd do
+					local child = assert(children[i])
+					local column = i - rowStart
+					child.panel:SetPos(math.floor(column * (cellWidth + gap)), y)
+					child.panel:SetSize(math.floor(cellWidth), rowHeight)
+				end
+				y = y + rowHeight + (rowEnd < #children and gap or 0)
+				rowStart = rowEnd + 1
+			end
+			return y
+		end,
+	}
+	return block, function(child: DonatosUiBlock)
+		table.insert(children, child)
+	end
+end
+
+-- Lays panels left to right, wrapping, each at its own size.
+local function flow(parent: Panel, gap: number, padding: number, panels: Panel[]): DonatosUiBlock
+	local panel = blankPanel(parent)
+	for _, child in ipairs(panels) do
+		child:SetParent(panel)
+	end
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local x, y, rowHeight = padding, padding, 0
+			for _, child in ipairs(panels) do
+				local w, h = child:GetSize()
+				if x > padding and x + w > width - padding then
+					x = padding
+					y = y + rowHeight + gap
+					rowHeight = 0
+				end
+				child:SetPos(x, y)
+				x = x + w + gap
+				rowHeight = math.max(rowHeight, h)
+			end
+			return y + rowHeight + padding
+		end,
+	}
+end
+
+-- A scroll area whose content is one block, laid out to the area's width.
+local function scroll(parent: Panel, content: (canvas: Panel) => DonatosUiBlock): DScrollPanel
+	local area = vgui.Create("DScrollPanel", parent) as DScrollPanel
+	area.Paint = function(self: Panel, w: number, h: number): boolean
+		return true
+	end
+
+	local bar = area:GetVBar()
+	bar:SetWide(px(8))
+	bar:SetHideButtons(true)
+	bar.Paint = function(self: Panel, w: number, h: number): boolean
+		return true
+	end
+	bar.btnGrip.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(3), px(2), 0, w - px(4), h, colors.scrollGrip)
+		return true
+	end
+
+	local block = content(area:GetCanvas())
+	local canvasPerformLayout = area.PerformLayout
+	area.PerformLayout = function(self: DScrollPanel, w: number, h: number)
+		local width = self:GetCanvas():GetWide()
+		if width <= 0 then
+			width = w
+		end
+		block.panel:SetPos(0, 0)
+		block.panel:SetSize(width, block.layout(width))
+		canvasPerformLayout(self, w, h)
+	end
+	return area
+end
+
+------------------------------------------------------------------------------ buttons
+
+type DonatosUiButtonVariant = "default" | "outline" | "secondary" | "ghost" | "tab"
+
+interface DonatosUiButton {
+	label?: string;
+	icon?: "more" | "moreHorizontal" | "close";
+	variant?: DonatosUiButtonVariant;
+	size?: "sm" | "xs" | "icon";
+	active?: boolean;
+	badge?: number;
+	pending?: boolean;
+	disabled?: boolean;
+	-- Joined edge in a button group: "start" squares the right corners, "end" the left.
+	group?: "start" | "end";
+	-- Stretch to the width the parent gives instead of fitting the label.
+	fill?: boolean;
+	-- Draw as a select trigger: the label on the left (muted while `placeholder`), a chevron on
+	-- the right.
+	select?: boolean;
+	placeholder?: boolean;
+	onClick?: (button: DButton) => void;
+}
+
+local function buttonFont(options: DonatosUiButton): string
+	return options.size == "xs" and theme.font("smallBold") or theme.font("body")
+end
+
+local function buttonMetrics(options: DonatosUiButton): (number, number)
+	local height = options.size == "xs" and px(24) or px(30)
+	if options.size == "icon" or (options.label == nil and options.icon ~= nil) then
+		return height, height
+	end
+	local padX = options.size == "xs" and px(9) or px(11)
+	local textWidth = theme.textSize(options.label or "", buttonFont(options))
+	local width = textWidth + padX * 2
+	if options.badge ~= nil and options.badge > 0 then
+		local badgeWidth = theme.textSize(tostring(options.badge), theme.font("smallBold"))
+		width = width + math.max(badgeWidth + px(8), px(18)) + px(6)
+	end
+	if options.icon ~= nil then
+		width = width + height - padX
+	end
+	return width, height
+end
+
+local function buttonColors(options: DonatosUiButton, hovered: boolean): (Color | nil, Color, Color | nil)
+	local variant = options.variant or "default"
+	if variant == "default" then
+		return hovered and colors.primaryHover or colors.primary, colors.primaryText, nil
+	elseif variant == "outline" then
+		return hovered and colors.outlineHover or colors.outlineFill, colors.text, colors.border
+	elseif variant == "secondary" then
+		return hovered and colors.secondaryHover or colors.secondary, colors.text, nil
+	elseif variant == "tab" then
+		local shaded = options.active or hovered
+		return shaded and colors.headerShade or nil, options.active and colors.text or colors.textDim, nil
+	end
+	-- ghost
+	local fill = options.active and colors.secondary or (hovered and colors.secondaryHover or nil)
+	return fill, (options.active or hovered) and colors.text or colors.textDim, nil
+end
+
+local function paintBox(options: DonatosUiButton, radius: number, w: number, h: number, fill: Color, border: Color | nil)
+	local square = options.group
+	local tl, bl = square ~= "end", square ~= "end"
+	local tr, br = square ~= "start", square ~= "start"
+	theme.box(radius, 0, 0, w, h, fill, tl, tr, bl, br)
+	if border ~= nil then
+		theme.ring(radius, 0, 0, w, h, border, tl, tr, bl, br)
+	end
+end
+
+local function button(parent: Panel, options: DonatosUiButton): DButton
+	local btn = vgui.Create("DButton", parent) as DButton
+	btn:SetText("")
+	btn:SetSize(buttonMetrics(options))
+
+	btn.Paint = function(self: DButton, w: number, h: number): boolean
+		local inactive = options.disabled or options.pending
+		local hovered = self:IsHovered() and not inactive
+		local fill, textColor, border = buttonColors(options, hovered)
+		local alpha = options.disabled and 0.5 or 1
+		local radius = options.size == "xs" and px(5) or px(6)
+		if fill ~= nil then
+			paintBox(options, radius, w, h, theme.fade(fill, alpha), border)
+		end
+		local ink = theme.fade(textColor, alpha)
+
+		if options.pending then
+			theme.spinner(w / 2, h / 2, h * 0.26, ink)
+			return true
+		end
+
+		if options.select then
+			local font = theme.font("bodyRegular")
+			local padX = px(12)
+			local chevron = px(16)
+			local label = options.label or ""
+			local _, textHeight = theme.textSize(label, font)
+			surface.SetFont(font)
+			surface.SetTextColor(options.placeholder and colors.muted or ink)
+			surface.SetTextPos(padX, (h - textHeight) / 2)
+			surface.DrawText(label)
+			theme.icon("chevronDown", w - padX - chevron, (h - chevron) / 2, chevron, colors.muted)
+			return true
+		end
+
+		local font = buttonFont(options)
+		local labelWidth = 0
+		if options.label ~= nil then
+			labelWidth = theme.textSize(options.label, font)
+		end
+		local badgeWidth = 0
+		local badgeText = options.badge ~= nil and options.badge > 0 and tostring(options.badge) or nil
+		if badgeText ~= nil then
+			badgeWidth = math.max(theme.textSize(badgeText, theme.font("smallBold")) + px(8), px(18)) + px(6)
+		end
+		local iconSize = options.icon ~= nil and (options.label ~= nil and h - px(8) or h) or 0
+		local contentWidth = labelWidth + badgeWidth + iconSize
+		local x = options.fill and (w - contentWidth) / 2 or math.max((w - contentWidth) / 2, 0)
+
+		if options.icon ~= nil then
+			theme.icon(options.icon, x, (h - iconSize) / 2, iconSize, ink)
+			x = x + iconSize
+		end
+		if options.label ~= nil then
+			local _, textHeight = theme.textSize(options.label, font)
+			surface.SetFont(font)
+			surface.SetTextColor(ink)
+			surface.SetTextPos(x, (h - textHeight) / 2)
+			surface.DrawText(options.label)
+			x = x + labelWidth
+		end
+		if badgeText ~= nil then
+			local bw = badgeWidth - px(6)
+			local bh = px(18)
+			local bx, by = x + px(6), (h - bh) / 2
+			theme.box(px(4), bx, by, bw, bh, colors.badge)
+			draw.SimpleText(badgeText, theme.font("smallBold"), bx + bw / 2, by + bh / 2, colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+		return true
+	end
+
+	btn.DoClick = function(self: DButton)
+		if options.disabled or options.pending then
+			return
+		end
+		local onClick = options.onClick
+		if onClick ~= nil then
+			onClick(self)
+		end
+	end
+
+	return btn
+end
+
+-- Buttons side by side (a joined group when `joined`), right-aligned in the block.
+local function row(parent: Panel, gap: number, buttons: DButton[], align?: "left" | "right"): DonatosUiBlock
+	local panel = blankPanel(parent)
+	local height = 0
+	for _, child in ipairs(buttons) do
+		child:SetParent(panel)
+		height = math.max(height, child:GetTall())
+	end
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local total = 0
+			for i, child in ipairs(buttons) do
+				total = total + child:GetWide() + (i > 1 and gap or 0)
+			end
+			local x = align == "left" and 0 or width - total
+			for _, child in ipairs(buttons) do
+				child:SetPos(x, (height - child:GetTall()) / 2)
+				x = x + child:GetWide() + gap
+			end
+			return height
+		end,
+	}
+end
+
+local function rowWidth(buttons: DButton[], gap: number): number
+	local total = 0
+	for i, child in ipairs(buttons) do
+		total = total + child:GetWide() + (i > 1 and gap or 0)
+	end
+	return total
+end
+
+------------------------------------------------------------------------------ menus
+
+interface DonatosUiMenuItem {
+	label: string;
+	disabled?: boolean;
+	steamID64?: string;
+	onClick: () => void;
+}
+
+-- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
+local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
+	local menu = DermaMenu(false, nil)
+	local font = theme.font("body")
+	local itemHeight = px(32)
+	local avatarSize = px(22)
+	local hasAvatars = false
+	local width = math.max(minWidth or 0, px(160))
+	for _, item in ipairs(items) do
+		local textWidth = theme.textSize(item.label, font)
+		hasAvatars = hasAvatars or item.steamID64 ~= nil
+		width = math.max(width, textWidth + px(28) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
+	end
+
+	menu:SetMinimumWidth(width)
+	menu:SetMaxHeight(px(260))
+	menu.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.outlined(px(6), 0, 0, w, h, colors.popover, colors.border)
+		return true
+	end
+
+	for _, item in ipairs(items) do
+		local option = menu:AddOption("", function()
+			if not item.disabled then
+				item.onClick()
+			end
+		end)
+		option:SetText("")
+		option.PerformLayout = function(self: Panel, w: number, h: number)
+			self:SetTall(itemHeight)
+		end
+		local textX = px(12)
+		if item.steamID64 ~= nil then
+			local avatar = vgui.Create("AvatarImage", option)
+			avatar:SetSize(avatarSize, avatarSize)
+			avatar:SetPos(px(10), (itemHeight - avatarSize) / 2)
+			avatar:SetSteamID(item.steamID64, 32)
+			avatar:SetMouseInputEnabled(false)
+			textX = px(10) + avatarSize + px(8)
+		end
+		option.Paint = function(self: Panel, w: number, h: number): boolean
+			if self:IsHovered() and not item.disabled then
+				theme.box(px(4), px(3), px(2), w - px(6), h - px(4), colors.secondaryHover)
+			end
+			local color = item.disabled and colors.muted or colors.text
+			draw.SimpleText(item.label, font, textX, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			return true
+		end
+	end
+
+	local ax, ay = anchor:LocalToScreen(0, 0)
+	local x = alignLeft and ax or ax + anchor:GetWide() - width
+	menu:Open(x, ay + anchor:GetTall() + px(4), false, anchor)
+	return menu
+end
+
+------------------------------------------------------------------------------ cards
+
+interface DonatosUiCardSpec {
+	title: string;
+	-- Right of the title.
+	actions?: DButton[];
+	-- Below the title row, top-aligned.
+	body?: DonatosUiBlock[];
+	-- Pinned to the card's bottom edge; `footerActions` sit at its right.
+	footer?: DonatosUiBlock[];
+	footerActions?: DButton[];
+	footerGap?: number;
+}
+
+local function card(parent: Panel, build: (panel: Panel) => DonatosUiCardSpec): DonatosUiBlock
+	local panel = vgui.Create("DPanel", parent)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(10), 0, 0, w, h, colors.card)
+		return true
+	end
+
+	local spec = build(panel)
+	local pad = px(14)
+	local gap = px(8)
+	local actionGap = px(6)
+	local title = text(panel, { text = spec.title, font = theme.font("title"), color = colors.text, leading = 1.25 })
+	local actions = spec.actions or {}
+	local body = spec.body or {}
+	local footer = spec.footer or {}
+	local footerActions = spec.footerActions or {}
+	for _, child in ipairs(actions) do
+		child:SetParent(panel)
+	end
+	for _, child in ipairs(footerActions) do
+		child:SetParent(panel)
+	end
+
+	-- Measured by layout, applied by PerformLayout once the real height is known.
+	local footerHeight = 0
+	local footerSizes: number[] = {}
+	local innerWidth = 0
+
+	local function placeFooter(h: number)
+		local y = h - pad - footerHeight
+		local footerActionsWidth = rowWidth(footerActions, 0)
+		local x = pad + innerWidth - footerActionsWidth
+		for _, child in ipairs(footerActions) do
+			child:SetPos(x, y + (footerHeight - child:GetTall()) / 2)
+			x = x + child:GetWide()
+		end
+		local fy = y
+		for i, child in ipairs(footer) do
+			local fh = footerSizes[i] or 0
+			child.panel:SetPos(pad, fy + (#footer == 1 and (footerHeight - fh) / 2 or 0))
+			fy = fy + fh + px(2)
+		end
+	end
+
+	panel.PerformLayout = function(self: Panel, w: number, h: number)
+		placeFooter(h)
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			innerWidth = width - pad * 2
+			local actionsWidth = rowWidth(actions, actionGap)
+			local titleWidth = innerWidth - (actionsWidth > 0 and actionsWidth + gap or 0)
+			local titleHeight = title.layout(titleWidth)
+			local actionsHeight = 0
+			for _, child in ipairs(actions) do
+				actionsHeight = math.max(actionsHeight, child:GetTall())
+			end
+			local headerHeight = math.max(titleHeight, actionsHeight)
+			title.panel:SetPos(pad, pad + (actionsHeight > titleHeight and (actionsHeight - titleHeight) / 2 or 0))
+			title.panel:SetSize(titleWidth, titleHeight)
+			local x = pad + innerWidth - actionsWidth
+			for _, child in ipairs(actions) do
+				child:SetPos(x, pad + (headerHeight - child:GetTall()) / 2)
+				x = x + child:GetWide() + actionGap
+			end
+
+			local y = pad + headerHeight
+			for _, child in ipairs(body) do
+				local h = child.layout(innerWidth)
+				y = y + px(5)
+				child.panel:SetPos(pad, y)
+				child.panel:SetSize(innerWidth, h)
+				y = y + h
+			end
+
+			local footerActionsWidth = rowWidth(footerActions, 0)
+			local footerWidth = innerWidth - (footerActionsWidth > 0 and footerActionsWidth + gap or 0)
+			footerHeight = 0
+			footerSizes = {}
+			for i, child in ipairs(footer) do
+				local h = child.layout(footerWidth)
+				child.panel:SetSize(footerWidth, h)
+				footerSizes[i] = h
+				footerHeight = footerHeight + h + (i > 1 and px(2) or 0)
+			end
+			for _, child in ipairs(footerActions) do
+				footerHeight = math.max(footerHeight, child:GetTall())
+			end
+			if footerHeight > 0 then
+				y = y + (spec.footerGap or px(12)) + footerHeight
+			end
+			return y + pad
+		end,
+	}
+end
+
+-- A thin progress bar; `fraction` is read every frame.
+local function progress(parent: Panel, fraction: () => number): DonatosUiBlock
+	return painted(parent, px(6), function(w: number, h: number)
+		theme.box(h / 2, 0, 0, w, h, colors.track)
+		local fill = math.Clamp(fraction(), 0, 1) * w
+		if fill > 0 then
+			theme.box(h / 2, 0, 0, math.max(fill, h), h, colors.primary)
+		end
+	end)
+end
+
+------------------------------------------------------------------------------ inputs and media
+
+-- A text field: the returned panel is the styled box to place, holding the entry inset from
+-- its edges (a TextEntry draws its text flush with its own left edge).
+local function textEntry(parent: Panel, placeholder: string, numeric: boolean): (Panel, DTextEntry)
+	local field = vgui.Create("DPanel", parent)
+	field:SetCursor("beam")
+	field:SetTall(px(34))
+	local entry = vgui.Create("DTextEntry", field) as DTextEntry
+	entry:SetFont(theme.font("bodyRegular"))
+	entry:SetNumeric(numeric)
+	entry:SetPaintBackground(false)
+	entry.Paint = function(self: DTextEntry, w: number, h: number): boolean
+		if self:GetValue() == "" and not self:HasFocus() then
+			draw.SimpleText(placeholder, theme.font("bodyRegular"), 2, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		end
+		self:DrawTextEntryText(colors.text, colors.selection, colors.text)
+		return true
+	end
+	field.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.outlined(px(6), 0, 0, w, h, colors.outlineFill, entry:HasFocus() and colors.muted or colors.input)
+		return true
+	end
+	field.PerformLayout = function(self: Panel, w: number, h: number)
+		entry:SetPos(px(10), 0)
+		entry:SetSize(w - px(20), h)
+	end
+	field.OnMousePressed = function(self: Panel, keyCode: number): boolean
+		entry:RequestFocus()
+		return true
+	end
+	return field, entry
+end
+
+-- A circular Steam avatar. `behind` returns the colours under it, bottom layer first; they
+-- are painted back over the image's corners.
+local function avatar(parent: Panel, size: number, target: Player, behind: () => Color[]): Panel
+	local holder = vgui.Create("DPanel", parent)
+	holder:SetSize(size, size)
+	local image = vgui.Create("AvatarImage", holder)
+	image:SetSize(size, size)
+	image:SetPlayer(target, 64)
+	image:SetPaintedManually(true)
+	image:SetMouseInputEnabled(false)
+	holder.Paint = function(self: Panel, w: number, h: number): boolean
+		image:PaintManual()
+		for _, color in ipairs(behind()) do
+			theme.circleCutout(0, 0, w, color)
+		end
+		return true
+	end
+	return holder
+end
+
+-- A message in a bordered box, centred in whatever space the parent gives.
+local function emptyState(parent: Panel, message: string): Panel
+	local panel = blankPanel(parent)
+	local font = theme.font("bodyRegular")
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		local tw, th = theme.textSize(message, font)
+		local bw, bh = tw + px(40), th + px(30)
+		local bx, by = (w - bw) / 2, (h - bh) / 2
+		theme.outlined(px(8), bx, by, bw, bh, theme.fade(colors.card, 180 / 255), colors.border)
+		draw.SimpleText(message, font, w / 2, h / 2, colors.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		return true
+	end
+	return panel
+end
+
+------------------------------------------------------------------------------ dialogs
+
+interface DonatosUiDialog {
+	title: string;
+	description?: string;
+	-- `relayout` re-measures the dialog after the body's content changes size.
+	body?: (parent: Panel, relayout: () => void) => DonatosUiBlock;
+	actions: DonatosUiButton[];
+}
+
+interface DonatosUiDialogHost {
+	show: (dialog: DonatosUiDialog) => void;
+	close: () => void;
+	-- Puts the host over the whole of `frame` (call from the frame's PerformLayout).
+	cover: (w: number, h: number) => void;
+}
+
+local function dialogHost(frame: Panel): DonatosUiDialogHost
+	local overlay = blankPanel(frame)
+	overlay:SetVisible(false)
+	overlay:SetZPos(1000)
+	overlay.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(10), 0, 0, w, h, colors.overlay)
+		return true
+	end
+
+	local current: Panel | nil = nil
+
+	local function close()
+		if current ~= nil and IsValid(current) then
+			current:Remove()
+		end
+		current = nil
+		overlay:SetVisible(false)
+	end
+
+	overlay.OnMousePressed = function(self: Panel, keyCode: number): boolean
+		close()
+		return true
+	end
+
+	local function show(dialog: DonatosUiDialog)
+		close()
+		local box = vgui.Create("DPanel", overlay)
+		current = box
+		box.Paint = function(self: Panel, w: number, h: number): boolean
+			theme.outlined(px(10), 0, 0, w, h, colors.background, colors.border)
+			return true
+		end
+
+		local content, add = stack(box, px(16), px(22))
+		local header, addHeader = stack(content.panel, px(8))
+		addHeader(text(header.panel, { text = dialog.title, font = theme.font("dialogTitle"), color = colors.text }))
+		if dialog.description ~= nil then
+			addHeader(text(header.panel, { text = dialog.description, font = theme.font("bodyRegular"), color = colors.muted, leading = 1.45 }))
+		end
+		add(header)
+		local makeBody = dialog.body
+		if makeBody ~= nil then
+			add(makeBody(content.panel, function()
+				overlay:InvalidateLayout()
+			end))
+		end
+		local buttons: DButton[] = {}
+		for _, action in ipairs(dialog.actions) do
+			table.insert(buttons, button(content.panel, action))
+		end
+		add(row(content.panel, px(8), buttons))
+
+		box.PerformLayout = function(self: Panel, w: number, h: number)
+			content.panel:SetSize(w, content.layout(w))
+		end
+
+		local function place()
+			local fw, fh = overlay:GetSize()
+			local w = math.min(px(460), fw - px(32))
+			local h = content.layout(w)
+			box:SetSize(w, h)
+			box:SetPos((fw - w) / 2, math.max((fh - h) / 2, px(16)))
+		end
+		overlay.PerformLayout = function(self: Panel, w: number, h: number)
+			place()
+		end
+		place()
+		overlay:SetVisible(true)
+		overlay:MoveToFront()
+	end
+
+	return {
+		show = show,
+		close = close,
+		cover = function(w: number, h: number)
+			overlay:SetPos(0, 0)
+			overlay:SetSize(w, h)
+		end,
+	}
+end
+
+return {
+	blankPanel = blankPanel,
+	text = text,
+	painted = painted,
+	stack = stack,
+	grid = grid,
+	flow = flow,
+	scroll = scroll,
+	button = button,
+	row = row,
+	dropdown = dropdown,
+	card = card,
+	progress = progress,
+	textEntry = textEntry,
+	avatar = avatar,
+	emptyState = emptyState,
+	dialogHost = dialogHost,
+}

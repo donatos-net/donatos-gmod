@@ -1,9 +1,8 @@
 // Builds dist/bundle.lua: compiles src/ with tlua, then packs every emitted module into one
-// chunk behind a bundle-local `require` (tlua has no bundler), and inlines the web UI.
+// chunk behind a bundle-local `require` (tlua has no bundler).
 //
 // The bootstrap runs the bundle with RunString, so it must be a single self-contained file.
 import { Glob } from 'bun'
-import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -23,7 +22,7 @@ if (tlua.exitCode !== 0) {
 }
 
 // Per-module source rewrites. Each placeholder is replaced in its own module only, so the
-// same text elsewhere (a comparison, a log line) is left alone.
+// same text elsewhere (a log line) is left alone.
 const rewrites: Record<string, (source: string) => string> = {
 	meta: (source) =>
 		[
@@ -34,7 +33,6 @@ const rewrites: Record<string, (source: string) => string> = {
 			(text, [placeholder, value]) => replaceOnce(text, placeholder as string, luaString(value ?? '')),
 			source,
 		),
-	'ui.web-panel': (source) => replaceOnce(source, '"__DONATOS_HTML__"', toLuaLongString(buildUi())),
 }
 
 const modules = new Map<string, string>()
@@ -87,12 +85,6 @@ fs.mkdirSync(path.dirname(bundlePath), { recursive: true })
 fs.writeFileSync(bundlePath, parts.join('\n'))
 console.log(`build: packed ${modules.size} modules into ${path.relative(root, bundlePath)}`)
 
-function buildUi(): string {
-	const uiRoot = path.resolve(root, '..', '..', 'ui')
-	execSync('bun run build', { cwd: uiRoot, stdio: 'inherit' })
-	return fs.readFileSync(path.join(uiRoot, 'dist', 'index.html'), 'utf8')
-}
-
 function replaceOnce(source: string, placeholder: string, replacement: string): string {
 	const index = source.indexOf(placeholder)
 	if (index === -1 || source.indexOf(placeholder, index + 1) !== -1) {
@@ -106,14 +98,4 @@ function luaString(value: string): string {
 		c === '\\' || c === '"' ? `\\${c}` : `\\${c.charCodeAt(0).toString().padStart(3, '0')}`,
 	)
 	return `"${escaped}"`
-}
-
-function toLuaLongString(value: string): string {
-	const eq = '='.repeat(8)
-	const close = `]${eq}]`
-	if (value.includes(close)) {
-		throw new Error('HTML contains the static Lua long string delimiter.')
-	}
-	// A newline right after the opening bracket is dropped by Lua, so lead with one.
-	return `[${eq}[\n${value}${close}`
 }

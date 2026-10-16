@@ -1,0 +1,354 @@
+-- Client: the donatos menu window. It renders from the synced state (remote config and the
+-- local player's data) and re-renders whenever the server pushes either.
+
+local log = require("utils.log")
+local async = require("utils.async")
+local state = require("utils.state")
+local theme = require("ui.theme")
+local views = require("ui.views")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+type DonatosMenuTab = "shop" | "inventory" | "activeItems"
+
+local menuState = state.menu
+
+local current: {
+	tab: DonatosMenuTab;
+	category: number | nil;
+	scroll: Table<string, number>;
+} = { tab = "shop", category = nil, scroll = {} }
+
+local lastUsedAt = RealTime()
+
+local function markUsed()
+	lastUsedAt = RealTime()
+end
+
+local function getFrame(): Panel | nil
+	local frame = menuState.frame
+	if frame ~= nil and IsValid(frame) then
+		return frame
+	end
+	return nil
+end
+
+local function destroy()
+	local frame = menuState.frame
+	if IsValid(frame) then
+		frame:Remove()
+	end
+	menuState.frame = nil
+end
+
+local function remoteData(): NonNullable<DonatosRemoteData> | nil
+	local ply = LocalPlayer()
+	if not IsValid(ply) then
+		return nil
+	end
+	return ply:Donatos()._remoteData.data
+end
+
+local function steamID64(): string | nil
+	local ply = LocalPlayer()
+	return IsValid(ply) and ply:SteamID64() or nil
+end
+
+local function canPay(): boolean
+	return state.remoteConfig.value ~= nil and steamID64() ~= nil
+end
+
+local function openPayUrl(deposit: string)
+	local config = state.remoteConfig.value
+	local id = steamID64()
+	if config == nil or id == nil then
+		return
+	end
+	gui.OpenURL(`${string.Replace(config.payUrl, "{id}", id)}&openDeposit=${deposit}`)
+end
+
+local function hide()
+	markUsed()
+	local frame = getFrame()
+	if frame ~= nil then
+		frame:SetVisible(false)
+	end
+end
+
+local render: () => void = function() end
+
+local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
+	local header = vgui.Create("DPanel", frame)
+	header:Dock(TOP)
+	header:SetTall(px(46))
+	header.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.paintGradient(w, h, px(10))
+		return true
+	end
+
+	local data = remoteData()
+	local config = state.remoteConfig.value
+	local tabs: { tab: DonatosMenuTab; label: string; badge?: number }[] = {
+		{ tab = "shop", label = "Магазин" },
+		{ tab = "inventory", label = "Инвентарь", badge = data and #data.inventoryItems or 0 },
+		{ tab = "activeItems", label = "Активные предметы", badge = data and #data.activeItems or 0 },
+	}
+	local left: DButton[] = {}
+	for _, entry in ipairs(tabs) do
+		table.insert(left, widgets.button(header, {
+			label = entry.label,
+			size = "sm",
+			variant = "tab",
+			active = current.tab == entry.tab,
+			badge = entry.badge,
+			onClick = function()
+				if current.tab ~= entry.tab then
+					current.tab = entry.tab
+					render()
+				end
+			end,
+		}))
+	end
+
+	local payable = canPay()
+	local balance = widgets.button(header, {
+		label = `Бонусы: ${data and data.player.balance or 0}`,
+		size = "sm",
+		variant = "outline",
+		group = "start",
+		disabled = not payable,
+		onClick = function()
+			openPayUrl("true")
+		end,
+	})
+	local more = widgets.button(header, {
+		icon = "more",
+		size = "sm",
+		variant = "outline",
+		group = "end",
+		onClick = function(btn: DButton)
+			widgets.dropdown(btn, {
+				{
+					label = "Пополнить баланс",
+					disabled = not payable,
+					onClick = function()
+						openPayUrl("true")
+					end,
+				},
+				{
+					label = "Другие способы",
+					disabled = config == nil or not config.igs.enabled,
+					onClick = function()
+						views.igsDeposit(ctx)
+					end,
+				},
+			})
+		end,
+	})
+	more:SetWide(px(28))
+
+	local ply = LocalPlayer()
+	local avatarSize = px(30)
+	local avatar: Panel | nil = nil
+	if IsValid(ply) then
+		local holder = widgets.avatar(header, avatarSize, ply, function(): Color[]
+			local center = (avatar and avatar:GetX() or 0) + avatarSize / 2
+			return { colors.background, theme.gradientAt(center, header:GetWide()) }
+		end)
+		avatar = holder
+	end
+	local close = widgets.button(header, { icon = "close", size = "icon", variant = "ghost", onClick = hide })
+
+	header.PerformLayout = function(self: Panel, w: number, h: number)
+		local x = px(8)
+		for _, btn in ipairs(left) do
+			btn:SetPos(x, (h - btn:GetTall()) / 2)
+			x = x + btn:GetWide() + px(6)
+		end
+		local right = w - px(8)
+		right = right - close:GetWide()
+		close:SetPos(right, (h - close:GetTall()) / 2)
+		if avatar ~= nil then
+			right = right - px(8) - avatar:GetWide()
+			avatar:SetPos(right, (h - avatar:GetTall()) / 2)
+		end
+		right = right - px(10) - more:GetWide()
+		more:SetPos(right, (h - more:GetTall()) / 2)
+		right = right - balance:GetWide()
+		balance:SetPos(right, (h - balance:GetTall()) / 2)
+	end
+
+	return header
+end
+
+local function create(): Panel
+	destroy()
+	log.debug("Creating menu")
+
+	local frame = vgui.Create("EditablePanel")
+	menuState.frame = frame
+	frame:SetSize(math.min(px(1100), ScrW() - px(40)), math.min(px(680), ScrH() - px(40)))
+	frame:Center()
+	frame.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(10), 0, 0, w, h, colors.background)
+		return true
+	end
+
+	local dialogs = widgets.dialogHost(frame)
+	frame.PerformLayout = function(self: Panel, w: number, h: number)
+		dialogs.cover(w, h)
+	end
+
+	local header: Panel | nil = nil
+	local body: Panel | nil = nil
+	local area: DScrollPanel | nil = nil
+
+	local ctx: DonatosMenuContext = {
+		dialogs = dialogs,
+		config = function()
+			return state.remoteConfig.value
+		end,
+		data = remoteData,
+		loaded = function()
+			local ply = LocalPlayer()
+			return IsValid(ply) and ply:Donatos()._remoteData.isLoaded
+		end,
+		openPayUrl = openPayUrl,
+		canPay = canPay,
+		rerender = function()
+			render()
+		end,
+		state = current,
+	}
+
+	-- Rebuilds the header and the current tab, keeping each tab's scroll position.
+	local function renderFrame()
+		if area ~= nil and IsValid(area) then
+			current.scroll[current.tab] = area:GetVBar():GetScroll()
+		end
+		if header ~= nil and IsValid(header) then
+			header:Remove()
+		end
+		if body ~= nil and IsValid(body) then
+			body:Remove()
+		end
+
+		header = buildHeader(frame, ctx)
+		local content = widgets.blankPanel(frame)
+		body = content
+		content:Dock(FILL)
+		if current.tab == "shop" then
+			area = views.shop(content, ctx)
+		elseif current.tab == "inventory" then
+			area = views.inventory(content, ctx)
+		else
+			area = views.activeItems(content, ctx)
+		end
+
+		local scrollArea = area
+		local saved = current.scroll[current.tab]
+		if scrollArea ~= nil and saved ~= nil then
+			frame:InvalidateLayout(true)
+			content:InvalidateLayout(true)
+			scrollArea:InvalidateLayout(true)
+			scrollArea:GetVBar():SetScroll(saved)
+		end
+	end
+
+	render = function()
+		if IsValid(frame) then
+			renderFrame()
+		end
+	end
+	renderFrame()
+	return frame
+end
+
+local TABS: Table<string, DonatosMenuTab> = {
+	shop = "shop",
+	inventory = "inventory",
+	activeItems = "activeItems",
+}
+
+local function open(tab?: string): Panel
+	markUsed()
+
+	local dev = donatos.dev
+	if dev and dev.enabled then
+		destroy()
+	end
+
+	local requested = tab and TABS[tab]
+	if requested ~= nil then
+		current.tab = requested
+	end
+
+	local frame = getFrame()
+	if frame == nil then
+		frame = create()
+	else
+		render()
+	end
+
+	frame:SetVisible(true)
+	frame:MakePopup()
+	return frame
+end
+
+-- Called when the server pushes new data: re-render if the menu is showing.
+local function refresh()
+	local frame = getFrame()
+	if frame ~= nil and frame:IsVisible() then
+		render()
+	end
+end
+
+local function performGc()
+	local frame = menuState.frame
+	if frame == nil then
+		return
+	end
+	if not IsValid(frame) then
+		menuState.frame = nil
+		return
+	end
+	if frame:IsVisible() or RealTime() - lastUsedAt < 5 * 60 then
+		return
+	end
+	destroy()
+end
+
+destroy()
+
+hook.Add("GUIMousePressed", state.hookId("menu"), function()
+	hide()
+end)
+
+-- Escape closes the menu instead of opening the pause menu.
+hook.Add("OnPauseMenuShow", state.hookId("menu"), function(): boolean | nil
+	local frame = getFrame()
+	if frame ~= nil and frame:IsVisible() then
+		hide()
+		return false
+	end
+	return nil
+end)
+
+hook.Add("OnScreenSizeChanged", state.hookId("menu"), function()
+	theme.refresh()
+	destroy()
+end)
+
+async.run(suspend function()
+	while true do
+		state.delay(60)
+		performGc()
+	end
+end)
+
+return {
+	open = open,
+	refresh = refresh,
+}

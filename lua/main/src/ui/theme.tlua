@@ -1,0 +1,516 @@
+-- Client: visual tokens for the donatos menu (the web UI's dark theme), scaled to the screen,
+-- and the drawing and text helpers every widget shares.
+
+local theme = {}
+
+-- GMod's 2D pipeline crushes dark tones: drawing grey 16 shows 8, 24 shows 17, and from 96 up
+-- it is the identity (measured with a grey ramp in the client). Theme colours are written as
+-- they should appear, and lifted through the inverse of that response.
+local RESPONSE: { drawn: number; shown: number }[] = {
+	{ drawn = 0, shown = 0 },
+	{ drawn = 8, shown = 2 },
+	{ drawn = 16, shown = 8 },
+	{ drawn = 24, shown = 17 },
+	{ drawn = 32, shown = 26 },
+	{ drawn = 40, shown = 35 },
+	{ drawn = 48, shown = 44 },
+	{ drawn = 56, shown = 53 },
+	{ drawn = 64, shown = 62 },
+	{ drawn = 72, shown = 70 },
+	{ drawn = 80, shown = 79 },
+	{ drawn = 96, shown = 96 },
+}
+
+local function lift(shown: number): number
+	for i = 2, #RESPONSE do
+		local low = assert(RESPONSE[i - 1])
+		local high = assert(RESPONSE[i])
+		if shown <= high.shown then
+			local f = (shown - low.shown) / (high.shown - low.shown)
+			return math.Round(Lerp(f, low.drawn, high.drawn))
+		end
+	end
+	return shown
+end
+
+-- An opaque colour that appears on screen as (r, g, b).
+local function shown(r: number, g: number, b: number): Color
+	return Color(lift(r), lift(g), lift(b), 255)
+end
+
+-- The forward response: what a drawn grey shows as.
+local function crush(drawn: number): number
+	for i = 2, #RESPONSE do
+		local low = assert(RESPONSE[i - 1])
+		local high = assert(RESPONSE[i])
+		if drawn <= high.drawn then
+			return Lerp((drawn - low.drawn) / (high.drawn - low.drawn), low.shown, high.shown)
+		end
+	end
+	return drawn
+end
+
+local function toLinear(value: number): number
+	local c = value / 255
+	return c <= 0.04045 and c / 12.92 or ((c + 0.055) / 1.055) ^ 2.4
+end
+
+-- GMod blends translucent draws in linear light, where the web blends sRGB values, so the same
+-- alpha comes out far stronger (white at 24 over black shows 86, not 24). This finds the alpha
+-- that shows like the web's `alpha`. Near-black scales whatever is below, which has a closed form
+-- (1 - (1 - a)^2.2); anything else is matched over the menu background, and is close over
+-- lighter surfaces.
+local BLEND_BASE: number[] = { 14, 14, 16 }
+local webAlphas: Table<Color, number> = setmetatable({}, { __mode = "k" })
+
+local function blendAlpha(color: Color, alpha: number): number
+	local a = math.Clamp(alpha / 255, 0, 1)
+	if math.max(color.r, color.g, color.b) <= 16 then
+		return math.Round((1 - (1 - a) ^ 2.2) * 255)
+	end
+	local best, spread = a, 0
+	for i, channel in ipairs({ color.r, color.g, color.b }) do
+		local baseShown = assert(BLEND_BASE[i])
+		local base = toLinear(lift(baseShown))
+		local top = toLinear(channel)
+		if math.abs(top - base) > spread then
+			spread = math.abs(top - base)
+			local target = toLinear(lift(a * crush(channel) + (1 - a) * baseShown))
+			best = (target - base) / (top - base)
+		end
+	end
+	return math.Round(math.Clamp(best, 0, 1) * 255)
+end
+
+-- `color` drawn at what the web would show as `alpha`.
+local function translucent(r: number, g: number, b: number, alpha: number): Color
+	local color = Color(r, g, b, 255)
+	color.a = blendAlpha(color, alpha)
+	webAlphas[color] = alpha
+	return color
+end
+
+-- `color` with its web alpha scaled by `factor` (for disabled and fading states).
+function theme.fade(color: Color, factor: number): Color
+	local faded = Color(color.r, color.g, color.b, 255)
+	local alpha = (webAlphas[color] or color.a) * factor
+	faded.a = blendAlpha(faded, alpha)
+	webAlphas[faded] = alpha
+	return faded
+end
+
+theme.colors = {
+	background = shown(14, 14, 16),
+	card = shown(24, 24, 27),
+	popover = shown(24, 24, 27),
+	secondary = shown(39, 39, 42),
+	secondaryHover = shown(52, 52, 57),
+	text = Color(250, 250, 250),
+	textDim = translucent(250, 250, 250, 180),
+	muted = Color(161, 161, 170),
+	primary = Color(212, 212, 212),
+	primaryHover = Color(190, 190, 194),
+	primaryText = shown(24, 24, 27),
+	border = translucent(255, 255, 255, 24),
+	outlineFill = translucent(255, 255, 255, 24),
+	outlineHover = translucent(255, 255, 255, 38),
+	input = translucent(255, 255, 255, 40),
+	destructive = Color(248, 113, 113),
+	overlay = translucent(0, 0, 0, 150),
+	filterBar = shown(24, 24, 26),
+	headerShade = translucent(12, 12, 14, 115),
+	badge = translucent(255, 255, 255, 51),
+	track = shown(39, 39, 42),
+	scrollGrip = translucent(255, 255, 255, 40),
+	selection = translucent(96, 165, 250, 120),
+}
+
+local colors = theme.colors
+
+-- Header gradient stops: the web UI's colours at 0.6 alpha, composited over the background.
+local function overBackground(r: number, g: number, b: number): Color
+	return shown(Lerp(0.6, 14, r), Lerp(0.6, 14, g), Lerp(0.6, 16, b))
+end
+
+local GRADIENT: Color[] = {
+	overBackground(238, 119, 82),
+	overBackground(231, 60, 126),
+	overBackground(35, 166, 213),
+	overBackground(35, 213, 171),
+}
+
+local scale = 1
+
+-- Scales a design-space length (1080p-ish) to the current screen.
+function theme.px(value: number): number
+	return math.Round(value * scale)
+end
+
+local FONTS: { name: string; face: string; size: number; weight: number }[] = {
+	{ name = "title", face = "Roboto Medium", size = 16, weight = 500 },
+	{ name = "body", face = "Roboto Medium", size = 14, weight = 500 },
+	{ name = "bodyRegular", face = "Roboto", size = 14, weight = 400 },
+	{ name = "small", face = "Roboto", size = 13, weight = 400 },
+	{ name = "smallBold", face = "Roboto Medium", size = 12, weight = 500 },
+	{ name = "price", face = "Roboto", size = 15, weight = 700 },
+	{ name = "heading", face = "Roboto", size = 15, weight = 700 },
+	{ name = "dialogTitle", face = "Roboto", size = 19, weight = 700 },
+}
+
+-- Recomputes the scale and recreates the fonts for the current resolution.
+function theme.refresh()
+	scale = math.Clamp(ScrH() / 900, 0.85, 2.4)
+	for _, font in ipairs(FONTS) do
+		surface.CreateFont(`donatos.${font.name}`, {
+			font = font.face,
+			size = theme.px(font.size),
+			weight = font.weight,
+			extended = true,
+			antialias = true,
+		})
+	end
+end
+
+local type DonatosFont =
+	| "title"
+	| "body"
+	| "bodyRegular"
+	| "small"
+	| "smallBold"
+	| "price"
+	| "heading"
+	| "dialogTitle"
+
+function theme.font(name: DonatosFont): string
+	return `donatos.${name}`
+end
+
+function theme.textSize(text: string, font: string): (number, number)
+	surface.SetFont(font)
+	return surface.GetTextSize(text)
+end
+
+function theme.fontHeight(font: string): number
+	local _, h = theme.textSize("Ay", font)
+	return h
+end
+
+-- Word-wraps `text` to `width`, keeping its line breaks; a word wider than a line is
+-- broken between characters.
+function theme.wrap(text: string, font: string, width: number): string[]
+	surface.SetFont(font)
+	local lines: string[] = {}
+	for paragraph in string.gmatch(`${text}\n`, "(.-)\r?\n") do
+		local line = ""
+		for word in string.gmatch(paragraph, "%S+") do
+			local candidate = line == "" and word or `${line} ${word}`
+			local candidateWidth = surface.GetTextSize(candidate)
+			if candidateWidth <= width then
+				line = candidate
+			else
+				if line ~= "" then
+					table.insert(lines, line)
+				end
+				line = ""
+				for char in string.gmatch(word, utf8.charpattern) do
+					local extended = line .. char
+					local extendedWidth = surface.GetTextSize(extended)
+					if line ~= "" and extendedWidth > width then
+						table.insert(lines, line)
+						line = char
+					else
+						line = extended
+					end
+				end
+			end
+		end
+		table.insert(lines, line)
+	end
+	return lines
+end
+
+------------------------------------------------------------------------------ rounded boxes
+
+-- draw.RoundedBox's corner textures are close to 1-bit at small radii, so corners are drawn
+-- from masks rendered once per radius: each texel holds the exact coverage of a quarter
+-- circle (4x4 supersampled), drawn 1:1 with point sampling. "outside" masks hold the rest of the
+-- square, and "ring" masks the one-pixel band between the circle and the next smaller one.
+local CORNER_TEXTURE_FLAGS = 1 + 4 + 8 + 256 + 512 -- point sample, clamp S/T, no mips, no LOD
+local cornerMasks: Table<string, { material: IMaterial; extent: number }> = {}
+
+local type DonatosCornerKind = "inside" | "outside" | "ring"
+
+local function cornerMask(radius: number, kind: DonatosCornerKind): { material: IMaterial; extent: number }
+	local key = `${radius}${kind}`
+	local cached = cornerMasks[key]
+	if cached ~= nil then
+		return cached
+	end
+
+	local size = 4
+	while size < radius do
+		size = size * 2
+	end
+	local name = `donatos_corner_v4_${key}`
+	local target = GetRenderTargetEx(name, size, size, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, CORNER_TEXTURE_FLAGS, 0, IMAGE_FORMAT_BGRA8888)
+
+	-- render.Clear inside the pushed target leaves it opaque black; this clears to transparent.
+	render.ClearRenderTarget(target, Color(255, 255, 255, 0))
+	render.PushRenderTarget(target)
+	render.OverrideAlphaWriteEnable(true, true)
+	cam.Start2D()
+	render.OverrideBlend(true, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD)
+	draw.NoTexture()
+	local samples = 4
+	for y = 0, radius - 1 do
+		for x = 0, radius - 1 do
+			local inside, innerInside = 0, 0
+			for sy = 0, samples - 1 do
+				for sx = 0, samples - 1 do
+					local dx = radius - (x + (sx + 0.5) / samples)
+					local dy = radius - (y + (sy + 0.5) / samples)
+					local distance = dx * dx + dy * dy
+					if distance <= radius * radius then
+						inside = inside + 1
+					end
+					if distance <= (radius - 1) * (radius - 1) then
+						innerInside = innerInside + 1
+					end
+				end
+			end
+			local coverage = inside / (samples * samples)
+			if kind == "outside" then
+				coverage = 1 - coverage
+			elseif kind == "ring" then
+				coverage = coverage - innerInside / (samples * samples)
+			end
+			-- surface skips fully transparent draws; those texels keep the clear.
+			if coverage > 0 then
+				surface.SetDrawColor(255, 255, 255, math.Round(coverage * 255))
+				surface.DrawRect(x, y, 1, 1)
+			end
+		end
+	end
+	render.OverrideBlend(false)
+	cam.End2D()
+	render.OverrideAlphaWriteEnable(false)
+	render.PopRenderTarget()
+
+	local material = CreateMaterial(name, "UnlitGeneric", {
+		["$basetexture"] = target:GetName(),
+		["$translucent"] = 1,
+		["$vertexalpha"] = 1,
+		["$vertexcolor"] = 1,
+	})
+	local mask = { material = material, extent = radius / size }
+	cornerMasks[key] = mask
+	return mask
+end
+
+local function drawCorner(mask: { material: IMaterial; extent: number }, x: number, y: number, radius: number, flipX: boolean, flipY: boolean)
+	local e = mask.extent
+	surface.SetMaterial(mask.material)
+	surface.DrawTexturedRectUV(x, y, radius, radius, flipX and e or 0, flipY and e or 0, flipX and 0 or e, flipY and 0 or e)
+end
+
+-- A rounded box with anti-aliased corners; the flags choose which corners are rounded.
+function theme.box(
+	radius: number,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	color: Color,
+	tl?: boolean,
+	tr?: boolean,
+	bl?: boolean,
+	br?: boolean
+)
+	x, y, w, h = math.Round(x), math.Round(y), math.Round(w), math.Round(h)
+	local r = math.min(math.Round(radius), math.floor(math.min(w, h) / 2))
+	surface.SetDrawColor(color)
+	draw.NoTexture()
+	if r <= 0 then
+		surface.DrawRect(x, y, w, h)
+		return
+	end
+	surface.DrawRect(x + r, y, w - r * 2, h)
+	surface.DrawRect(x, y + r, r, h - r * 2)
+	surface.DrawRect(x + w - r, y + r, r, h - r * 2)
+
+	local mask = cornerMask(r, "inside")
+	local corners: { on: boolean; cx: number; cy: number; fx: boolean; fy: boolean }[] = {
+		{ on = tl ~= false, cx = x, cy = y, fx = false, fy = false },
+		{ on = tr ~= false, cx = x + w - r, cy = y, fx = true, fy = false },
+		{ on = bl ~= false, cx = x, cy = y + h - r, fx = false, fy = true },
+		{ on = br ~= false, cx = x + w - r, cy = y + h - r, fx = true, fy = true },
+	}
+	for _, corner in ipairs(corners) do
+		if corner.on then
+			surface.SetDrawColor(color)
+			drawCorner(mask, corner.cx, corner.cy, r, corner.fx, corner.fy)
+		else
+			draw.NoTexture()
+			surface.SetDrawColor(color)
+			surface.DrawRect(corner.cx, corner.cy, r, r)
+		end
+	end
+end
+
+-- Paints `color` outside a circle inscribed in the square at (x, y): drawn over a square image,
+-- it leaves an anti-aliased circle, provided `color` is what lies behind.
+function theme.circleCutout(x: number, y: number, size: number, color: Color)
+	local r = math.floor(size / 2)
+	local mask = cornerMask(r, "outside")
+	surface.SetDrawColor(color)
+	drawCorner(mask, x, y, r, false, false)
+	drawCorner(mask, x + size - r, y, r, true, false)
+	drawCorner(mask, x, y + size - r, r, false, true)
+	drawCorner(mask, x + size - r, y + size - r, r, true, true)
+end
+
+-- A one-pixel rounded border; the flags choose which corners are rounded, as for `theme.box`.
+function theme.ring(
+	radius: number,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	color: Color,
+	tl?: boolean,
+	tr?: boolean,
+	bl?: boolean,
+	br?: boolean
+)
+	x, y, w, h = math.Round(x), math.Round(y), math.Round(w), math.Round(h)
+	local r = math.min(math.Round(radius), math.floor(math.min(w, h) / 2))
+	local rtl = (tl ~= false and r > 0) and r or 0
+	local rtr = (tr ~= false and r > 0) and r or 0
+	local rbl = (bl ~= false and r > 0) and r or 0
+	local rbr = (br ~= false and r > 0) and r or 0
+	surface.SetDrawColor(color)
+	draw.NoTexture()
+	surface.DrawRect(x + rtl, y, w - rtl - rtr, 1)
+	surface.DrawRect(x + rbl, y + h - 1, w - rbl - rbr, 1)
+	surface.DrawRect(x, y + math.max(rtl, 1), 1, h - math.max(rtl, 1) - math.max(rbl, 1))
+	surface.DrawRect(x + w - 1, y + math.max(rtr, 1), 1, h - math.max(rtr, 1) - math.max(rbr, 1))
+	if r <= 0 then
+		return
+	end
+	local mask = cornerMask(r, "ring")
+	if rtl > 0 then
+		drawCorner(mask, x, y, r, false, false)
+	end
+	if rtr > 0 then
+		drawCorner(mask, x + w - r, y, r, true, false)
+	end
+	if rbl > 0 then
+		drawCorner(mask, x, y + h - r, r, false, true)
+	end
+	if rbr > 0 then
+		drawCorner(mask, x + w - r, y + h - r, r, true, true)
+	end
+end
+
+-- A filled rounded box with a one-pixel border over its edge, as a web element draws them.
+function theme.outlined(radius: number, x: number, y: number, w: number, h: number, fill: Color, border: Color)
+	theme.box(radius, x, y, w, h, fill)
+	theme.ring(radius, x, y, w, h, border)
+end
+
+local function sampleGradient(t: number): Color
+	local position = math.Clamp(t, 0, 1) * (#GRADIENT - 1)
+	local index = math.min(math.floor(position) + 1, #GRADIENT - 1)
+	local from = assert(GRADIENT[index])
+	local to = assert(GRADIENT[index + 1])
+	local f = position - (index - 1)
+	return Color(
+		Lerp(f, from.r, to.r),
+		Lerp(f, from.g, to.g),
+		Lerp(f, from.b, to.b),
+		Lerp(f, from.a, to.a)
+	)
+end
+
+-- The header gradient's colour at `x` of a header `w` wide, at the current moment.
+function theme.gradientAt(x: number, w: number): Color
+	local cycle = (RealTime() % 10) / 10
+	local eased = (1 - math.cos(cycle * math.pi * 2)) / 2
+	return sampleGradient(eased * 0.75 + 0.25 * x / w)
+end
+
+-- The header's slowly drifting four-colour gradient (a quarter of it visible at a time), with
+-- its top corners rounded by `radius` in the gradient's colour at each edge.
+function theme.paintGradient(w: number, h: number, radius: number)
+	local function at(x: number): Color
+		return theme.gradientAt(x, w)
+	end
+	local corner = radius * 2
+	local strip = math.max(theme.px(4), 2)
+	for x = corner, w - corner - 1, strip do
+		surface.SetDrawColor(at(x))
+		surface.DrawRect(x, 0, math.min(strip, w - corner - x), h)
+	end
+	theme.box(radius, 0, 0, corner, h, at(radius), true, false, false, false)
+	theme.box(radius, w - corner, 0, corner, h, at(w - radius), false, true, false, false)
+end
+
+-- A ring of dots with a rotating bright head.
+function theme.spinner(cx: number, cy: number, radius: number, color: Color)
+	local dots = 8
+	local head = math.floor(RealTime() * 12) % dots
+	local dotRadius = math.max(radius * 0.22, 1)
+	for i = 0, dots - 1 do
+		local angle = i / dots * math.pi * 2
+		local age = (head - i) % dots
+		local dot = theme.fade(color, 1 - age / dots * 0.85)
+		theme.box(
+			dotRadius,
+			cx + math.cos(angle) * radius - dotRadius,
+			cy + math.sin(angle) * radius - dotRadius,
+			dotRadius * 2,
+			dotRadius * 2,
+			dot
+		)
+	end
+end
+
+local function line(x1: number, y1: number, x2: number, y2: number, thickness: number)
+	local length = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
+	local angle = math.deg(math.atan2(y1 - y2, x2 - x1))
+	draw.NoTexture()
+	surface.DrawTexturedRectRotated((x1 + x2) / 2, (y1 + y2) / 2, length, thickness, angle)
+end
+
+local type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown"
+
+-- Small glyphs drawn centred in a `size` box at (x, y).
+function theme.icon(icon: DonatosIcon, x: number, y: number, size: number, color: Color)
+	local cx = x + size / 2
+	local cy = y + size / 2
+	local dot = math.max(theme.px(3), 2)
+	local spacing = math.max(theme.px(4.5), 3)
+	if icon == "more" or icon == "moreHorizontal" then
+		for i = -1, 1 do
+			local dx = icon == "moreHorizontal" and i * spacing or 0
+			local dy = icon == "more" and i * spacing or 0
+			theme.box(dot / 2, cx + dx - dot / 2, cy + dy - dot / 2, dot, dot, color)
+		end
+	elseif icon == "close" then
+		local half = size * 0.22
+		surface.SetDrawColor(color)
+		local thickness = math.max(theme.px(1.6), 1)
+		line(cx - half, cy - half, cx + half, cy + half, thickness)
+		line(cx - half, cy + half, cx + half, cy - half, thickness)
+	elseif icon == "chevronDown" then
+		local half = size * 0.25
+		surface.SetDrawColor(color)
+		local thickness = math.max(theme.px(1.5), 1)
+		line(cx - half, cy - half / 2, cx, cy + half / 2, thickness)
+		line(cx, cy + half / 2, cx + half, cy - half / 2, thickness)
+	end
+end
+
+theme.refresh()
+
+return theme

@@ -1,0 +1,743 @@
+-- Client: the menu's tabs and dialogs. Every action goes to the server; the server answers
+-- with fresh data (syncPlayer), which re-renders the menu.
+
+local netMessage = require("donatos.net")
+local theme = require("ui.theme")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+interface DonatosMenuContext {
+	dialogs: DonatosUiDialogHost;
+	config: () => DonatosRemoteConfig | nil;
+	data: () => NonNullable<DonatosRemoteData> | nil;
+	loaded: () => boolean;
+	-- Opens the pay page; `deposit` is the amount to preselect, or "true" for none.
+	openPayUrl: (deposit: string) => void;
+	canPay: () => boolean;
+	-- Re-renders after a local state change.
+	rerender: () => void;
+	state: { category: number | nil };
+}
+
+local DEFAULT_ERROR = "Не удалось выполнить действие. Попробуйте еще раз."
+local PURCHASE_ERROR = "Не удалось выполнить покупку. Попробуйте еще раз."
+
+local function formatDuration(duration?: number): string
+	if duration == nil then
+		return ""
+	end
+	if duration == 0 then
+		return "не ограничен"
+	end
+	if duration == 1 then
+		return "1 день"
+	end
+	return `${duration} дн.`
+end
+
+local function formatDurationInParens(duration?: number): string
+	local formatted = formatDuration(duration)
+	return formatted ~= "" and ` (${formatted})` or ""
+end
+
+local function formatPrice(price: number): string
+	return `${price} бонусов`
+end
+
+local function showError(ctx: DonatosMenuContext, message?: string)
+	ctx.dialogs.show({
+		title = "Ошибка",
+		description = message ~= nil and message ~= "" and message or DEFAULT_ERROR,
+		actions = { { label = "Закрыть", size = "sm", onClick = ctx.dialogs.close } },
+	})
+end
+
+local function cancelAction(ctx: DonatosMenuContext, label?: string): DonatosUiButton
+	return { label = label or "Отмена", variant = "outline", size = "sm", onClick = ctx.dialogs.close }
+end
+
+local function centered(parent: Panel, message: string): Panel
+	local panel = widgets.emptyState(parent, message)
+	panel:Dock(FILL)
+	return panel
+end
+
+local function loading(parent: Panel): Panel
+	local panel = widgets.blankPanel(parent)
+	panel:Dock(FILL)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		draw.SimpleText("Загрузка...", theme.font("bodyRegular"), w / 2, h / 2, colors.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		return true
+	end
+	return panel
+end
+
+local function mutedText(parent: Panel, text: string): DonatosUiBlock
+	return widgets.text(parent, { text = text, font = theme.font("small"), color = colors.muted, leading = 1.5 })
+end
+
+------------------------------------------------------------------------------ shop
+
+local type Good = DonatosRemoteConfig["goods"][number]
+
+local function activateOffer(ctx: DonatosMenuContext, itemName: string, itemId: number, goodsName?: string)
+	local confirm: DonatosUiButton = { label = "Активировать", size = "sm" }
+	confirm.onClick = function()
+		confirm.pending = true
+		netMessage.toServer("activateItem", { id = itemId }, function(result)
+			confirm.pending = false
+			if result.success then
+				ctx.dialogs.close()
+			else
+				showError(ctx, result.error)
+			end
+		end)
+	end
+	ctx.dialogs.show({
+		title = "Активировать предмет?",
+		description = `Хотите активировать ${goodsName or itemName} сейчас?`,
+		actions = { cancelAction(ctx, "Позже"), confirm },
+	})
+end
+
+local function depositOffer(ctx: DonatosMenuContext, itemName: string, requiredAmount: number, price: number)
+	ctx.dialogs.show({
+		title = "Недостаточно средств",
+		description = `Для покупки ${itemName} нужно ${formatPrice(price)}. Вам не хватает ${formatPrice(requiredAmount)}. Пополнить баланс?`,
+		actions = {
+			cancelAction(ctx),
+			{
+				label = "Пополнить",
+				size = "sm",
+				disabled = not ctx.canPay(),
+				onClick = function()
+					ctx.openPayUrl(tostring(requiredAmount))
+				end,
+			},
+		},
+	})
+end
+
+local function requestPurchase(ctx: DonatosMenuContext, item: Good, variant: DonatosGoodsVariant)
+	local confirm: DonatosUiButton = { label = "Купить", size = "sm" }
+	confirm.onClick = function()
+		local data = ctx.data()
+		local balance = data and data.player.balance
+		if balance ~= nil and balance < variant.price then
+			depositOffer(ctx, item.name, math.max(variant.price - balance, 0), variant.price)
+			return
+		end
+
+		confirm.pending = true
+		netMessage.toServer("purchaseGoods", { goodsId = item.id, variantId = variant.id }, function(result)
+			confirm.pending = false
+			if result.success then
+				activateOffer(ctx, item.name, result.data.item.id, result.data.goods.name)
+			else
+				showError(ctx, result.error ~= "" and result.error or PURCHASE_ERROR)
+			end
+		end)
+	end
+
+	ctx.dialogs.show({
+		title = "Подтвердить покупку",
+		description = `Вы уверены, что хотите купить ${item.name} за ${formatPrice(variant.price)}${formatDurationInParens(variant.duration)}?`,
+		actions = { cancelAction(ctx), confirm },
+	})
+end
+
+local function shopCard(parent: Panel, ctx: DonatosMenuContext, item: Good): DonatosUiBlock
+	return widgets.card(parent, function(panel: Panel): DonatosUiCardSpec
+		local variants = item.variants or {}
+		local first = variants[1]
+		local multiple = #variants > 1
+
+		local actions: DButton[] = {}
+		if first ~= nil then
+			table.insert(actions, widgets.button(panel, {
+				label = "Купить",
+				size = "sm",
+				onClick = function(btn: DButton)
+					if not multiple then
+						requestPurchase(ctx, item, first)
+						return
+					end
+					local entries: DonatosUiMenuItem[] = {}
+					for _, variant in ipairs(variants) do
+						local duration = formatDuration(variant.duration)
+						table.insert(entries, {
+							label = (duration ~= "" and `${duration} - ` or "") .. formatPrice(variant.price),
+							onClick = function()
+								requestPurchase(ctx, item, variant)
+							end,
+						})
+					end
+					widgets.dropdown(btn, entries)
+				end,
+			}))
+		end
+
+		local body: DonatosUiBlock[] = {}
+		local description = item.description
+		if description ~= nil and description ~= "" then
+			table.insert(body, mutedText(panel, description))
+		end
+
+		local priceText = first ~= nil and `${multiple and "от " or ""}${formatPrice(first.price)}` or "—"
+		local footer: DonatosUiBlock[] = {
+			widgets.text(panel, { text = priceText, font = theme.font("price"), color = colors.text }),
+		}
+		local duration = first and first.duration
+		if not multiple and duration ~= nil and duration ~= 0 then
+			table.insert(footer, mutedText(panel, `Срок: ${formatDuration(duration)}`))
+		end
+
+		return { title = item.name, actions = actions, body = body, footer = footer, footerGap = px(16) }
+	end)
+end
+
+local function sectionHeading(parent: Panel, name: string): DonatosUiBlock
+	return widgets.painted(parent, px(18), function(w: number, h: number)
+		theme.box(0, 0, 0, px(2), h, colors.text)
+		draw.SimpleText(name, theme.font("heading"), px(10), h / 2, colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+	end)
+end
+
+local function categoryBar(parent: Panel, ctx: DonatosMenuContext, config: DonatosRemoteConfig)
+	local bar = vgui.Create("DPanel", parent)
+	bar:Dock(TOP)
+	bar:SetTall(px(46))
+	bar.Paint = function(self: Panel, w: number, h: number): boolean
+		surface.SetDrawColor(colors.filterBar)
+		surface.DrawRect(0, 0, w, h)
+		surface.SetDrawColor(colors.border)
+		surface.DrawRect(0, h - 1, w, 1)
+		return true
+	end
+
+	local selected = ctx.state.category
+	local function select(id: number | nil)
+		ctx.state.category = id
+		ctx.rerender()
+	end
+
+	local buttons: Panel[] = {
+		widgets.button(bar, {
+			label = "Все",
+			size = "sm",
+			variant = "ghost",
+			active = selected == nil,
+			onClick = function()
+				select(nil)
+			end,
+		}),
+	}
+	for _, category in ipairs(config.goodsCategories) do
+		table.insert(buttons, widgets.button(bar, {
+			label = category.name,
+			size = "sm",
+			variant = "ghost",
+			active = selected == category.id,
+			onClick = function()
+				select(category.id)
+			end,
+		}))
+	end
+
+	local flow = widgets.flow(bar, px(6), px(8), buttons)
+	bar.PerformLayout = function(self: Panel, w: number, h: number)
+		local height = flow.layout(w)
+		flow.panel:SetSize(w, height)
+		if height ~= h then
+			self:SetTall(height)
+		end
+	end
+end
+
+local MISC_CATEGORY = -1
+
+local function shop(parent: Panel, ctx: DonatosMenuContext): DScrollPanel | nil
+	local config = ctx.config()
+	if config == nil then
+		loading(parent)
+		return nil
+	end
+
+	categoryBar(parent, ctx, config)
+
+	local groups: { id: number; name: string; goods: Good[] }[] = {}
+	for _, category in ipairs(config.goodsCategories) do
+		table.insert(groups, { id = category.id, name = category.name, goods = {} })
+	end
+	table.insert(groups, { id = MISC_CATEGORY, name = "Разное", goods = {} })
+	for _, item in ipairs(config.goods) do
+		local categoryId = item.categoryId or MISC_CATEGORY
+		for _, group in ipairs(groups) do
+			if group.id == categoryId then
+				table.insert(group.goods, item)
+				break
+			end
+		end
+	end
+
+	local selected = ctx.state.category
+	local visible: { id: number; name: string; goods: Good[] }[] = {}
+	for _, group in ipairs(groups) do
+		if #group.goods > 0 and (selected == nil or group.id == selected) then
+			table.insert(visible, group)
+		end
+	end
+
+	if #visible == 0 then
+		centered(parent, "Нет доступных предметов")
+		return nil
+	end
+
+	local area = widgets.scroll(parent, function(canvas: Panel): DonatosUiBlock
+		local content, addSection = widgets.stack(canvas, px(28), px(16))
+		for _, group in ipairs(visible) do
+			local section, add = widgets.stack(content.panel, px(12))
+			add(sectionHeading(section.panel, group.name))
+			local cards, addCard = widgets.grid(section.panel, px(290), px(12))
+			for _, item in ipairs(group.goods) do
+				addCard(shopCard(cards.panel, ctx, item))
+			end
+			add(cards)
+			addSection(section)
+		end
+		return content
+	end)
+	area:Dock(FILL)
+	return area
+end
+
+------------------------------------------------------------------------------ inventory
+
+local function giftDialog(ctx: DonatosMenuContext, item: DonatosInventoryItem)
+	local players: DonatosOnlinePlayer[] | nil = nil
+	local selected: DonatosOnlinePlayer | nil = nil
+	local submit: DonatosUiButton = { label = "Подарить", size = "sm", disabled = true }
+	local goods = item.goods
+
+	submit.onClick = function()
+		local target = selected
+		if target == nil then
+			return
+		end
+		submit.pending = true
+		netMessage.toServer("giftItem", { id = item.id, gifteeExternalId = target.externalId }, function(result)
+			submit.pending = false
+			if result.success then
+				ctx.dialogs.close()
+			else
+				showError(ctx, result.error)
+			end
+		end)
+	end
+
+	ctx.dialogs.show({
+		title = "Подарить предмет",
+		description = `Выберите игрока, которому хотите подарить ${goods and goods.name or "этот предмет"}.`,
+		actions = { cancelAction(ctx), submit },
+		body = function(parent: Panel, relayout: () => void): DonatosUiBlock
+			local panel = widgets.blankPanel(parent)
+			local pickerOptions: DonatosUiButton = {
+				label = "Выберите игрока",
+				variant = "outline",
+				fill = true,
+				select = true,
+				placeholder = true,
+			}
+			local picker = widgets.button(panel, pickerOptions)
+			picker:SetVisible(false)
+
+			pickerOptions.onClick = function(btn: DButton)
+				local entries: DonatosUiMenuItem[] = {}
+				for _, candidate in ipairs(players or {}) do
+					table.insert(entries, {
+						label = candidate.name,
+						steamID64 = candidate.externalId,
+						onClick = function()
+							selected = candidate
+							pickerOptions.label = candidate.name
+							pickerOptions.placeholder = false
+							submit.disabled = false
+						end,
+					})
+				end
+				widgets.dropdown(btn, entries, btn:GetWide(), true)
+			end
+
+			local nextFetch = 0
+			local function fetch()
+				nextFetch = RealTime() + 5
+				netMessage.toServer("getOnlinePlayers", nil, function(result)
+					if not IsValid(panel) or not result.success then
+						return
+					end
+					local wasEmpty = players == nil or #players == 0
+					players = result.data
+					if selected ~= nil then
+						local stillOnline = false
+						for _, candidate in ipairs(result.data) do
+							stillOnline = stillOnline or candidate.externalId == selected.externalId
+						end
+						if not stillOnline then
+							selected = nil
+							pickerOptions.label = "Выберите игрока"
+							pickerOptions.placeholder = true
+							submit.disabled = true
+						end
+					end
+					if wasEmpty ~= (#result.data == 0) then
+						relayout()
+					end
+				end)
+			end
+			fetch()
+			panel.Think = function(self: Panel)
+				if RealTime() >= nextFetch then
+					fetch()
+				end
+			end
+
+			panel.Paint = function(self: Panel, w: number, h: number): boolean
+				local message: string | nil = nil
+				if players == nil then
+					theme.spinner(px(8), h / 2, px(6), colors.muted)
+					draw.SimpleText("Загружаем список игроков...", theme.font("small"), px(22), h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+				elseif #players == 0 then
+					message = "На сервере нет доступных игроков для подарка."
+				end
+				if message ~= nil then
+					draw.SimpleText(message, theme.font("small"), 0, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+				end
+				return true
+			end
+
+			return {
+				panel = panel,
+				layout = function(width: number): number
+					local ready = players ~= nil and #players > 0
+					picker:SetVisible(ready)
+					if ready then
+						picker:SetPos(0, 0)
+						picker:SetSize(width, px(34))
+						return px(34)
+					end
+					return px(20)
+				end,
+			}
+		end,
+	})
+end
+
+local function inventoryCard(parent: Panel, ctx: DonatosMenuContext, item: DonatosInventoryItem): DonatosUiBlock
+	return widgets.card(parent, function(panel: Panel): DonatosUiCardSpec
+		local goods = item.goods
+		local variant = item.variant
+		local title = `${goods and goods.name or "Deleted Item"}${formatDurationInParens(variant and variant.duration)}`
+
+		local activate: DonatosUiButton = { label = "Активировать", size = "xs", group = "start" }
+		activate.onClick = function()
+			activate.pending = true
+			netMessage.toServer("activateItem", { id = item.id }, function(result)
+				activate.pending = false
+				if not result.success then
+					showError(ctx, result.error)
+				end
+			end)
+		end
+		local more: DonatosUiButton = {
+			icon = "moreHorizontal",
+			size = "xs",
+			group = "end",
+			onClick = function(btn: DButton)
+				widgets.dropdown(btn, {
+					{
+						label = "Подарить",
+						onClick = function()
+							giftDialog(ctx, item)
+						end,
+					},
+				})
+			end,
+		}
+
+		local activateButton = widgets.button(panel, activate)
+		local moreButton = widgets.button(panel, more)
+		moreButton:SetWide(px(26))
+		local divider = widgets.blankPanel(moreButton)
+		divider:SetMouseInputEnabled(false)
+		divider.Paint = function(self: Panel, w: number, h: number): boolean
+			surface.SetDrawColor(theme.fade(colors.primaryText, 60 / 255))
+			surface.DrawRect(0, 0, 1, h)
+			return true
+		end
+		divider:SetSize(1, moreButton:GetTall())
+
+		local body: DonatosUiBlock[] = {}
+		local description = goods and goods.description
+		if description ~= nil and description ~= "" then
+			table.insert(body, mutedText(panel, description))
+		end
+
+		return {
+			title = title,
+			body = body,
+			footer = { mutedText(panel, `Куплено за ${item.amountPaid or "0"} бонусов`) },
+			footerActions = { activateButton, moreButton },
+		}
+	end)
+end
+
+local function inventory(parent: Panel, ctx: DonatosMenuContext): DScrollPanel | nil
+	if not ctx.loaded() then
+		loading(parent)
+		return nil
+	end
+	local data = ctx.data()
+	if data == nil or #data.inventoryItems == 0 then
+		centered(parent, "Инвентарь пуст")
+		return nil
+	end
+
+	local area = widgets.scroll(parent, function(canvas: Panel): DonatosUiBlock
+		local content, add = widgets.stack(canvas, 0, px(16))
+		local cards, addCard = widgets.grid(content.panel, px(290), px(12))
+		for _, item in ipairs(data.inventoryItems) do
+			addCard(inventoryCard(cards.panel, ctx, item))
+		end
+		add(cards)
+		return content
+	end)
+	area:Dock(FILL)
+	return area
+end
+
+------------------------------------------------------------------------------ active items
+
+local function freezeDialog(ctx: DonatosMenuContext, item: DonatosActiveItem)
+	ctx.dialogs.show({
+		title = "Заморозить предмет",
+		description = "Заморозить этот предмет можно только 1 раз. Продолжить?",
+		actions = {
+			cancelAction(ctx),
+			{
+				label = "Заморозить",
+				size = "sm",
+				onClick = function()
+					ctx.dialogs.close()
+					netMessage.toServer("freezeActiveItem", { id = item.id }, function(result)
+						if not result.success then
+							showError(ctx, result.error)
+						end
+					end)
+				end,
+			},
+		},
+	})
+end
+
+local function activeItemCard(parent: Panel, ctx: DonatosMenuContext, item: DonatosActiveItem): DonatosUiBlock
+	return widgets.card(parent, function(panel: Panel): DonatosUiCardSpec
+		local expires = item.expires
+		local actions: DButton[] = {}
+		if item.isFrozen then
+			local unfreeze: DonatosUiButton = { label = "Разморозить", size = "xs", variant = "secondary" }
+			unfreeze.onClick = function()
+				unfreeze.pending = true
+				netMessage.toServer("unfreezeActiveItem", { id = item.id }, function(result)
+					unfreeze.pending = false
+					if not result.success then
+						showError(ctx, result.error)
+					end
+				end)
+			end
+			table.insert(actions, widgets.button(panel, unfreeze))
+		elseif expires ~= nil then
+			table.insert(actions, widgets.button(panel, {
+				label = "Заморозить",
+				size = "xs",
+				variant = "secondary",
+				onClick = function()
+					freezeDialog(ctx, item)
+				end,
+			}))
+		end
+
+		local status = item.isFrozen and "заморожен" or (expires ~= nil and `истекает ${expires["in"]}` or "навсегда")
+		local body: DonatosUiBlock[] = { mutedText(panel, status) }
+		if expires ~= nil and not item.isFrozen then
+			local fraction = expires.durationS > 0 and expires.inS / expires.durationS or 1
+			local bar = widgets.progress(panel, function(): number
+				return fraction
+			end)
+			table.insert(body, widgets.painted(panel, px(4), function() end))
+			table.insert(body, bar)
+		end
+
+		return { title = item.goods.name, actions = actions, body = body }
+	end)
+end
+
+local function expiryFraction(item: DonatosActiveItem): number | nil
+	local expires = item.expires
+	if expires == nil then
+		return nil
+	end
+	return expires.durationS > 0 and expires.inS / expires.durationS or 1
+end
+
+local function activeItems(parent: Panel, ctx: DonatosMenuContext): DScrollPanel | nil
+	if not ctx.loaded() then
+		loading(parent)
+		return nil
+	end
+	local data = ctx.data()
+	if data == nil or #data.activeItems == 0 then
+		centered(parent, "У вас нет активных предметов")
+		return nil
+	end
+
+	-- Expiring items first, closest to expiry first; permanent ones last.
+	local sorted: DonatosActiveItem[] = {}
+	for _, item in ipairs(data.activeItems) do
+		table.insert(sorted, item)
+	end
+	table.sort(sorted, function(a: DonatosActiveItem, b: DonatosActiveItem): boolean
+		local fa, fb = expiryFraction(a), expiryFraction(b)
+		if fa ~= nil and fb ~= nil and fa ~= fb then
+			return fa < fb
+		end
+		if (fa == nil) ~= (fb == nil) then
+			return fa ~= nil
+		end
+		return a.id < b.id
+	end)
+
+	local area = widgets.scroll(parent, function(canvas: Panel): DonatosUiBlock
+		local content, add = widgets.stack(canvas, 0, px(16))
+		local cards, addCard = widgets.grid(content.panel, px(290), px(12))
+		for _, item in ipairs(sorted) do
+			addCard(activeItemCard(cards.panel, ctx, item))
+		end
+		add(cards)
+		return content
+	end)
+	area:Dock(FILL)
+	return area
+end
+
+------------------------------------------------------------------------------ IGS deposit
+
+local QUICK_AMOUNTS: number[] = { 100, 300, 500, 1000 }
+
+local function igsDeposit(ctx: DonatosMenuContext)
+	local sum: number | nil = 100
+	local errorText: string | nil = nil
+	local continueButton: DonatosUiButton = { label = "Продолжить", size = "sm" }
+	local backButton: DonatosUiButton = { label = "Назад", variant = "outline", size = "sm", onClick = ctx.dialogs.close }
+	local relayout: () => void = function() end
+	local quick: DonatosUiButton[] = {}
+	local function syncQuick()
+		for i, options in ipairs(quick) do
+			options.variant = sum == QUICK_AMOUNTS[i] and "default" or "outline"
+		end
+	end
+
+	continueButton.onClick = function()
+		local amount = sum
+		if amount == nil or amount <= 0 then
+			errorText = "Укажите корректную сумму пополнения"
+			relayout()
+			return
+		end
+		errorText = nil
+		continueButton.pending = true
+		backButton.disabled = true
+		netMessage.toServer("createIgsPaymentUrl", { sum = amount }, function(result)
+			continueButton.pending = false
+			backButton.disabled = false
+			if result.success then
+				gui.OpenURL(result.data.url)
+				ctx.dialogs.close()
+			else
+				errorText = result.error ~= "" and result.error or "Не удалось создать ссылку на оплату"
+				relayout()
+			end
+		end)
+	end
+
+	ctx.dialogs.show({
+		title = "Пополнить через gm-donate",
+		description = "Это сторонний сервис, который подключен администратором сервера и не имеет отношения к Donatos. Доступны скины, криптовалюта и другие методы. Поддержка по этому сервису не предоставляется.",
+		actions = { backButton, continueButton },
+		body = function(parent: Panel, bodyRelayout: () => void): DonatosUiBlock
+			relayout = bodyRelayout
+			local panel = widgets.blankPanel(parent)
+			local field, entry = widgets.textEntry(panel, "Сумма пополнения", true)
+			entry:SetValue(tostring(sum))
+
+			local quickButtons: DButton[] = {}
+			for _, amount in ipairs(QUICK_AMOUNTS) do
+				local options: DonatosUiButton = { label = tostring(amount), size = "sm", fill = true }
+				options.onClick = function()
+					sum = amount
+					errorText = nil
+					entry:SetValue(tostring(amount))
+					syncQuick()
+					relayout()
+				end
+				table.insert(quick, options)
+				table.insert(quickButtons, widgets.button(panel, options))
+			end
+			syncQuick()
+
+			entry.OnChange = function(self: DTextEntry)
+				sum = tonumber(self:GetValue())
+				errorText = nil
+				syncQuick()
+			end
+
+			local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.destructive }
+			local errorBlock = widgets.text(panel, errorOptions)
+
+			return {
+				panel = panel,
+				layout = function(width: number): number
+					local gap = px(8)
+					local cell = (width - gap * (#quickButtons - 1)) / #quickButtons
+					for i, btn in ipairs(quickButtons) do
+						btn:SetPos(math.floor((i - 1) * (cell + gap)), 0)
+						btn:SetSize(math.floor(cell), px(32))
+					end
+					local y = px(32) + px(12)
+					field:SetPos(0, y)
+					field:SetSize(width, px(34))
+					y = y + px(34)
+					local message = errorText
+					errorBlock.panel:SetVisible(message ~= nil)
+					if message ~= nil then
+						errorOptions.text = message
+						local h = errorBlock.layout(width)
+						errorBlock.panel:SetPos(0, y + px(8))
+						errorBlock.panel:SetSize(width, h)
+						y = y + px(8) + h
+					end
+					return y
+				end,
+			}
+		end,
+	})
+end
+
+return {
+	shop = shop,
+	inventory = inventory,
+	activeItems = activeItems,
+	igsDeposit = igsDeposit,
+	showError = showError,
+}

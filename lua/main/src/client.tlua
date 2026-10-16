@@ -1,9 +1,9 @@
 local netMessage = require("donatos.net")
-local webPanel = require("ui.web-panel")
+local menu = require("ui.menu")
 local state = require("utils.state")
 
-local function openUi(tab?: DonatosUiTab): DHTML
-	return webPanel.open(tab)
+local function openUi(tab?: DonatosUiTab): Panel
+	return menu.open(tab)
 end
 
 donatos.OpenUI = openUi

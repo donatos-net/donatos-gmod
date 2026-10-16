@@ -202,7 +202,7 @@ interface DonatosGlobal {
 	Item?: (key: string) => DonatosItem;
 
 	-- client
-	OpenUI?: (tab?: DonatosUiTab) => DHTML;
+	OpenUI?: (tab?: DonatosUiTab) => Panel;
 	NetMessageToServer?: <K extends keyof DonatosServerActions>(
 		action: K,
 		data: DonatosServerActions[K]["input"],
@@ -214,8 +214,8 @@ interface DonatosGlobal {
 	-- set by donatos/config_sv.lua and donatos/config_sh.lua
 	config?: DonatosConfig;
 	dev?: {
+		-- rebuild the menu on every open
 		enabled?: boolean;
-		webUiUrl?: string;
 	};
 }
 
@@ -236,7 +236,7 @@ interface DonatosPersistentState {
 		handlers: Table<number, (data: unknown) => void>;
 	};
 	remoteConfig?: { value: DonatosRemoteConfig | nil };
-	webPanel?: { panel: DHTML | nil };
+	menu?: { frame: Panel | nil };
 }
 
 -- The shape of the `_donatos` global, which utils/state.tlua creates.
@@ -260,8 +260,28 @@ interface Player {
 	addMoney?: (self: Player, amount: number, reason: string) => void;
 }
 
--- Missing from @tlua/gmod 1.0.14, which emits no HTML panel hooks
--- (https://wiki.facepunch.com/gmod/HTML:OnDocumentReady). Remove once the package has it.
-interface HTML {
-	OnDocumentReady(self: HTML, url: string): void;
+-- Gaps in @tlua/gmod 1.0.14. Remove each once the package has it.
+
+-- FontData fields all have wiki defaults, but the package declares every one required.
+interface SurfaceLib {
+	CreateFont(fontName: string, fontData: Partial<FontData>): void;
+}
+
+-- The package drops Derma "panelhook" pages (https://wiki.facepunch.com/gmod/DLabel:DoClick).
+interface DLabel {
+	DoClick(self: DLabel): void;
+}
+
+interface DTextEntry {
+	OnChange(self: DTextEntry): void;
+}
+
+-- Created by garrysmod/lua/vgui/dvscrollbar.lua; not documented on the wiki.
+interface DVScrollBar {
+	btnGrip: DScrollBarGrip;
+}
+
+-- https://wiki.facepunch.com/gmod/utf8.charpattern
+interface Utf8Lib {
+	charpattern: string;
 }

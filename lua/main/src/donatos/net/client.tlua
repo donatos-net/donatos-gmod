@@ -2,7 +2,7 @@
 
 local netMessage = require("donatos.net")
 local releases = require("donatos.releases")
-local webPanel = require("ui.web-panel")
+local menu = require("ui.menu")
 local async = require("utils.async")
 local log = require("utils.log")
 local state = require("utils.state")
@@ -79,7 +79,7 @@ local handlers: ClientMessageHandlers = {
 		if openUi ~= nil then
 			openUi(tab)
 		else
-			webPanel.open(tab)
+			menu.open(tab)
 		end
 	end,
 
@@ -95,12 +95,18 @@ local handlers: ClientMessageHandlers = {
 
 	syncConfig = function(input)
 		state.remoteConfig.value = input
-		webPanel.pushState("serverConfig", input)
+		menu.refresh()
 	end,
 
 	syncPlayer = function(input)
-		LocalPlayer():Donatos()._remoteData = { isLoaded = true, data = input }
-		webPanel.pushState("playerData", input)
+		-- A sync can arrive while joining, before the local player exists; the requestSync
+		-- sent from InitPostEntity delivers it again.
+		local ply = LocalPlayer()
+		if not IsValid(ply) then
+			return
+		end
+		ply:Donatos()._remoteData = { isLoaded = true, data = input }
+		menu.refresh()
 	end,
 }
 
