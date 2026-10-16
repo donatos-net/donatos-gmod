@@ -3,6 +3,7 @@
 local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
+local remoteConfig = require("donatos.utils.load-remote-config")
 local serverUtils = require("donatos.server-utils")
 local serverPlayer = require("player.server")
 local async = require("utils.async")
@@ -19,6 +20,11 @@ end
 
 local NOT_LOADED = "Ошибка: данные игрока не загружены. Попробуйте позднее."
 local NOT_IN_INVENTORY = "Ошибка: предмет не найден в инвентаре."
+local HISTORY_PAGE_SIZE = 20
+-- The start of the API's error when `expectedPrice` no longer matches the variant's price.
+local PRICE_CHANGED = "Цена товара изменилась"
+-- Instead of that error when the server could not get the new price either.
+local PRICE_CHANGED_RETRY = "Цена товара изменилась. Откройте меню заново через минуту."
 
 local function findInventoryItem(ply: Player, id: number): DonatosInventoryItem | nil
 	for _, inventoryItem in ipairs(ply:Donatos():GetInventoryItems()) do
@@ -34,6 +40,46 @@ local function syncConfigTo(ply: Player)
 	if config then
 		netMessage.toClient(ply, "syncConfig", config)
 	end
+end
+
+local function cachedPrice(goodsId: number, variantId: string): number | nil
+	local config = state.remoteConfig.value
+	if config == nil then
+		return nil
+	end
+	for _, goods in ipairs(config.goods) do
+		if goods.id == goodsId then
+			for _, variant in ipairs(goods.variants or {}) do
+				if variant.id == variantId then
+					return variant.price
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- A reload syncs every client, so a client cannot trigger them more often than this.
+local CONFIG_RELOAD_INTERVAL = 10
+local lastConfigReloadAt = -math.huge
+
+-- Gets the player the current prices after the API rejected `input.expectedPrice`;
+-- returns whether it did.
+local refreshPrices = suspend function(ply: Player, input: DonatosServerActions["purchaseGoods"]["input"]): boolean
+	-- The cache already disagrees with the client: only that client is behind (or made the
+	-- price up), so it alone gets the cached config.
+	if cachedPrice(input.goodsId, input.variantId) ~= input.expectedPrice then
+		syncConfigTo(ply)
+		return true
+	end
+	-- The cache is stale too. A reload in flight is joined rather than throttled.
+	if not remoteConfig.isLoading() then
+		if RealTime() - lastConfigReloadAt < CONFIG_RELOAD_INTERVAL then
+			return false
+		end
+		lastConfigReloadAt = RealTime()
+	end
+	return remoteConfig.loadRemoteConfig()
 end
 
 -- Each player gets a bucket of REQUEST_BURST requests, refilled at REQUEST_RATE per second:
@@ -109,9 +155,14 @@ local handlers: ServerActionHandlers = {
 			playerId = playerId,
 			goodsId = input.goodsId,
 			variantId = input.variantId,
+			expectedPrice = input.expectedPrice,
 		})
 
 		if data == nil then
+			-- Answer once the menu has the new price, or say it has none yet.
+			if string.find(error, PRICE_CHANGED, 1, true) and not refreshPrices(ply, input) then
+				return err(PRICE_CHANGED_RETRY)
+			end
 			return err(error)
 		end
 
@@ -297,6 +348,29 @@ local handlers: ServerActionHandlers = {
 		end)
 
 		return ok(onlinePlayers)
+	end,
+
+	getHistory = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local data, error = serverApi.request("player:get-history", {
+			playerId = playerId,
+			cursor = input and input.cursor,
+			limit = HISTORY_PAGE_SIZE,
+		})
+
+		if data == nil then
+			-- An API without the action rejects its name as an invalid parameter.
+			if error ~= nil and string.find(error, "\"action\"", 1, true) ~= nil then
+				return err("История операций пока недоступна")
+			end
+			return err(error)
+		end
+
+		return ok(data)
 	end,
 }
 

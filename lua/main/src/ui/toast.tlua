@@ -1,0 +1,101 @@
+-- Client: toasts, short notices at the top centre of the screen that leave by themselves.
+-- They are drawn in DrawOverlay, after the HUD and every panel (the menu and its dialogs
+-- included), so they show whether or not the menu is open and never take input.
+
+local state = require("utils.state")
+local theme = require("ui.theme")
+
+local colors = theme.colors
+local px = theme.px
+
+-- Seconds a toast stays before it leaves, and how many show at once (the oldest leaves early).
+local LIFETIME = 4
+local MAX_SHOWN = 3
+
+local type Toast = {
+	text: string;
+	-- 0 hidden, 1 shown: the entrance and exit fade and slide.
+	presence: DonatosTween;
+	-- Its place in the stack, from the top; moves as toasts come and go.
+	slot: DonatosTween;
+	leavesAt: number;
+	leaving: boolean;
+}
+
+-- Newest first.
+local toasts: Toast[] = {}
+
+local function leave(toast: Toast)
+	toast.leaving = true
+	-- HeroUI's exit: 200ms ease.
+	toast.presence.to(0, 0.2, "smooth")
+end
+
+-- Shows `text` as a success toast.
+local function show(text: string)
+	local presence = theme.tween(0)
+	-- The entrance: 300ms ease-out-quart.
+	presence.to(1, 0.3, "outQuart")
+	table.insert(toasts, 1, { text = text, presence = presence, slot = theme.tween(0), leavesAt = RealTime() + LIFETIME, leaving = false })
+	local staying = 0
+	for _, toast in ipairs(toasts) do
+		if not toast.leaving then
+			staying = staying + 1
+			if staying > MAX_SHOWN then
+				leave(toast)
+			end
+		end
+	end
+end
+
+local function paint(toast: Toast, y: number)
+	local opacity = toast.presence.value()
+	if opacity <= 0 then
+		return
+	end
+	local font = theme.font("medium")
+	local h, badge, radius = px(48), px(28), px(16)
+	local textWidth = theme.textSize(toast.text, font)
+	local w = px(10) + badge + px(12) + textWidth + px(20)
+	local x = math.Round((ScrW() - w) / 2)
+	-- Slides down into place while it fades in, and back up as it fades out.
+	y = math.Round(y - (1 - opacity) * px(12))
+
+	-- A soft shadow, then the surface and its ring.
+	for i = 1, 3 do
+		local spread = i * px(3)
+		theme.box(radius + spread, x - spread, y - spread + px(4), w + spread * 2, h + spread * 2, theme.fade(colors.overlay, 0.08 * opacity))
+	end
+	theme.box(radius, x, y, w, h, theme.fade(colors.surface, opacity))
+	theme.ring(radius, x, y, w, h, theme.fade(colors.frameRing, opacity))
+
+	local badgeX, badgeY = x + px(10), y + (h - badge) / 2
+	theme.box(badge / 2, badgeX, badgeY, badge, badge, theme.fade(colors.successSoft, opacity))
+	theme.icon("check", badgeX + (badge - px(16)) / 2, badgeY + (badge - px(16)) / 2, px(16), theme.fade(colors.success, opacity))
+	draw.SimpleText(toast.text, font, badgeX + badge + px(12), y + h / 2, theme.fade(colors.text, opacity), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+end
+
+hook.Add("DrawOverlay", state.hookId("toast"), function()
+	if #toasts == 0 then
+		return
+	end
+	local now = RealTime()
+	for i = #toasts, 1, -1 do
+		local toast = assert(toasts[i])
+		if toast.leaving and toast.presence.done() then
+			table.remove(toasts, i)
+		elseif not toast.leaving and now >= toast.leavesAt then
+			leave(toast)
+		end
+	end
+	local top, step = px(24), px(48) + px(8)
+	for i, toast in ipairs(toasts) do
+		-- The others move along 300ms ease-out-quart as one arrives or leaves.
+		toast.slot.to(i - 1, 0.3, "outQuart")
+		paint(toast, top + toast.slot.value() * step)
+	end
+end)
+
+return {
+	show = show,
+}

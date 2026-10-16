@@ -1,5 +1,5 @@
--- Client: what the menu's pages share: the context they render from, formatting, page
--- headers, empty states, and the dialogs more than one page opens.
+-- Client: what the menu's pages share: the context they render from, formatting, empty
+-- states, and the dialogs more than one page opens.
 
 local netMessage = require("donatos.net")
 local theme = require("ui.theme")
@@ -8,14 +8,14 @@ local widgets = require("ui.widgets")
 local colors = theme.colors
 local px = theme.px
 
-type DonatosMenuTab = "shop" | "items"
+type DonatosMenuTab = "shop" | "items" | "history"
 
 interface DonatosMenuContext {
 	dialogs: DonatosUiDialogHost;
 	config: () => DonatosRemoteConfig | nil;
 	data: () => NonNullable<DonatosRemoteData> | nil;
 	loaded: () => boolean;
-	-- Opens the pay page; `deposit` is the amount to preselect, or "true" for none.
+	-- Opens the pay page with its deposit dialog for `deposit` bonuses.
 	openPayUrl: (deposit: string) => void;
 	canPay: () => boolean;
 	-- Re-renders after a local state change.
@@ -51,9 +51,12 @@ local function formatNumber(value: number | string): string
 	return `${sign}${string.TrimLeft(grouped)}${rest}`
 end
 
--- A duration in days, short: "30 дн."; nil or 0 is permanent.
+-- A variant's duration, short: "30 дн.". The API's duration is in days; 0 is permanent and
+-- nil (JSON null) a one-time good, which activation uses up without an active item.
 local function formatDays(duration?: number): string
-	if duration == nil or duration == 0 then
+	if duration == nil then
+		return "Разовый"
+	elseif duration == 0 then
 		return "Навсегда"
 	end
 	return `${duration} дн.`
@@ -72,12 +75,35 @@ local function plural(count: number, one: string, few: string, many: string): st
 	return many
 end
 
--- A duration in days, long: "30 дней".
+-- "бонус" agreeing with `count`: "1 бонус", "2 бонуса", "5 бонусов" (also after "за" and "на").
+local function bonuses(count: number): string
+	return plural(math.abs(count), "бонус", "бонуса", "бонусов")
+end
+
+-- The same after "от" or "не хватает": "1 бонуса", "2 бонусов".
+local function bonusesGenitive(count: number): string
+	return plural(math.abs(count), "бонуса", "бонусов", "бонусов")
+end
+
+-- A variant's duration, long: "30 дней".
 local function formatDaysLong(duration?: number): string
-	if duration == nil or duration == 0 then
+	if duration == nil then
+		return "Разовый товар"
+	elseif duration == 0 then
 		return "Навсегда"
 	end
 	return `${duration} ${plural(duration, "день", "дня", "дней")}`
+end
+
+-- The chip colours for a variant's duration (background, text): green when permanent, blue
+-- for a term, neutral for a one-time good.
+local function durationColors(duration?: number): (Color, Color)
+	if duration == nil then
+		return colors.default, colors.textSoft
+	elseif duration == 0 then
+		return colors.successSoft, colors.success
+	end
+	return colors.accentSoft, colors.accentText
 end
 
 -- Time left from seconds: "12 дн.", "5 ч.", "40 мин.".
@@ -117,156 +143,388 @@ local function cancelAction(ctx: DonatosMenuContext, label?: string): DonatosUiB
 	return { label = label or "Отмена", variant = "secondary", onClick = ctx.dialogs.close }
 end
 
-local QUICK_AMOUNTS: number[] = { 100, 300, 500, 1000 }
+------------------------------------------------------------------------------ top-up
 
-local function igsDeposit(ctx: DonatosMenuContext)
-	local sum: number | nil = 100
-	local errorText: string | nil = nil
-	local continueButton: DonatosUiButton = { label = "Продолжить" }
-	local backButton: DonatosUiButton = { label = "Назад", variant = "secondary", onClick = ctx.dialogs.close }
-	local relayout: () => void = function() end
-	local quick: DonatosUiButton[] = {}
-	local function syncQuick()
-		for i, options in ipairs(quick) do
-			options.variant = sum == QUICK_AMOUNTS[i] and "primary" or "secondary"
-		end
-	end
+-- The pay page's quick amounts and limits (its createOrderSchema): whole bonuses from 10 to
+-- 10 000, 1 ₽ each. gm-donate takes any positive sum; it is held to the same maximum.
+local TOP_UP_AMOUNTS: number[] = { 100, 250, 500, 1000 }
+local TOP_UP_MIN = 10
+local TOP_UP_MAX = 10000
 
-	continueButton.onClick = function()
-		local amount = sum
-		if amount == nil or amount <= 0 then
-			errorText = "Укажите корректную сумму пополнения"
-			relayout()
-			return
+local IGS_NOTICE = "Это сторонний сервис, который подключён администратором сервера и не имеет отношения к Donatos. Доступны скины, криптовалюта и другие методы. Поддержка по этому сервису не предоставляется."
+
+local type TopUpMethod = "donatos" | "igs"
+
+-- A centred round badge for the top-up's waiting and done states; `paint` draws its centre.
+local function badge(parent: Panel, background: Color, paint: (cx: number, cy: number) => void): DonatosUiBlock
+	local size = px(56)
+	return widgets.painted(parent, size, function(w: number, h: number)
+		local x = (w - size) / 2
+		theme.box(size / 2, x, 0, size, size, background)
+		paint(x + size / 2, size / 2)
+	end)
+end
+
+-- The «Пополнение баланса» dialog: an amount (quick amounts or any in the field), the method
+-- when gm-donate is enabled, then the pay page. It stays open while the player pays, waiting
+-- for the balance to grow. `preset` is the amount to start with (what an item is short of).
+-- Shown stacked, so closing it returns to the dialog it was opened from.
+local function topUp(ctx: DonatosMenuContext, preset?: number)
+	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
+		local config = ctx.config()
+		local igs = config ~= nil and config.igs.enabled
+		local method: TopUpMethod = "donatos"
+		local amount: number | nil = preset ~= nil and math.Clamp(math.ceil(preset), TOP_UP_MIN, TOP_UP_MAX) or TOP_UP_AMOUNTS[1]
+		local errorText: string | nil = nil
+		-- The gm-donate page, to open again while waiting.
+		local igsUrl: string | nil = nil
+		-- The balance when waiting started; any more than that means the payment arrived.
+		local waitingFrom: number | nil = nil
+
+		local function balance(): number | nil
+			local data = ctx.data()
+			return data and data.player.balance
 		end
-		errorText = nil
-		continueButton.pending = true
-		backButton.disabled = true
-		netMessage.toServer("createIgsPaymentUrl", { sum = amount }, function(result)
-			continueButton.pending = false
-			backButton.disabled = false
-			if result.success then
-				gui.OpenURL(result.data.url)
-				ctx.dialogs.close()
-			else
-				errorText = result.error ~= "" and result.error or "Не удалось создать ссылку на оплату"
-				relayout()
+
+		local function valid(): boolean
+			local value = amount
+			if value == nil or value ~= math.floor(value) then
+				return false
 			end
-		end)
-	end
+			return value >= (method == "igs" and 1 or TOP_UP_MIN) and value <= TOP_UP_MAX
+		end
 
-	ctx.dialogs.show({
-		title = "Пополнить через gm-donate",
-		description = "Это сторонний сервис, который подключен администратором сервера и не имеет отношения к Donatos. Доступны скины, криптовалюта и другие методы. Поддержка по этому сервису не предоставляется.",
-		actions = { backButton, continueButton },
-		body = function(parent: Panel, bodyRelayout: () => void): DonatosUiBlock
-			relayout = bodyRelayout
-			local panel = widgets.blankPanel(parent)
-			local field, entry = widgets.textEntry(panel, "Сумма пополнения", true)
-			entry:SetValue(tostring(sum))
+		local box = vgui.Create("DPanel", parent)
+		box.Paint = function(self: Panel, w: number, h: number): boolean
+			theme.box(px(24), 0, 0, w, h, colors.surface)
+			theme.ring(px(24), 0, 0, w, h, colors.frameRing)
+			return true
+		end
+		-- Clicks inside the dialog must not reach the overlay, which closes it.
+		box.OnMousePressed = function(self: Panel, keyCode: number): boolean
+			return true
+		end
 
+		-- The current state's content; switching state replaces it.
+		local body: DonatosUiBlock | nil = nil
+		local function setBody(block: DonatosUiBlock)
+			local old = body
+			if old ~= nil and IsValid(old.panel) then
+				old.panel:Remove()
+			end
+			body = block
+			relayout()
+		end
+
+		local function heading(content: Panel, title: string, align?: "left" | "center"): DonatosUiBlock
+			return widgets.text(content, { text = title, font = theme.font("section"), color = colors.text, lineHeight = 26, align = align })
+		end
+
+		------------------------------------------------------------------ done
+
+		local function doneBlock(): DonatosUiBlock
+			local content, add = widgets.stack(box, px(12), px(20))
+			add(badge(content.panel, colors.successSoft, function(cx: number, cy: number)
+				local size = px(24)
+				theme.icon("check", cx - size / 2, cy - size / 2, size, colors.success)
+			end))
+			add(heading(content.panel, "Баланс пополнен", "center"))
+			local current = balance()
+			if current ~= nil then
+				add(widgets.text(content.panel, {
+					text = `На балансе теперь ${formatNumber(current)} ${bonuses(current)}.`,
+					font = theme.font("body"),
+					color = colors.muted,
+					lineHeight = 20,
+					align = "center",
+				}))
+			end
+			add(widgets.column(content.panel, px(8), {
+				widgets.button(content.panel, { label = "Готово", onClick = ctx.dialogs.close }),
+			}))
+			return content
+		end
+
+		------------------------------------------------------------------ waiting
+
+		local function reopen()
+			local url = igsUrl
+			if method == "igs" and url ~= nil then
+				gui.OpenURL(url)
+			elseif amount ~= nil then
+				ctx.openPayUrl(tostring(amount))
+			end
+		end
+
+		local function waitingBlock(): DonatosUiBlock
+			local content, add = widgets.stack(box, px(12), px(20))
+			add(badge(content.panel, colors.accentSoft, function(cx: number, cy: number)
+				theme.spinner(cx, cy, px(12), colors.accentText)
+			end))
+			add(heading(content.panel, "Ждём оплаты…", "center"))
+			add(widgets.text(content.panel, {
+				text = method == "igs"
+						and "Страница gm-donate открылась в оверлее Steam или в браузере. Бонусы придут сами после оплаты, это может занять несколько минут."
+					or "Страница оплаты открылась в оверлее Steam или в браузере. Баланс обновится сам после оплаты.",
+				font = theme.font("body"),
+				color = colors.muted,
+				lineHeight = 20,
+				align = "center",
+			}))
+			add(widgets.column(content.panel, px(8), {
+				widgets.button(content.panel, { label = "Открыть страницу ещё раз", variant = "soft", onClick = reopen }),
+				widgets.button(content.panel, { label = "Закрыть", variant = "secondary", onClick = ctx.dialogs.close }),
+			}))
+			-- The server pushes the new balance once the payment is credited.
+			content.panel.Think = function(self: Panel)
+				local current = balance()
+				local from = waitingFrom
+				if current == nil then
+					return
+				elseif from == nil then
+					waitingFrom = current
+				elseif current > from then
+					setBody(doneBlock())
+				end
+			end
+			return content
+		end
+
+		local function wait()
+			errorText = nil
+			waitingFrom = balance()
+			setBody(waitingBlock())
+		end
+
+		------------------------------------------------------------------ form
+
+		local function formBlock(): DonatosUiBlock
+			local content, add = widgets.stack(box, px(16), px(20))
+			add(heading(content.panel, "Пополнение баланса"))
+
+			local form = widgets.blankPanel(content.panel)
+			local function caption(label: string): DonatosUiBlock
+				return widgets.painted(form, px(20), function(w: number, h: number)
+					local font = theme.font("smallMedium")
+					draw.SimpleText(label, font, 0, (h - theme.fontHeight(font)) / 2, colors.textSoft)
+				end)
+			end
+
+			-- Amount: quick amounts over a field for any other, and the limits under it (red while
+			-- the amount is outside them).
+			local amountCaption = caption("Сумма")
+			local field, entry = widgets.textEntry(form, "Другая сумма", true)
+			if amount ~= nil then
+				entry:SetValue(tostring(amount))
+			end
+			local quick: DonatosUiButton[] = {}
 			local quickButtons: DButton[] = {}
-			for _, amount in ipairs(QUICK_AMOUNTS) do
-				local options: DonatosUiButton = { label = formatNumber(amount), size = "sm", fill = true }
-				options.onClick = function()
-					sum = amount
+			local function syncQuick()
+				for i, options in ipairs(quick) do
+					options.variant = amount == TOP_UP_AMOUNTS[i] and "soft" or "secondary"
+				end
+			end
+			local function clearError()
+				if errorText ~= nil then
 					errorText = nil
-					entry:SetValue(tostring(amount))
-					syncQuick()
 					relayout()
 				end
+			end
+			for _, value in ipairs(TOP_UP_AMOUNTS) do
+				local options: DonatosUiButton = { label = formatNumber(value), size = "sm" }
+				options.onClick = function()
+					amount = value
+					entry:SetValue(tostring(value))
+					syncQuick()
+					clearError()
+				end
 				table.insert(quick, options)
-				table.insert(quickButtons, widgets.button(panel, options))
+				table.insert(quickButtons, widgets.button(form, options))
 			end
 			syncQuick()
-
 			entry.OnChange = function(self: DTextEntry)
-				sum = tonumber(self:GetValue())
-				errorText = nil
+				-- Digits only, and few enough that no amount shows as "1e+20".
+				local text = self:GetValue()
+				amount = (string.match(text, "^%d+$") ~= nil and #text <= 9) and tonumber(text) or nil
 				syncQuick()
+				clearError()
+			end
+			local limits = widgets.painted(form, px(18), function(w: number, h: number)
+				local font = theme.font("small")
+				local label = `От ${method == "igs" and 1 or formatNumber(TOP_UP_MIN)} до ${formatNumber(TOP_UP_MAX)} бонусов`
+				draw.SimpleText(label, font, 0, (h - theme.fontHeight(font)) / 2, valid() and colors.muted or colors.danger)
+			end)
+
+			-- Method, when gm-donate is enabled: the pay page or gm-donate, with its notice.
+			local methodCaption: DonatosUiBlock | nil = nil
+			local methodButtons: DButton[] = {}
+			local notice: DonatosUiBlock | nil = nil
+			if igs then
+				methodCaption = caption("Способ оплаты")
+				local methods: { method: TopUpMethod; options: DonatosUiButton }[] = {
+					{ method = "donatos", options = { label = "Карта / СБП", icon = "card" } },
+					{ method = "igs", options = { label = "gm-donate", icon = "wallet" } },
+				}
+				local function syncMethods()
+					for _, spec in ipairs(methods) do
+						spec.options.variant = spec.method == method and "soft" or "secondary"
+					end
+				end
+				for _, spec in ipairs(methods) do
+					spec.options.onClick = function()
+						method = spec.method
+						errorText = nil
+						syncMethods()
+						relayout()
+					end
+					table.insert(methodButtons, widgets.button(form, spec.options))
+				end
+				syncMethods()
+				notice = widgets.text(form, { text = IGS_NOTICE, font = theme.font("small"), color = colors.muted, lineHeight = 18 })
 			end
 
-			local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger }
-			local errorBlock = widgets.text(panel, errorOptions)
+			-- What the balance comes to; the line is left out while the balance is unknown.
+			local summary: DonatosUiBlock | nil = nil
+			if balance() ~= nil then
+				summary = widgets.painted(form, px(20), function(w: number, h: number)
+					local current = balance()
+					local value = amount
+					if current == nil or value == nil or not valid() then
+						return
+					end
+					local font = theme.font("body")
+					local prefix = "Баланс после пополнения: "
+					local y = (h - theme.fontHeight(font)) / 2
+					draw.SimpleText(prefix, font, 0, y, colors.muted)
+					draw.SimpleText(`${formatNumber(current + value)} ${bonuses(current + value)}`, font, theme.textSize(prefix, font), y, colors.text)
+				end)
+			end
 
-			return {
-				panel = panel,
+			local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger, lineHeight = 18 }
+			local errorBlock = widgets.text(form, errorOptions)
+
+			add({
+				panel = form,
 				layout = function(width: number): number
+					local y = 0
+					local function place(block: DonatosUiBlock, gapAfter: number)
+						local h = block.layout(width)
+						block.panel:SetPos(0, y)
+						block.panel:SetSize(width, h)
+						y = y + h + gapAfter
+					end
+					place(amountCaption, px(8))
 					local gap = px(8)
 					local cell = (width - gap * (#quickButtons - 1)) / #quickButtons
 					for i, btn in ipairs(quickButtons) do
-						btn:SetPos(math.floor((i - 1) * (cell + gap)), 0)
+						btn:SetPos(math.floor((i - 1) * (cell + gap)), y)
 						btn:SetSize(math.floor(cell), px(32))
 					end
-					local y = px(32) + px(12)
+					y = y + px(32) + px(8)
 					field:SetPos(0, y)
 					field:SetSize(width, px(36))
-					y = y + px(36)
+					y = y + px(36) + px(6)
+					place(limits, 0)
+
+					local captionBlock = methodCaption
+					if captionBlock ~= nil then
+						y = y + px(20)
+						place(captionBlock, px(8))
+						local half = (width - gap) / 2
+						for i, btn in ipairs(methodButtons) do
+							btn:SetPos(math.floor((i - 1) * (half + gap)), y)
+							btn:SetSize(math.floor(half), px(36))
+						end
+						y = y + px(36)
+					end
+					local noticeBlock = notice
+					if noticeBlock ~= nil then
+						noticeBlock.panel:SetVisible(method == "igs")
+						if method == "igs" then
+							y = y + px(8)
+							place(noticeBlock, 0)
+						end
+					end
+
+					local summaryBlock = summary
+					if summaryBlock ~= nil then
+						y = y + px(20)
+						place(summaryBlock, 0)
+					end
 					local message = errorText
 					errorBlock.panel:SetVisible(message ~= nil)
 					if message ~= nil then
 						errorOptions.text = message
-						local h = errorBlock.layout(width)
-						errorBlock.panel:SetPos(0, y + px(8))
-						errorBlock.panel:SetSize(width, h)
-						y = y + px(8) + h
+						y = y + px(8)
+						place(errorBlock, 0)
 					end
 					return y
 				end,
-			}
-		end,
-	})
-end
+			})
 
--- Top-up: straight to the pay page, or a choice of it and gm-donate when that is enabled.
-local function topUp(ctx: DonatosMenuContext, anchor: Panel, deposit?: string)
-	local config = ctx.config()
-	if config == nil or not config.igs.enabled then
-		ctx.openPayUrl(deposit or "true")
-		return
-	end
-	widgets.dropdown(anchor, {
-		{
-			label = "Пополнить баланс",
-			disabled = not ctx.canPay(),
-			onClick = function()
-				ctx.openPayUrl(deposit or "true")
+			local cancel: DonatosUiButton = { label = "Отмена", variant = "secondary", onClick = ctx.dialogs.close }
+			local proceed: DonatosUiButton = { label = "Продолжить" }
+			local proceedButton = widgets.button(content.panel, proceed)
+			proceedButton.Think = function(self: DButton)
+				proceed.disabled = not valid()
+			end
+			proceed.onClick = function()
+				local value = amount
+				if value == nil or not valid() then
+					return
+				end
+				if method == "donatos" then
+					ctx.openPayUrl(tostring(value))
+					wait()
+					return
+				end
+				errorText = nil
+				proceed.pending = true
+				cancel.disabled = true
+				relayout()
+				netMessage.toServer("createIgsPaymentUrl", { sum = value }, function(result)
+					proceed.pending = false
+					cancel.disabled = false
+					-- Closed while the link was being made: the player changed their mind.
+					if not IsValid(box) or body == nil or body.panel ~= content.panel then
+						return
+					end
+					if result.success then
+						method = "igs"
+						igsUrl = result.data.url
+						gui.OpenURL(result.data.url)
+						wait()
+					else
+						errorText = result.error ~= "" and result.error or "Не удалось создать ссылку на оплату"
+						relayout()
+					end
+				end)
+			end
+			add(widgets.row(content.panel, px(8), { widgets.button(content.panel, cancel), proceedButton }))
+			return content
+		end
+
+		body = formBlock()
+
+		return {
+			panel = box,
+			place = function(areaWidth: number, areaHeight: number)
+				local w = math.min(px(440), areaWidth - px(32))
+				local h = 0
+				local current = body
+				if current ~= nil then
+					h = current.layout(w)
+					current.panel:SetPos(0, 0)
+					current.panel:SetSize(w, h)
+				end
+				box:SetSize(w, h)
+				box:SetPos((areaWidth - w) / 2, math.max((areaHeight - h) / 2, px(16)))
 			end,
-		},
-		{
-			label = "Другие способы (gm-donate)",
-			onClick = function()
-				igsDeposit(ctx)
-			end,
-		},
-	})
+		}
+	end, true)
 end
 
 ------------------------------------------------------------------------------ page parts
-
--- A page's title row: the title (read every frame), `extra` panels at the right.
-local function pageHeader(parent: Panel, title: () => string, extra?: Panel[]): Panel
-	local header = vgui.Create("DPanel", parent)
-	header:SetTall(px(36))
-	local font = theme.font("title")
-	header.Paint = function(self: Panel, w: number, h: number): boolean
-		draw.SimpleText(title(), font, 0, h / 2, colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		return true
-	end
-	local others = extra or {}
-	for _, child in ipairs(others) do
-		child:SetParent(header)
-	end
-	header.PerformLayout = function(self: Panel, w: number, h: number)
-		local right = w + px(8)
-		for i = #others, 1, -1 do
-			local child = assert(others[i])
-			right = right - px(8) - child:GetWide()
-			child:SetPos(right, (h - child:GetTall()) / 2)
-		end
-	end
-	return header
-end
 
 interface DonatosEmptyState {
 	icon: DonatosIcon;
@@ -323,13 +581,15 @@ return {
 	formatNumber = formatNumber,
 	formatDays = formatDays,
 	formatDaysLong = formatDaysLong,
+	durationColors = durationColors,
+	plural = plural,
+	bonuses = bonuses,
+	bonusesGenitive = bonusesGenitive,
 	formatRemaining = formatRemaining,
 	lower = lower,
 	showError = showError,
 	cancelAction = cancelAction,
-	igsDeposit = igsDeposit,
 	topUp = topUp,
-	pageHeader = pageHeader,
 	emptyState = emptyState,
 	loading = loading,
 }

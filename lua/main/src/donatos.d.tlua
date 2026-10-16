@@ -123,12 +123,31 @@ interface DonatosServerApi {
 		input: { playerId: number; itemId: number };
 		output: boolean;
 	};
+	["player:get-history"]: {
+		-- `cursor` is the previous page's `nextCursor`; omit it for the newest entries.
+		input: { playerId: number; cursor?: number; limit?: number };
+		output: {
+			-- Newest first. `createdAt` is unix seconds; `delta` is signed (+ credit, - debit).
+			entries: {
+				id: number;
+				createdAt: number;
+				delta: number;
+				kind: string;
+				source: "paid" | "free";
+				description: string;
+			}[];
+			-- Present when there are older entries.
+			nextCursor?: number;
+		};
+	};
 }
 
 type DonatosRemoteConfig = DonatosServerApi["server:get-config"]["output"]
 type DonatosRemoteData = DonatosServerApi["server:get-player"]["output"]
 type DonatosInventoryItem = NonNullable<DonatosRemoteData>["inventoryItems"][number]
 type DonatosActiveItem = NonNullable<DonatosRemoteData>["activeItems"][number]
+type DonatosHistoryPage = DonatosServerApi["player:get-history"]["output"]
+type DonatosHistoryEntry = DonatosHistoryPage["entries"][number]
 
 ------------------------------------------------------------------------------
 -- Menu -> server actions.
@@ -148,7 +167,7 @@ interface DonatosServerActions {
 	requestSync: { input: nil; output: DonatosActionResult<true> };
 	requestRefresh: { input: nil; output: DonatosActionResult<true> };
 	purchaseGoods: {
-		input: { goodsId: number; variantId: string };
+		input: { goodsId: number; variantId: string; expectedPrice?: number };
 		output: DonatosActionResult<DonatosServerApi["player:purchase-goods"]["output"]>;
 	};
 	activateItem: { input: { id: number }; output: DonatosActionResult<true> };
@@ -163,6 +182,7 @@ interface DonatosServerActions {
 		output: DonatosActionResult<DonatosServerApi["server:igs-create-payment-url"]["output"]>;
 	};
 	getOnlinePlayers: { input: nil; output: DonatosActionResult<DonatosOnlinePlayer[]> };
+	getHistory: { input: { cursor?: number }; output: DonatosActionResult<DonatosHistoryPage> };
 }
 
 ------------------------------------------------------------------------------

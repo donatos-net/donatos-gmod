@@ -3,6 +3,8 @@
 local netMessage = require("donatos.net")
 local releases = require("donatos.releases")
 local menu = require("ui.menu")
+local toast = require("ui.toast")
+local views = require("ui.views")
 local async = require("utils.async")
 local log = require("utils.log")
 local state = require("utils.state")
@@ -105,8 +107,20 @@ local handlers: ClientMessageHandlers = {
 		if not IsValid(ply) then
 			return
 		end
-		ply:Donatos()._remoteData = { isLoaded = true, data = input }
+		local donatosPlayer = ply:Donatos()
+		local previous = donatosPlayer._remoteData.data
+		donatosPlayer._remoteData = { isLoaded = true, data = input }
 		menu.refresh()
+
+		-- Bonuses can arrive with nothing else to show for them (a payment, gm-donate, an
+		-- admin's grant, a refund), so a balance that went up gets a toast. Not on the first
+		-- sync, which only loads it.
+		local before = previous and previous.player.balance
+		local after = input and input.player.balance
+		if before ~= nil and after ~= nil and after > before then
+			local gained = after - before
+			toast.show(`На баланс зачислено ${views.formatNumber(gained)} ${views.plural(gained, "бонус", "бонуса", "бонусов")}`)
+		end
 	end,
 }
 

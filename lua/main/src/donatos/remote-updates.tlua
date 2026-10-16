@@ -1,7 +1,6 @@
 -- Server: polls the API for new orders and changed players, and loads players the
 -- first attempt missed.
 
-local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
 local serverUtils = require("donatos.server-utils")
 local remoteConfig = require("donatos.utils.load-remote-config")
@@ -63,8 +62,8 @@ local performUpdates = suspend function()
 			})
 
 			ply:EmitSound("garrysmod/save_load4.wav", 75, 100, 0.25)
+			-- A payment only adds bonuses; the client shows them arriving (net/client.tlua).
 			serverPlayer.of(ply):loadRemoteData()
-			netMessage.toClient(ply, "openUi", "inventory")
 		end
 	end
 

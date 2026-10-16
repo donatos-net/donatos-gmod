@@ -825,14 +825,26 @@ interface DonatosUiFloating {
 }
 
 interface DonatosUiDialogHost {
-	show: (dialog: DonatosUiDialog) => void;
+	-- Shows `dialog` in place of the one showing; `stacked` puts it over that one instead, and
+	-- closing it brings the one under it back as it was.
+	show: (dialog: DonatosUiDialog, stacked?: boolean) => void;
 	-- Shows a dialog built by `build` (the parent is the dimmed overlay).
-	showCustom: (build: (parent: Panel, relayout: () => void) => DonatosUiFloating) => void;
+	showCustom: (build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean) => void;
+	-- Closes the top dialog.
 	close: () => void;
 	-- Whether a dialog is showing (and not already on its way out).
 	isOpen: () => boolean;
 	-- Puts the host over the whole of `frame` (call from the frame's PerformLayout).
 	cover: (w: number, h: number) => void;
+}
+
+-- One dialog on the host's stack; only the top one is visible.
+local type DialogLayer = {
+	panel: Panel;
+	place: (areaWidth: number, areaHeight: number) => void;
+	-- 0 hidden, 1 shown: the entrance and exit fade and scale.
+	presence: DonatosTween;
+	exiting: boolean;
 }
 
 local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
@@ -844,8 +856,6 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	-- while settling from 1.05 to 1 over 250ms ease-out-quad, and leaves fading to 0.95 over
 	-- 100ms.
 	local backdrop = theme.tween(0)
-	local dialogIn = theme.tween(0)
-	local exiting = false
 
 	overlay.Paint = function(self: Panel, w: number, h: number): boolean
 		local fill = theme.mix(nil, colors.overlay, backdrop.value())
@@ -855,31 +865,65 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 		return true
 	end
 
-	local current: Panel | nil = nil
+	-- Bottom first. A dialog shown stacked hides the one under it; a dialog on its way out
+	-- stays here until its exit is over.
+	local layers: DialogLayer[] = {}
 
-	local function remove()
-		if current ~= nil and IsValid(current) then
-			current:Remove()
+	-- The top dialog that is not leaving.
+	local function top(): DialogLayer | nil
+		for i = #layers, 1, -1 do
+			local layer = assert(layers[i])
+			if not layer.exiting then
+				return layer
+			end
 		end
-		current = nil
-		-- A late callback's relayout must not place a dialog that is gone.
-		overlay.PerformLayout = function(self: Panel, w: number, h: number) end
-		overlay:SetVisible(false)
-		exiting = false
+		return nil
+	end
+
+	local function remove(layer: DialogLayer)
+		if IsValid(layer.panel) then
+			layer.panel:Remove()
+		end
+		for i, other in ipairs(layers) do
+			if other == layer then
+				table.remove(layers, i)
+				break
+			end
+		end
+		if #layers == 0 then
+			overlay:SetVisible(false)
+		end
+	end
+
+	-- Brings back a dialog that a stacked one hid; it enters again.
+	local function reveal(layer: DialogLayer)
+		layer.panel:SetVisible(true)
+		layer.place(overlay:GetSize())
+		layer.presence.set(0)
+		layer.presence.to(1, 0.25, "outQuad")
 	end
 
 	local function close()
-		if current == nil or exiting then
+		local layer = top()
+		if layer == nil then
 			return
 		end
-		exiting = true
-		backdrop.to(0, 0.1, "out")
-		dialogIn.to(0, 0.1, "outQuad")
+		layer.exiting = true
+		layer.presence.to(0, 0.1, "outQuad")
+		local under = top()
+		if under ~= nil then
+			reveal(under)
+		else
+			backdrop.to(0, 0.1, "out")
+		end
 	end
 
 	overlay.Think = function(self: Panel)
-		if exiting and backdrop.done() and dialogIn.done() then
-			remove()
+		for i = #layers, 1, -1 do
+			local layer = assert(layers[i])
+			if layer.exiting and layer.presence.done() and (top() ~= nil or backdrop.done()) then
+				remove(layer)
+			end
 		end
 	end
 
@@ -888,49 +932,68 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 		return true
 	end
 
+	-- Dialogs that are gone are off the stack, so a late callback's relayout places nothing.
+	overlay.PerformLayout = function(self: Panel, w: number, h: number)
+		for _, layer in ipairs(layers) do
+			layer.place(w, h)
+		end
+	end
+
 	local function relayout()
 		overlay:InvalidateLayout()
 	end
 
-	local function showCustom(build: (parent: Panel, relayout: () => void) => DonatosUiFloating)
-		local replacing = current ~= nil and not exiting
-		remove()
+	local function showCustom(build: (parent: Panel, relayout: () => void) => DonatosUiFloating, stacked?: boolean)
+		local showing = overlay:IsVisible()
+		if stacked then
+			local covered = top()
+			if covered ~= nil then
+				covered.panel:SetVisible(false)
+			end
+		else
+			-- A dialog shown unstacked replaces the whole stack, the dialogs hidden under the
+			-- top one too, so closing it reveals none of them. Leaving ones finish leaving.
+			for i = #layers, 1, -1 do
+				local layer = assert(layers[i])
+				if not layer.exiting then
+					remove(layer)
+				end
+			end
+		end
+		-- Over a showing (or leaving) dialog the backdrop carries on from where it is.
+		if not showing then
+			backdrop.set(0)
+		end
+
 		local floating = build(overlay, relayout)
 		local panel = floating.panel
-		current = panel
+		local layer: DialogLayer = { panel = panel, place = floating.place, presence = theme.tween(0), exiting = false }
+		table.insert(layers, layer)
 
 		local scaled = false
 		local paint = panel.Paint
 		panel.Paint = function(self: Panel, w: number, h: number): boolean
-			local t = dialogIn.value()
+			local t = layer.presence.value()
 			theme.captureBehind("dialog", t)
-			local scale = exiting and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1)
+			local scale = layer.exiting and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1)
 			scaled = theme.pushScale(self, scale, w / 2, h / 2)
 			return paint(self, w, h)
 		end
 		panel.PaintOver = function(self: Panel, w: number, h: number): boolean
 			theme.popScale(scaled)
 			scaled = false
-			theme.coverBehind("dialog", self, dialogIn.value())
+			theme.coverBehind("dialog", self, layer.presence.value())
 			return true
 		end
 
-		overlay.PerformLayout = function(self: Panel, w: number, h: number)
-			floating.place(w, h)
-		end
 		floating.place(overlay:GetSize())
-		-- A dialog replacing another keeps the backdrop; the new one still enters.
-		if not replacing then
-			backdrop.set(0)
-		end
 		backdrop.to(1, 0.15, "out")
-		dialogIn.set(0)
-		dialogIn.to(1, 0.25, "outQuad")
+		layer.presence.to(1, 0.25, "outQuad")
 		overlay:SetVisible(true)
 		overlay:MoveToFront()
 	end
 
-	local function show(dialog: DonatosUiDialog)
+	local function show(dialog: DonatosUiDialog, stacked?: boolean)
 		showCustom(function(parent: Panel, relayoutDialog: () => void): DonatosUiFloating
 			local box = vgui.Create("DPanel", parent)
 			box.Paint = function(self: Panel, w: number, h: number): boolean
@@ -969,7 +1032,7 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 					box:SetPos((areaWidth - w) / 2, math.max((areaHeight - h) / 2, px(16)))
 				end,
 			}
-		end)
+		end, stacked)
 	end
 
 	return {
@@ -977,7 +1040,7 @@ local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 		showCustom = showCustom,
 		close = close,
 		isOpen = function(): boolean
-			return current ~= nil and not exiting
+			return top() ~= nil
 		end,
 		cover = function(w: number, h: number)
 			overlay:SetPos(0, 0)

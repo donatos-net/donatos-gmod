@@ -1,0 +1,427 @@
+-- Client: «История», the player's balance history as a table, newest first, a page of the
+-- API's entries at a time.
+
+local netMessage = require("donatos.net")
+local theme = require("ui.theme")
+local views = require("ui.views")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+------------------------------------------------------------------------------ cache
+
+-- The loaded pages. The menu state has no place for them, so they live here, for one
+-- player; any change to the balance starts them over, as every entry moves it.
+local type HistoryCache = {
+	playerId: number;
+	balance: number;
+	-- nil until the first page arrives.
+	entries: DonatosHistoryEntry[] | nil;
+	nextCursor: number | nil;
+	loading: boolean;
+	-- The last request's error, and its cursor for «Повторить».
+	error: string | nil;
+	failedCursor: number | nil;
+}
+
+local history: HistoryCache | nil = nil
+
+-- The page's body while it is on screen, so a reply re-renders only while it is.
+local livePage: Panel | nil = nil
+
+-- Requests the page after `cursor` (the newest page when nil) and re-renders when it lands.
+-- A reply for a cache that has since been replaced is dropped.
+local function fetch(ctx: DonatosMenuContext, cache: HistoryCache, cursor: number | nil)
+	cache.loading = true
+	cache.error = nil
+	netMessage.toServer("getHistory", { cursor = cursor }, function(result)
+		if history ~= cache then
+			return
+		end
+		cache.loading = false
+		if result.success then
+			local entries: DonatosHistoryEntry[] = cursor ~= nil and cache.entries or {}
+			for _, entry in ipairs(result.data.entries) do
+				table.insert(entries, entry)
+			end
+			cache.entries = entries
+			cache.nextCursor = result.data.nextCursor
+		else
+			cache.error = result.error ~= "" and result.error or "Не удалось загрузить историю"
+			cache.failedCursor = cursor
+		end
+		local page = livePage
+		if page ~= nil and IsValid(page) then
+			ctx.rerender()
+		end
+	end)
+end
+
+-- The player's cache, refetching the newest page for another player or a changed balance.
+-- The old entries stay on screen until the new page replaces them.
+local function cacheFor(ctx: DonatosMenuContext, data: NonNullable<DonatosRemoteData>): HistoryCache
+	local player = data.player
+	local cache = history
+	if cache ~= nil and cache.playerId == player.id and cache.balance == player.balance then
+		return cache
+	end
+	local fresh: HistoryCache = {
+		playerId = player.id,
+		balance = player.balance,
+		entries = cache ~= nil and cache.playerId == player.id and cache.entries or nil,
+		nextCursor = nil,
+		loading = false,
+		error = nil,
+		failedCursor = nil,
+	}
+	history = fresh
+	fetch(ctx, fresh, nil)
+	return fresh
+end
+
+local type HistoryLine = { createdAt: number; delta: number; description: string }
+
+-- A purchase paid partly from free and partly from paid bonuses comes as two adjacent
+-- entries with the same time, kind and description: they make one line.
+local function historyLines(entries: DonatosHistoryEntry[]): HistoryLine[]
+	local lines: HistoryLine[] = {}
+	local previous: DonatosHistoryEntry | nil = nil
+	local last: HistoryLine | nil = nil
+	for _, entry in ipairs(entries) do
+		if previous ~= nil and last ~= nil
+			and previous.createdAt == entry.createdAt
+			and previous.kind == entry.kind
+			and previous.description == entry.description
+		then
+			last.delta = last.delta + entry.delta
+		else
+			last = { createdAt = entry.createdAt, delta = entry.delta, description = entry.description }
+			table.insert(lines, last)
+		end
+		previous = entry
+	end
+	return lines
+end
+
+------------------------------------------------------------------------------ formatting
+
+local MONTHS: string[] = { "янв.", "февр.", "марта", "апр.", "мая", "июня", "июля", "авг.", "сент.", "окт.", "нояб.", "дек." }
+
+-- "16 окт., 14:32", "Сегодня, 14:32", "Вчера, 14:32"; the year only when it is not this one.
+local function formatWhen(time: number): string
+	local clock = os.date("%H:%M", time)
+	local day = os.date("%Y-%m-%d", time)
+	local now = os.time()
+	if day == os.date("%Y-%m-%d", now) then
+		return `Сегодня, ${clock}`
+	elseif day == os.date("%Y-%m-%d", now - 86400) then
+		return `Вчера, ${clock}`
+	end
+	local date = os.date("*t", time)
+	local year = date.year ~= os.date("*t", now).year and ` ${date.year}` or ""
+	return `${date.day} ${MONTHS[date.month] or ""}${year}, ${clock}`
+end
+
+-- "+500", "−200" (a real minus sign), "0".
+local function formatDelta(delta: number): string
+	if delta < 0 then
+		return `−${views.formatNumber(-delta)}`
+	elseif delta > 0 then
+		return `+${views.formatNumber(delta)}`
+	end
+	return "0"
+end
+
+------------------------------------------------------------------------------ table
+
+-- HeroUI v3's Table, primary variant (@heroui/styles 3.2.6, components/table.css): a
+-- surface-secondary frame (radius 20, padded 4 at the sides and bottom) holding the header
+-- on the frame's fill and the body as a surface card (radius 16). Header cells: 16 x 10
+-- padding, 12px medium muted text, a 16px separator line between columns. Body cells:
+-- 16 x 12 padding, 14px text, a divider under each row but the last (separator-tertiary
+-- at 50%), and a hovered row at surface/40.
+local FRAME_RADIUS = 20
+local FRAME_PAD = 4
+local BODY_RADIUS = 16
+local CELL_PAD = 16
+local HEADER_HEIGHT = 36
+local ROW_HEIGHT = 44
+local DATE_WIDTH = 160
+local AMOUNT_WIDTH = 120
+
+-- Each column's text start (the amount's right edge) and the operation's text width, inside
+-- a body of `width`: the date and the amount are fixed, the operation takes the rest. The
+-- columns themselves start at px(DATE_WIDTH) and `width - px(AMOUNT_WIDTH)`, where the
+-- header draws its separators.
+local function columns(width: number): (number, number, number, number)
+	local dateX = px(CELL_PAD)
+	local operationX = px(DATE_WIDTH) + px(CELL_PAD)
+	local amountX = width - px(AMOUNT_WIDTH)
+	local operationWidth = math.max(amountX - operationX - px(CELL_PAD), px(40))
+	return dateX, operationX, operationWidth, width - px(CELL_PAD)
+end
+
+local function tableRow(parent: Panel, line: HistoryLine, first: boolean, last: boolean): DonatosUiBlock
+	local panel = widgets.blankPanel(parent)
+	local hover = theme.tween(0)
+	local when = formatWhen(line.createdAt)
+	local amount = formatDelta(line.delta)
+	local amountColor = line.delta > 0 and colors.success or colors.text
+	local font = theme.font("body")
+	local description = ""
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		hover.to(self:IsHovered() and 1 or 0, 0.15, "smooth")
+		local fill = theme.mix(colors.surface, colors.surfaceHover, hover.value()) or colors.surface
+		theme.box(px(BODY_RADIUS), 0, 0, w, h, fill, first, first, last, last)
+		if not last then
+			surface.SetDrawColor(colors.default)
+			surface.DrawRect(0, h - 1, w, 1)
+		end
+		local dateX, operationX, _, amountRight = columns(w)
+		draw.SimpleText(when, font, dateX, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(description, font, operationX, h / 2, colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(amount, theme.font("medium"), amountRight, h / 2, amountColor, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local _, _, operationWidth = columns(width)
+			local text = line.description ~= "" and line.description or "Операция"
+			description = theme.clamp(text, font, operationWidth, 1)[1] or ""
+			return px(ROW_HEIGHT)
+		end,
+	}
+end
+
+-- The table's header: the top of the frame with the column labels. It stays outside the
+-- scroll area, so the rows scroll under it.
+local function tableHeader(parent: Panel): Panel
+	local panel = vgui.Create("DPanel", parent)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(FRAME_RADIUS), 0, 0, w, h, colors.surfaceSecondary, true, true, false, false)
+		local pad = px(FRAME_PAD)
+		local dateX, operationX, _, amountRight = columns(w - pad * 2)
+		local font = theme.font("chip")
+		local y = px(HEADER_HEIGHT) / 2
+		draw.SimpleText("Дата", font, pad + dateX, y, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Операция", font, pad + operationX, y, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Сумма", font, pad + amountRight, y, colors.muted, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		-- The separators at the right edges of the first two columns.
+		surface.SetDrawColor(colors.separator)
+		for _, edge in ipairs({ px(DATE_WIDTH), w - pad * 2 - px(AMOUNT_WIDTH) }) do
+			surface.DrawRect(pad + edge - 1, y - px(8), 1, px(16))
+		end
+		return true
+	end
+	return panel
+end
+
+-- The rest of the frame, holding the rows.
+local function historyTable(parent: Panel, lines: HistoryLine[]): DonatosUiBlock
+	local panel = vgui.Create("DPanel", parent)
+	local rows: DonatosUiBlock[] = {}
+	for i, line in ipairs(lines) do
+		table.insert(rows, tableRow(panel, line, i == 1, i == #lines))
+	end
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(FRAME_RADIUS), 0, 0, w, h, colors.surfaceSecondary, false, false, true, true)
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local pad = px(FRAME_PAD)
+			local bodyWidth = width - pad * 2
+			local y = 0
+			for _, row in ipairs(rows) do
+				local h = row.layout(bodyWidth)
+				row.panel:SetPos(pad, y)
+				row.panel:SetSize(bodyWidth, h)
+				y = y + h
+			end
+			return y + pad
+		end,
+	}
+end
+
+------------------------------------------------------------------------------ status
+
+-- A line of text under the table (after a spinner while `spinning`), with an optional
+-- button at its right end.
+local function note(parent: Panel, message: string, color: Color, spinning: boolean, action: DonatosUiButton | nil): DonatosUiBlock
+	local panel = widgets.blankPanel(parent)
+	local btn: DButton | nil = nil
+	if action ~= nil then
+		btn = widgets.button(panel, action)
+	end
+	local font = theme.font("small")
+	local shown = message
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		local x = px(CELL_PAD)
+		if spinning then
+			theme.spinner(x + px(6), h / 2, px(6), colors.muted)
+			x = x + px(20)
+		end
+		draw.SimpleText(shown, font, x, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local h = px(44)
+			local right = width - px(CELL_PAD)
+			local actionButton = btn
+			if actionButton ~= nil then
+				right = right - actionButton:GetWide()
+				actionButton:SetPos(right, (h - actionButton:GetTall()) / 2)
+				right = right - px(12)
+			end
+			shown = theme.clamp(message, font, math.max(right - px(CELL_PAD) - px(20), px(40)), 1)[1] or ""
+			return h
+		end,
+	}
+end
+
+-- «Показать ещё», centred.
+local function more(parent: Panel, action: DonatosUiButton): DonatosUiBlock
+	local panel = widgets.blankPanel(parent)
+	local btn = widgets.button(panel, action)
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			btn:SetPos((width - btn:GetWide()) / 2, 0)
+			return btn:GetTall()
+		end,
+	}
+end
+
+-- What goes under the table: the error, the first page loading, or «Показать ещё».
+local function status(parent: Panel, ctx: DonatosMenuContext, cache: HistoryCache, lines: HistoryLine[] | nil): DonatosUiBlock | nil
+	local errorText = cache.error
+	if errorText ~= nil then
+		local failedCursor = cache.failedCursor
+		return note(parent, errorText, colors.danger, false, {
+			label = "Повторить",
+			variant = "secondary",
+			size = "sm",
+			onClick = function()
+				fetch(ctx, cache, failedCursor)
+				ctx.rerender()
+			end,
+		})
+	elseif lines == nil then
+		return note(parent, "Загружаем историю...", colors.muted, true, nil)
+	end
+	local cursor = cache.nextCursor
+	if cursor ~= nil then
+		return more(parent, {
+			label = "Показать ещё",
+			variant = "secondary",
+			size = "sm",
+			pending = cache.loading,
+			onClick = function()
+				if cache.loading then
+					return
+				end
+				fetch(ctx, cache, cursor)
+				ctx.rerender()
+			end,
+		})
+	end
+	return nil
+end
+
+------------------------------------------------------------------------------ page
+
+local function emptyHistory(parent: Panel): Panel
+	return views.emptyState(parent, {
+		icon = "clock",
+		title = "Пока нет операций",
+		text = "Здесь появятся пополнения, покупки и возвраты бонусов.",
+	})
+end
+
+local function page(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+	local body = widgets.blankPanel(parent)
+	local area: DScrollPanel | nil = nil
+	local header: Panel | nil = nil
+	livePage = body
+
+	-- The header is as wide as the rows, which narrow while the scroll bar shows.
+	local function headerWidth(w: number): number
+		local scrolling = area
+		local bar = scrolling ~= nil and IsValid(scrolling) and scrolling:GetVBar() or nil
+		local barWidth = bar ~= nil and bar:IsVisible() and bar:GetWide() or 0
+		return w - px(48) - barWidth
+	end
+
+	parent.PerformLayout = function(self: Panel, w: number, h: number)
+		local y = px(20)
+		local fixed = header
+		if fixed ~= nil then
+			fixed:SetPos(px(24), y)
+			fixed:SetSize(headerWidth(w), px(HEADER_HEIGHT))
+			y = y + px(HEADER_HEIGHT)
+		end
+		body:SetPos(0, y)
+		body:SetSize(w, h - y)
+	end
+
+	local data = ctx.data()
+	if not ctx.loaded() then
+		views.loading(body):Dock(FILL)
+	elseif data == nil then
+		emptyHistory(body):Dock(FILL)
+	else
+		local cache = cacheFor(ctx, data)
+		local entries = cache.entries
+		local lines = entries and historyLines(entries)
+		if lines ~= nil and #lines == 0 and cache.error == nil then
+			emptyHistory(body):Dock(FILL)
+		else
+			if lines ~= nil then
+				header = tableHeader(parent)
+			end
+			local scrollArea = widgets.scroll(body, function(canvas: Panel): DonatosUiBlock
+				local content, add = widgets.stack(canvas, px(12), px(24), 0)
+				if lines ~= nil then
+					add(historyTable(content.panel, lines))
+				end
+				local below = status(content.panel, ctx, cache, lines)
+				if below ~= nil then
+					add(below)
+				end
+				-- Room below the last block.
+				add(widgets.painted(content.panel, px(4), function() end))
+				return content
+			end)
+			scrollArea:Dock(FILL)
+			area = scrollArea
+			-- The scroll bar shows or hides as the area lays out, after the page has, so
+			-- the header catches up there, in the same frame.
+			local layoutArea = scrollArea.PerformLayout
+			scrollArea.PerformLayout = function(self: DScrollPanel, w: number, h: number)
+				layoutArea(self, w, h)
+				local fixed = header
+				if fixed ~= nil then
+					fixed:SetWide(headerWidth(parent:GetWide()))
+				end
+			end
+		end
+	end
+
+	return function(): DScrollPanel | nil
+		return area
+	end
+end
+
+return {
+	history = page,
+}

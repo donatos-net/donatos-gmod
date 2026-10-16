@@ -100,7 +100,18 @@ end
 
 ------------------------------------------------------------------------------ item dialog
 
-local function purchaseDone(ctx: DonatosMenuContext, name: string, activated: boolean)
+-- `oneTime`: the variant has no duration, so once activated it has already done its work and
+-- shows nowhere in «Мои предметы».
+local function purchaseDone(ctx: DonatosMenuContext, name: string, activated: boolean, oneTime: boolean)
+	local done: DonatosUiButton = { label = "Готово", onClick = ctx.dialogs.close }
+	if activated and oneTime then
+		ctx.dialogs.show({
+			title = "Покупка совершена",
+			description = `«${name}» активирован. Это разовый товар: он уже сработал.`,
+			actions = { done },
+		})
+		return
+	end
 	ctx.dialogs.show({
 		title = "Покупка совершена",
 		description = activated and `«${name}» активирован.` or `«${name}» ждёт активации в «Мои предметы».`,
@@ -113,7 +124,7 @@ local function purchaseDone(ctx: DonatosMenuContext, name: string, activated: bo
 					ctx.showTab("items")
 				end,
 			},
-			{ label = "Готово", onClick = ctx.dialogs.close },
+			done,
 		},
 	})
 end
@@ -152,11 +163,9 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 
 		local chips = widgets.painted(box, px(20), function(w: number, h: number)
 			local x = widgets.chip(sectionName, 0, 0, colors.default, colors.text) + px(6)
-			local duration = selected and selected.duration
 			if selected ~= nil then
-				local label = views.formatDaysLong(duration)
-				local permanent = duration == nil or duration == 0
-				widgets.chip(label, x, 0, permanent and colors.successSoft or colors.accentSoft, permanent and colors.success or colors.accentText)
+				local background, foreground = views.durationColors(selected.duration)
+				widgets.chip(views.formatDaysLong(selected.duration), x, 0, background, foreground)
 			end
 		end)
 		local name = widgets.text(box, { text = good.name, font = theme.font("dialogTitle"), color = colors.text, lineHeight = 32 })
@@ -204,19 +213,42 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		end)
 		local close = widgets.button(aside, { icon = "close", size = "sm", variant = "secondary", onClick = ctx.dialogs.close })
 
+		-- The "Активировать сразу" switch; its hint follows the selected variant, since a
+		-- one-time good does its work once, on activation, and leaves no active item.
+		local instantOptions: DonatosUiSwitch = {
+			on = ctx.state.instant,
+			label = "Активировать сразу",
+			onChange = function(on: boolean)
+				ctx.state.instant = on
+			end,
+		}
+		local function syncInstantHint()
+			instantOptions.hint = selected ~= nil and selected.duration == nil
+					and "Разовый товар сработает сразу после покупки. Иначе он будет ждать в «Мои предметы», его можно подарить"
+				or "Иначе предмет будет ждать в «Мои предметы», его можно подарить"
+		end
+		syncInstantHint()
+
+		local function variantLabel(variant: DonatosGoodsVariant): string
+			return `${views.formatDays(variant.duration)} · ${views.formatNumber(variant.price)}`
+		end
+
 		local variantPicker: DonatosUiBlock | nil = nil
+		-- Relabels and resizes the picker's options after the prices change.
+		local syncVariantLabels = function() end
 		if #variants > 1 then
 			local options: DonatosUiButton[] = {}
 			local buttons: Panel[] = {}
 			for _, variant in ipairs(variants) do
 				local option: DonatosUiButton = {
-					label = `${views.formatDays(variant.duration)} · ${views.formatNumber(variant.price)}`,
+					label = variantLabel(variant),
 					size = "sm",
 					variant = variant == selected and "soft" or "secondary",
 				}
 				option.onClick = function()
 					selected = variant
 					errorText = nil
+					syncInstantHint()
 					for i, other in ipairs(options) do
 						other.variant = variants[i] == variant and "soft" or "secondary"
 					end
@@ -226,6 +258,15 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				table.insert(buttons, widgets.button(aside, option))
 			end
 			variantPicker = widgets.flow(aside, px(6), 0, buttons)
+			syncVariantLabels = function()
+				for i, variant in ipairs(variants) do
+					local option, btn = options[i], buttons[i]
+					if option ~= nil and btn ~= nil then
+						option.label = variantLabel(variant)
+						btn:SetSize(widgets.buttonMetrics(option))
+					end
+				end
+			end
 		end
 
 		local price = widgets.painted(aside, px(40), function(w: number, h: number)
@@ -235,7 +276,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			draw.SimpleText(text, priceFont, 0, y, colors.text)
 			if selected ~= nil then
 				local unitFont = theme.font("reading")
-				draw.SimpleText("бонусов", unitFont, theme.textSize(text, priceFont) + px(6), theme.baseline(y, priceFont, unitFont), colors.muted)
+				draw.SimpleText(views.bonuses(selected.price), unitFont, theme.textSize(text, priceFont) + px(6), theme.baseline(y, priceFont, unitFont), colors.muted)
 			end
 		end)
 
@@ -250,20 +291,13 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			local y = (h - theme.fontHeight(font)) / 2
 			local short = missing()
 			if short > 0 then
-				draw.SimpleText(`Не хватает ${views.formatNumber(short)} бонусов`, font, 0, y, colors.danger)
+				draw.SimpleText(`Не хватает ${views.formatNumber(short)} ${views.bonusesGenitive(short)}`, font, 0, y, colors.danger)
 			else
 				draw.SimpleText(`После покупки останется ${views.formatNumber(current - selected.price)}`, font, 0, y, colors.muted)
 			end
 		end)
 
-		local instant = widgets.switch(aside, {
-			on = ctx.state.instant,
-			label = "Активировать сразу",
-			hint = "Иначе предмет будет ждать в «Мои предметы», его можно подарить",
-			onChange = function(on: boolean)
-				ctx.state.instant = on
-			end,
-		})
+		local instant = widgets.switch(aside, instantOptions)
 
 		local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger, lineHeight = 18 }
 		local errorBlock = widgets.text(aside, errorOptions)
@@ -279,10 +313,10 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				buy.label = "Недоступно для покупки"
 				buy.disabled = true
 			elseif short > 0 then
-				buy.label = `Пополнить на ${views.formatNumber(short)} бонусов`
+				buy.label = `Пополнить на ${views.formatNumber(short)} ${views.bonuses(short)}`
 				buy.disabled = not ctx.canPay()
 			else
-				buy.label = `Купить за ${views.formatNumber(selected.price)} бонусов`
+				buy.label = `Купить за ${views.formatNumber(selected.price)} ${views.bonuses(selected.price)}`
 				buy.disabled = false
 			end
 		end
@@ -298,33 +332,50 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			relayout()
 		end
 
-		buy.onClick = function(btn: DButton)
+		buy.onClick = function()
 			local variant = selected
 			if variant == nil then
 				return
 			end
+			-- Short of the price: top up over this dialog, which comes back as it was.
 			local short = missing()
 			if short > 0 then
-				views.topUp(ctx, btn, tostring(short))
+				views.topUp(ctx, short)
 				return
 			end
 			errorText = nil
 			buy.pending = true
 			cancel.disabled = true
 			relayout()
-			netMessage.toServer("purchaseGoods", { goodsId = good.id, variantId = variant.id }, function(result)
+			netMessage.toServer("purchaseGoods", { goodsId = good.id, variantId = variant.id, expectedPrice = variant.price }, function(result)
 				if not result.success then
+					-- The price changed: the server synced the new config before answering, so
+					-- the dialog takes the new prices from it.
+					local config = ctx.config()
+					if config ~= nil and string.find(result.error, "Цена товара изменилась", 1, true) then
+						for _, fresh in ipairs(config.goods) do
+							for _, freshVariant in ipairs(fresh.id == good.id and fresh.variants or {}) do
+								for _, shown in ipairs(variants) do
+									if shown.id == freshVariant.id then
+										shown.price = freshVariant.price
+									end
+								end
+							end
+						end
+						syncVariantLabels()
+					end
 					fail(result.error ~= "" and result.error or PURCHASE_ERROR)
 					return
 				end
 				local goodsName = result.data.goods.name
+				local oneTime = variant.duration == nil
 				if not ctx.state.instant then
-					purchaseDone(ctx, goodsName, false)
+					purchaseDone(ctx, goodsName, false, oneTime)
 					return
 				end
 				netMessage.toServer("activateItem", { id = result.data.item.id }, function(activation)
 					if activation.success then
-						purchaseDone(ctx, goodsName, true)
+						purchaseDone(ctx, goodsName, true, oneTime)
 					else
 						views.showError(ctx, `«${goodsName}» куплен, но не активирован: ${activation.error ~= "" and activation.error or "попробуйте позже"}. Он ждёт в «Мои предметы».`)
 					end
@@ -431,8 +482,12 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local variants = good.variants or {}
 	local first = variants[1]
 	local priceText = first ~= nil and `${#variants > 1 and "от " or ""}${views.formatNumber(first.price)}` or "—"
+	-- "от 100 бонусов" but "100 бонусов", "от 21 бонуса" but "21 бонус".
+	local priceUnit = first ~= nil and (#variants > 1 and views.bonusesGenitive(first.price) or views.bonuses(first.price)) or ""
+	-- A lone variant's term shows as a chip; permanent and one-time goods need none.
 	local duration = first and first.duration
-	local chipText = #variants == 1 and duration ~= nil and duration > 0 and views.formatDays(duration) or nil
+	local chipText = (#variants == 1 and duration ~= nil and duration > 0) and views.formatDays(duration) or nil
+	local chipBackground, chipForeground = views.durationColors(duration)
 	local description = shortDescription(good.description)
 	local status, statusColor = goodStatus(ctx, good)
 	local nameLines: string[] = {}
@@ -461,7 +516,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 			draw.SimpleText(line, nameFont, padX, padY + (i - 1) * lineHeight + (lineHeight - nameHeight) / 2, colors.text)
 		end
 		if chipText ~= nil then
-			widgets.chip(chipText, w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2, colors.accentSoft, colors.accentText)
+			widgets.chip(chipText, w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2, chipBackground, chipForeground)
 		end
 
 		local y = padY + #nameLines * lineHeight + px(10)
@@ -476,7 +531,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		local priceY = h - padY - px(28) + (px(28) - theme.fontHeight(priceFont)) / 2
 		draw.SimpleText(priceText, priceFont, padX, priceY, colors.text)
 		if first ~= nil then
-			draw.SimpleText("бонусов", unitFont, padX + theme.textSize(priceText, priceFont) + px(5), theme.baseline(priceY, priceFont, unitFont), colors.muted)
+			draw.SimpleText(priceUnit, unitFont, padX + theme.textSize(priceText, priceFont) + px(5), theme.baseline(priceY, priceFont, unitFont), colors.muted)
 		end
 		if status ~= nil then
 			draw.SimpleText(status, statusFont, w - padX, theme.baseline(priceY, priceFont, statusFont), statusColor, TEXT_ALIGN_RIGHT)
@@ -534,8 +589,9 @@ local function chipMetrics(chipSpec: CategoryChip): number
 	return px(14) + labelWidth + px(6) + countWidth + px(12)
 end
 
--- The chip row under the page header. Chips that don't fit go into a final "Ещё" dropdown.
-local function categoryBar(parent: Panel, ctx: DonatosMenuContext, chips: CategoryChip[], jump: (section: ShopSection) => void): Panel
+-- The chip row at the top of the shop; `reserve` px at its right are left for the search
+-- field. Chips that don't fit go into a final "Ещё" dropdown.
+local function categoryBar(parent: Panel, ctx: DonatosMenuContext, chips: CategoryChip[], jump: (section: ShopSection) => void, reserve: number): Panel
 	local bar = widgets.blankPanel(parent)
 	bar.Paint = function(self: Panel, w: number, h: number): boolean
 		surface.SetDrawColor(colors.group)
@@ -596,7 +652,7 @@ local function categoryBar(parent: Panel, ctx: DonatosMenuContext, chips: Catego
 
 	bar.PerformLayout = function(self: Panel, w: number, h: number)
 		local padX, gap = px(24), px(6)
-		local available = w - padX * 2
+		local available = w - padX * 2 - reserve
 		local total = 0
 		for i, btn in ipairs(buttons) do
 			total = total + btn:GetWide() + (i > 1 and gap or 0)
@@ -647,10 +703,6 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 	field:SetWide(px(280))
 	entry:SetValue(ctx.state.query)
 	ctx.state.searchEntry = entry
-
-	local header = views.pageHeader(parent, function(): string
-		return string.Trim(ctx.state.query) ~= "" and "Результаты поиска" or "Магазин"
-	end, { field })
 
 	local bar: Panel | nil = nil
 	local list = widgets.blankPanel(parent)
@@ -710,7 +762,9 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 			for _, section in ipairs(sections) do
 				table.insert(chips, { section = section, count = #section.hits, dim = #section.hits == 0 })
 			end
-			bar = categoryBar(parent, ctx, chips, jump)
+			bar = categoryBar(parent, ctx, chips, jump, field:GetWide() + px(16))
+			-- The search field sits over the bar's right end.
+			field:MoveToFront()
 		end
 
 		list:Clear()
@@ -788,18 +842,15 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 	end
 
 	parent.PerformLayout = function(self: Panel, w: number, h: number)
-		local padX, top = px(24), px(20)
-		header:SetPos(padX, top)
-		header:SetSize(w - padX * 2, px(36))
-		local y = top + px(36) + px(10)
+		-- One row under the top bar: the category chips, and the search at the right.
+		local padX, top, row = px(24), px(8), px(56)
 		local currentBar = bar
 		if currentBar ~= nil and IsValid(currentBar) then
-			currentBar:SetPos(0, y)
-			currentBar:SetSize(w, px(52))
-			y = y + px(52)
-		else
-			y = y + px(6)
+			currentBar:SetPos(0, top)
+			currentBar:SetSize(w, row)
 		end
+		field:SetPos(w - padX - field:GetWide(), top + (row - 1 - field:GetTall()) / 2)
+		local y = top + row
 		list:SetPos(0, y)
 		list:SetSize(w, h - y)
 	end

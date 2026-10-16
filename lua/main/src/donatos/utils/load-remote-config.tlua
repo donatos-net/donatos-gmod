@@ -1,22 +1,51 @@
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
+local async = require("utils.async")
 local log = require("utils.log")
 local state = require("utils.state")
 
-local loadRemoteConfig = suspend function()
-	log.info("Loading remote config...")
-	local data = serverApi.request("server:get-config", nil)
+-- Callers waiting on the load in flight, or nil when none is.
+local waiting: ((loaded: boolean) => void)[] | nil = nil
 
-	if data == nil then
-		return
+local function isLoading(): boolean
+	return waiting ~= nil
+end
+
+-- Fetches the config and syncs it to every client. Returns whether it loaded; a call made
+-- while a load is in flight waits for that load instead of starting another.
+local loadRemoteConfig = suspend function(): boolean
+	local current = waiting
+	if current ~= nil then
+		return async.await(function(resolve: (loaded: boolean) => void)
+			table.insert(current, resolve)
+		end)
+	end
+	waiting = {}
+
+	log.info("Loading remote config...")
+	-- Protected, so a malformed response cannot leave the waiters hanging.
+	local succeeded, data = pcall(serverApi.request, "server:get-config", nil)
+	if not succeeded then
+		log.error(`Failed to load remote config: ${data}`)
+		data = nil
 	end
 
-	state.remoteConfig.value = data
-	netMessage.toClient(nil, "syncConfig", data)
+	if data ~= nil then
+		state.remoteConfig.value = data
+		netMessage.toClient(nil, "syncConfig", data)
+		log.info("Received new remote config")
+	end
 
-	log.info("Received new remote config")
+	local loaded = data ~= nil
+	local resolvers = waiting or {}
+	waiting = nil
+	for _, resolve in ipairs(resolvers) do
+		resolve(loaded)
+	end
+	return loaded
 end
 
 return {
+	isLoading = isLoading,
 	loadRemoteConfig = loadRemoteConfig,
 }

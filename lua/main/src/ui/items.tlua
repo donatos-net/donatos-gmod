@@ -129,7 +129,7 @@ end
 local function freezeDialog(ctx: DonatosMenuContext, item: DonatosActiveItem)
 	ctx.dialogs.show({
 		title = "Заморозить предмет",
-		description = "Пока предмет заморожен, его срок не идёт. Заморозить его можно только 1 раз. Продолжить?",
+		description = "Пока предмет заморожен, его срок не идёт. Заморозить предмет можно только один раз, а разморозить — в любой момент. Продолжить?",
 		actions = {
 			views.cancelAction(ctx),
 			{
@@ -149,14 +149,32 @@ end
 
 ------------------------------------------------------------------------------ rows
 
--- Draws a name with a chip after it, and a muted line below, from (x, y).
-local function paintTitle(x: number, y: number, name: string, chipText: string, chipBackground: Color, chipForeground: Color, subtitle: string)
+-- Draws a name with a chip after it (when `chipText` is set), and a muted line below, from
+-- (x, y).
+local function paintTitle(x: number, y: number, name: string, chipText: string | nil, chipBackground: Color, chipForeground: Color, subtitle: string)
 	local nameFont = theme.font("medium")
 	local lineHeight = px(20)
 	draw.SimpleText(name, nameFont, x, y + (lineHeight - theme.fontHeight(nameFont)) / 2, colors.text)
-	widgets.chip(chipText, x + theme.textSize(name, nameFont) + px(8), y, chipBackground, chipForeground)
+	if chipText ~= nil then
+		widgets.chip(chipText, x + theme.textSize(name, nameFont) + px(8), y, chipBackground, chipForeground)
+	end
 	local smallFont = theme.font("small")
 	draw.SimpleText(subtitle, smallFont, x, y + lineHeight + (px(18) - theme.fontHeight(smallFont)) / 2, colors.muted)
+end
+
+-- The server refuses to freeze an item with 3 or fewer whole hours left, so under 4 hours
+-- (players.ts, playerFreezeActiveItem).
+local FREEZE_MIN_LEFT = 4 * 3600
+
+-- Why the server would refuse to freeze an unexpired, unfrozen item with a term, or nil when
+-- it would not. An item can be frozen once.
+local function freezeBlocker(item: DonatosActiveItem, secondsLeft: number): string | nil
+	if (item.freezeCounter or 0) > 0 then
+		return "Заморозка уже использована"
+	elseif secondsLeft < FREEZE_MIN_LEFT then
+		return "Меньше 4 ч — заморозить нельзя"
+	end
+	return nil
 end
 
 local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosActiveItem): DonatosUiBlock
@@ -169,11 +187,16 @@ local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosAc
 	if item.isFrozen then
 		chipText, chipBackground, chipForeground = "Заморожен", colors.default, colors.textSoft
 		subtitle = "Срок не идёт, пока предмет заморожен"
+	elseif expires ~= nil and expires.inS <= 0 then
+		-- Ran out before the server removed it.
+		chipText, chipBackground, chipForeground = "Истёк", colors.default, colors.textSoft
+		subtitle = "Срок истёк"
 	elseif expires ~= nil then
 		subtitle = `Истекает через ${views.formatRemaining(expires.inS)}`
 	end
 
-	local action: DButton | nil = nil
+	-- The row's right end: a button, or why there is none.
+	local action: Panel | nil = nil
 	if item.isFrozen then
 		local unfreeze: DonatosUiButton = { label = "Разморозить", variant = "secondary" }
 		unfreeze.onClick = function()
@@ -186,14 +209,25 @@ local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosAc
 			end)
 		end
 		action = widgets.button(panel, unfreeze)
-	elseif expires ~= nil then
-		action = widgets.button(panel, {
-			label = "Заморозить",
-			variant = "secondary",
-			onClick = function()
-				freezeDialog(ctx, item)
-			end,
-		})
+	elseif expires ~= nil and expires.inS > 0 then
+		local blocker = freezeBlocker(item, expires.inS)
+		if blocker == nil then
+			action = widgets.button(panel, {
+				label = "Заморозить",
+				variant = "secondary",
+				onClick = function()
+					freezeDialog(ctx, item)
+				end,
+			})
+		else
+			local font = theme.font("small")
+			local note = widgets.painted(panel, px(36), function(w: number, h: number)
+				draw.SimpleText(blocker, font, w, h / 2, colors.muted, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+			end)
+			local noteWidth = theme.textSize(blocker, font)
+			note.panel:SetSize(noteWidth, px(36))
+			action = note.panel
+		end
 	end
 
 	local bar: DonatosUiBlock | nil = nil
@@ -225,15 +259,15 @@ local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosAc
 		panel = panel,
 		layout = function(width: number): number
 			local h = px(38)
-			local actionButton = action
-			if actionButton ~= nil then
-				h = math.max(h, actionButton:GetTall())
+			local actionPanel = action
+			if actionPanel ~= nil then
+				h = math.max(h, actionPanel:GetTall())
 			end
 			h = h + px(32)
 			local right = width - px(16)
-			if actionButton ~= nil then
-				right = right - actionButton:GetWide()
-				actionButton:SetPos(right, (h - actionButton:GetTall()) / 2)
+			if actionPanel ~= nil then
+				right = right - actionPanel:GetWide()
+				actionPanel:SetPos(right, (h - actionPanel:GetTall()) / 2)
 				right = right - px(20)
 			end
 			local progressBar = bar
@@ -252,11 +286,12 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 	local panel = widgets.blankPanel(parent)
 	local goods = item.goods
 	local variant = item.variant
-	local duration = variant and variant.duration
-	local permanent = duration == nil or duration == 0
+	-- No variant (the good was removed): its term is unknown, so no chip.
+	local chipText = variant ~= nil and views.formatDays(variant.duration) or nil
+	local chipBackground, chipForeground = views.durationColors(variant and variant.duration)
 	local name = goods and goods.name or "Удалённый товар"
 	local paid = item.amountPaid
-	local subtitle = paid ~= nil and `Куплено за ${views.formatNumber(paid)} бонусов` or "Получено в подарок"
+	local subtitle = paid ~= nil and `Куплено за ${views.formatNumber(paid)} ${views.bonuses(tonumber(paid) or 0)}` or "Получено в подарок"
 
 	local gift = widgets.button(panel, {
 		label = "Подарить",
@@ -282,9 +317,9 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 			px(18),
 			(h - px(38)) / 2,
 			name,
-			views.formatDays(duration),
-			permanent and colors.successSoft or colors.accentSoft,
-			permanent and colors.success or colors.accentText,
+			chipText,
+			chipBackground,
+			chipForeground,
 			subtitle
 		)
 		return true
@@ -360,17 +395,11 @@ end
 ------------------------------------------------------------------------------ page
 
 local function items(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
-	local header = views.pageHeader(parent, function(): string
-		return "Мои предметы"
-	end)
 	local body = widgets.blankPanel(parent)
 	local area: DScrollPanel | nil = nil
 
 	parent.PerformLayout = function(self: Panel, w: number, h: number)
-		local padX, top = px(24), px(20)
-		header:SetPos(padX, top)
-		header:SetSize(w - padX * 2, px(36))
-		local y = top + px(36) + px(16)
+		local y = px(20)
 		body:SetPos(0, y)
 		body:SetSize(w, h - y)
 	end

@@ -27,10 +27,12 @@ donatos-gmod/
 │       │   ├── ui/               # VGUI menu (client only)
 │       │   │   ├── theme.tlua    # HeroUI v3 colours, fonts, scale, rounded boxes, blur, icons
 │       │   │   ├── widgets.tlua  # Layout blocks, pill buttons, chips, switch, search, dialogs
-│       │   │   ├── views.tlua    # Page context, formatting, page header, empty states, top-up
+│       │   │   ├── views.tlua    # Page context, formatting, empty states, top-up
 │       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog
 │       │   │   ├── items.tlua    # «Мои предметы»: active + inventory items, gift / freeze
-│       │   │   └── menu.tlua     # Window, gradient top bar, pages; open / refresh
+│       │   │   ├── history.tlua  # «История»: balance changes as a HeroUI table, paged
+│       │   │   ├── menu.tlua     # Window, gradient top bar, pages; open / refresh
+│       │   │   └── toast.tlua    # Toasts drawn in DrawOverlay (over HUD and menu, no input)
 │       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
 │       │   └── main.tlua, client.tlua, server.tlua  # Entry points
 │       ├── tluaconfig.json
@@ -81,20 +83,26 @@ that reinstall the addon.
   (removed after 5 idle minutes, or rebuilt on every open when `donatos.dev.enabled`). Each
   render rebuilds the top bar and the current page from state; scroll position is kept per
   page, and the search field keeps its text and focus.
-- Two pages: the shop (every good in its category's section, 4 card columns, a chip bar that
-  jumps between sections and follows the scroll, search) and «Мои предметы» (active and
-  inventory items). The old `inventory` / `activeItems` tab names open «Мои предметы».
+- Three pages: the shop (every good in its category's section, 4 card columns, a chip bar that
+  jumps between sections and follows the scroll, search), «Мои предметы» (active and
+  inventory items) and «История» (balance changes from `getHistory`, paged). The old `inventory` / `activeItems` tab names open «Мои предметы».
 - A card opens the item dialog: description on the left, purchase on the right, with the
   "Активировать сразу" switch (purchase, then `activateItem`).
 - Layout uses blocks (`{ panel, layout(width) -> height }`) from `widgets.tlua` rather than
   docking, so cards and wrapped text size to the available width.
 - Dialogs (`widgets.dialogHost`) sit over the frame; actions answer through net callbacks.
+  `show(dialog, true)` / `showCustom(build, true)` stack a dialog over the current one, which
+  comes back as it was when the top one closes (Escape closes the top one).
+- Top-up (`views.topUp(ctx, preset?)`, from the top bar and the item dialog's «Пополнить на N»):
+  a stacked «Пополнение баланса» dialog (amount, pay page or gm-donate), then «Ждём оплату…»
+  until the synced balance grows.
 
 ### 3) State sync model
 - The server pushes state to clients over the `donatos` net message:
   - `syncConfig` -> `state.remoteConfig.value`
   - `syncPlayer` -> `LocalPlayer():Donatos()._remoteData`
   - both call `menu.refresh()`, which re-renders if the menu is open
+  - a `syncPlayer` whose balance went up (not the first one) shows a toast
 - The client sends `requestSync` on load and on `InitPostEntity`.
 
 ### 4) Menu actions (client -> server)
@@ -102,7 +110,7 @@ that reinstall the addon.
 - Typed contracts: `DonatosServerActions` in `lua/main/src/donatos.d.tlua`
 - Handlers: `lua/main/src/donatos/net/server.tlua`
 - Used by the menu: `purchaseGoods`, `activateItem`, `giftItem`, `getOnlinePlayers`,
-  `freezeActiveItem`, `unfreezeActiveItem`, `createIgsPaymentUrl`
+  `freezeActiveItem`, `unfreezeActiveItem`, `createIgsPaymentUrl`, `getHistory`
 
 ## Drawing notes
 

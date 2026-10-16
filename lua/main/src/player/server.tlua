@@ -10,10 +10,17 @@ local state = require("utils.state")
 local SERVER_PLAYER = setmetatable({}, { __index = shared.PLAYER })
 local SERVER_PLAYER_META = { __index = SERVER_PLAYER }
 
-interface DonatosServerPlayer extends DonatosPlayer, Omit<typeof SERVER_PLAYER, "__index"> {}
+interface DonatosServerPlayer extends DonatosPlayer, Omit<typeof SERVER_PLAYER, "__index"> {
+	-- Loads can overlap (the update poll, a purchase, the menu's refresh) and finish out of
+	-- order: each is numbered when it starts, and one older than the last applied is dropped.
+	_loadSeq: number;
+	_appliedSeq: number;
+}
 
 suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (DonatosRemoteData, nil) | (nil, string)
 	local ply = self._ply
+	self._loadSeq = self._loadSeq + 1
+	local seq = self._loadSeq
 	log.info(`Loading data for player ${ply:SteamID()} (${ply:Nick()})`)
 
 	local data, err = serverApi.request("server:get-player", {
@@ -25,6 +32,12 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 		log.error(`Failed to load data for player ${ply:SteamID()} (${ply:Nick()}): ${err}`)
 		return nil, err
 	end
+
+	-- A newer load already applied fresher data; this one's is stale.
+	if seq < self._appliedSeq then
+		return data, nil
+	end
+	self._appliedSeq = seq
 
 	log.info(`Loaded data for player ${ply:SteamID()} (${ply:Nick()})`)
 
@@ -125,7 +138,10 @@ function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
 end
 
 local function new(ply: Player): DonatosServerPlayer
-	return setmetatable({ _ply = ply, _remoteData = { isLoaded = false, data = nil } }, SERVER_PLAYER_META)
+	return setmetatable(
+		{ _ply = ply, _remoteData = { isLoaded = false, data = nil }, _loadSeq = 0, _appliedSeq = 0 },
+		SERVER_PLAYER_META
+	)
 end
 
 -- `ply:Donatos()` on the server.

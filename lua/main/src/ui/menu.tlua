@@ -4,6 +4,7 @@
 local log = require("utils.log")
 local async = require("utils.async")
 local state = require("utils.state")
+local history = require("ui.history")
 local items = require("ui.items")
 local shop = require("ui.shop")
 local theme = require("ui.theme")
@@ -123,6 +124,7 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 	local tabSpecs: { tab: DonatosMenuTab; label: string; icon: DonatosIcon; badge?: number }[] = {
 		{ tab = "shop", label = "Магазин", icon = "bag" },
 		{ tab = "items", label = "Мои предметы", icon = "cube", badge = waiting },
+		{ tab = "history", label = "История", icon = "clock" },
 	}
 	local tabButtons: DButton[] = {}
 	for _, spec in ipairs(tabSpecs) do
@@ -152,13 +154,15 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 	end
 
 	local wallet = widgets.blankPanel(bar)
-	local balanceText = views.formatNumber(data and data.player.balance or 0)
+	local balanceValue = data and data.player.balance or 0
+	local balanceText = views.formatNumber(balanceValue)
+	local balanceUnit = views.bonuses(balanceValue)
 	wallet.Paint = function(self: Panel, w: number, h: number): boolean
 		theme.box(h / 2, 0, 0, w, h, colors.barShade)
 		local font = theme.font("medium")
 		local y = (h - theme.fontHeight(font)) / 2
 		draw.SimpleText(balanceText, font, px(14), y, colors.text)
-		draw.SimpleText("бонусов", font, px(14) + theme.textSize(`${balanceText} `, font), y, colors.textDim)
+		draw.SimpleText(balanceUnit, font, px(14) + theme.textSize(`${balanceText} `, font), y, colors.textDim)
 		return true
 	end
 	local topUp = widgets.button(wallet, {
@@ -166,8 +170,8 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 		size = "xs",
 		variant = "light",
 		disabled = not canPay(),
-		onClick = function(btn: DButton)
-			views.topUp(ctx, btn)
+		onClick = function()
+			views.topUp(ctx)
 		end,
 	})
 
@@ -214,7 +218,7 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 			holder:SetPos(right, (h - avatarSize) / 2)
 			right = right - px(12)
 		end
-		local balanceWidth = px(14) + theme.textSize(`${balanceText} бонусов`, theme.font("medium")) + px(10) + topUp:GetWide() + px(4)
+		local balanceWidth = px(14) + theme.textSize(`${balanceText} ${balanceUnit}`, theme.font("medium")) + px(10) + topUp:GetWide() + px(4)
 		right = right - balanceWidth
 		wallet:SetPos(right, (h - px(36)) / 2)
 		wallet:SetSize(balanceWidth, px(36))
@@ -330,6 +334,8 @@ local function create(): Panel
 		body = content
 		if current.tab == "shop" then
 			area = shop.shop(content, ctx)
+		elseif current.tab == "history" then
+			area = history.history(content, ctx)
 		else
 			area = items.items(content, ctx)
 		end
@@ -365,6 +371,8 @@ local TABS: Table<string, DonatosMenuTab> = {
 	shop = "shop",
 	inventory = "items",
 	activeItems = "items",
+	items = "items",
+	history = "history",
 }
 
 local function open(tab?: string): Panel

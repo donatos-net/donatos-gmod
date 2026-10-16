@@ -106,6 +106,8 @@ theme.colors = {
 	frameRing = translucent(255, 255, 255, 30),
 	surface = shown(24, 24, 27),
 	surfaceHover = shown(31, 31, 34),
+	-- HeroUI's surface-secondary: a table's frame and header.
+	surfaceSecondary = shown(35, 35, 37),
 	surfaceRing = shown(46, 46, 49),
 	panel = shown(18, 18, 20),
 	group = shown(28, 28, 30),
@@ -832,7 +834,7 @@ function theme.spinner(cx: number, cy: number, radius: number, color: Color)
 	end
 end
 
-type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "bag" | "cube" | "calendar" | "search"
+type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "check" | "bag" | "cube" | "calendar" | "search" | "clock" | "card" | "wallet"
 
 -- Icons are shapes on a 24-unit grid, like the web UI's Hugeicons, with 2-unit strokes.
 local HALF_STROKE = 1
@@ -886,6 +888,9 @@ local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = 
 	chevronDown = function(px: number, py: number): number
 		return pathDistance(px, py, { { 6, 9 }, { 12, 15 }, { 18, 9 } }) - HALF_STROKE
 	end,
+	check = function(px: number, py: number): number
+		return pathDistance(px, py, { { 5, 12.5 }, { 9.5, 17 }, { 19, 7 } }) - HALF_STROKE
+	end,
 	bag = function(px: number, py: number): number
 		-- A rounded bag with its handle curving down inside the top.
 		local body = roundRectDistance(px, py, 3.5, 3, 17, 18.5, 4.5)
@@ -908,6 +913,22 @@ local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = 
 		d = math.min(d, segmentDistance(px, py, 7.5, 2, 7.5, 5), segmentDistance(px, py, 16.5, 2, 16.5, 5))
 		d = d - HALF_STROKE
 		return math.min(d, dotsDistance(px, py, { { 8, 13.5 }, { 12, 13.5 }, { 16, 13.5 }, { 8, 17.5 }, { 12, 17.5 } }, 1))
+	end,
+	clock = function(px: number, py: number): number
+		local face = math.abs(math.sqrt((px - 12) ^ 2 + (py - 12) ^ 2) - 9.5)
+		return math.min(face, pathDistance(px, py, { { 12, 7 }, { 12, 12 }, { 15.5, 14 } })) - HALF_STROKE
+	end,
+	card = function(px: number, py: number): number
+		-- A bank card: the magnetic stripe and a short line of digits.
+		local d = roundRectDistance(px, py, 2.5, 5, 19, 14, 3)
+		d = math.min(d, segmentDistance(px, py, 3, 10, 21, 10))
+		return math.min(d, segmentDistance(px, py, 6.5, 15, 10, 15)) - HALF_STROKE
+	end,
+	wallet = function(px: number, py: number): number
+		-- A wallet with its clasp on the right edge.
+		local d = roundRectDistance(px, py, 3, 5.5, 18, 14, 3.5)
+		d = math.min(d, roundRectDistance(px, py, 14.5, 10, 6.5, 5, 2.5)) - HALF_STROKE
+		return math.min(d, dotsDistance(px, py, { { 17.5, 12.5 } }, 1))
 	end,
 }
 
