@@ -242,6 +242,7 @@ interface DonatosPersistentState {
 -- The shape of the `_donatos` global, which utils/state.tlua creates.
 interface DonatosRuntime {
 	_timersUuid?: string;
+	_runCount?: number;
 	_state: DonatosPersistentState;
 }
 

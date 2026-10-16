@@ -6,7 +6,8 @@
 - Клиент: сначала пытается скачать по HTTP. При ошибке запрашивает bundle с сервера через net-сообщение donatos_bundle.
 - Передача по сети: чанки по 32KB, клиент запрашивает последовательно (1, 2, 3, ...), с requestId.
   Сервер кэширует чанки по хэшу bundle и ограничивает: первый чанк не чаще раза в 30с; далее строго lastChunk + 1.
-- Клиент проверяет SHA256 только для уже существующего локального bundle; скачанные по HTTP/сети запускаются без проверки.
+- Клиент сверяет SHA256 любого bundle (локального, скачанного по HTTP или полученного с сервера) с donatos_bundle_sha256
+  и не запускает несовпадающий.
 ]]
 
 AddCSLuaFile()
@@ -19,7 +20,7 @@ if !donatosBootstrap then
 	donatosBootstrap = {}
 end
 
-donatosBootstrap.version = 3
+donatosBootstrap.version = 4
 donatosBootstrap.addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
@@ -341,6 +342,18 @@ local function runBundle(bundle)
 	return true
 end
 
+-- Клиент: совпадает ли bundle с тем, что запущен на сервере (donatos_bundle_sha256).
+local function verifyBundle(bundle)
+	local expectedSha256 = donatosBootstrap.bundleSha256ConVar:GetString()
+	if expectedSha256 == "" then
+		return false, string.format("Сервер не передал %s", donatosBootstrap.bundleSha256ConVar:GetName())
+	end
+	if util.SHA256(bundle) ~= expectedSha256 then
+		return false, "SHA256 bundle.lua не совпадает с сервером"
+	end
+	return true
+end
+
 local function asyncBootstrap()
 	local localBundle = file.Read(LOCAL_BUNDLE_PATH, "DATA")
 
@@ -422,6 +435,12 @@ local function asyncBootstrap()
 			if !success then
 				return false, bundle
 			end
+
+			local verified, verifyError = verifyBundle(bundle)
+			if !verified then
+				file.Delete(LOCAL_BUNDLE_PATH)
+				return false, verifyError
+			end
 			return true, runBundle(bundle)
 		end
 
@@ -435,6 +454,11 @@ local function asyncBootstrap()
 		-- если не получилось скачать аддон через http, запрашиваем с сервера через net
 		local success, bundle = asyncDownloadBundleFromServer(result)
 		if success then
+			local verified, verifyError = verifyBundle(bundle)
+			if !verified then
+				log("bundle.lua с сервера отклонён: %s", verifyError)
+				return false
+			end
 			file.CreateDir("donatos")
 			file.Write(LOCAL_BUNDLE_PATH, bundle)
 			return runBundle(bundle)

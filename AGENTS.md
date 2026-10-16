@@ -67,7 +67,10 @@ donatos-gmod/
   - Falls back to `donatos_bundle` net transfer from server (compressed, chunked 32KB, sequential by request id)
   - Stores bundle at `data/donatos/bundle.txt`
 
-Important nuance: current bootstrap code verifies SHA256 only for pre-existing local cached bundle path before using it. Newly downloaded HTTP/net bundles are executed without a post-download SHA256 check.
+The client checks every bundle (cached, downloaded over HTTP, or received from the server) against
+`donatos_bundle_sha256` before running it; an HTTP mismatch falls back to the server transfer.
+The bootstrap ships in the addon zip and is not auto-updated: changes to it only reach servers
+that reinstall the addon.
 
 ### 2) Menu
 - Entry: `lua/main/src/ui/menu.tlua` (`open(tab)`, `refresh()`); opened by the `donatos`

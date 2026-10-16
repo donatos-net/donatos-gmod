@@ -29,11 +29,34 @@ local function findInventoryItem(ply: Player, id: number): DonatosInventoryItem 
 	return nil
 end
 
-local function syncConfigToEveryone()
+local function syncConfigTo(ply: Player)
 	local config = state.remoteConfig.value
 	if config then
-		netMessage.toClient(nil, "syncConfig", config)
+		netMessage.toClient(ply, "syncConfig", config)
 	end
+end
+
+-- Each player gets a bucket of REQUEST_BURST requests, refilled at REQUEST_RATE per second:
+-- enough for the menu's bursts, while a spamming client cannot flood the API (most actions
+-- call it with the server's token) or the server.
+local REQUEST_BURST = 5
+local REQUEST_RATE = 1
+local requestBuckets: Table<Player, { tokens: number; at: number }> = setmetatable({}, { __mode = "k" })
+
+local function takeRequestToken(ply: Player): boolean
+	local now = RealTime()
+	local bucket = requestBuckets[ply]
+	if bucket == nil then
+		bucket = { tokens = REQUEST_BURST, at = now }
+		requestBuckets[ply] = bucket
+	end
+	bucket.tokens = math.min(REQUEST_BURST, bucket.tokens + (now - bucket.at) * REQUEST_RATE)
+	bucket.at = now
+	if bucket.tokens < 1 then
+		return false
+	end
+	bucket.tokens = bucket.tokens - 1
+	return true
 end
 
 -- Reloads the player's data without waiting for it.
@@ -53,13 +76,13 @@ local type ServerActionHandlers = {
 local handlers: ServerActionHandlers = {
 	requestSync = suspend function(ply)
 		serverPlayer.of(ply):sync()
-		syncConfigToEveryone()
+		syncConfigTo(ply)
 		return ok(true)
 	end,
 
 	requestRefresh = suspend function(ply)
 		serverPlayer.of(ply):loadRemoteData()
-		syncConfigToEveryone()
+		syncConfigTo(ply)
 		return ok(true)
 	end,
 
@@ -281,6 +304,10 @@ util.AddNetworkString("donatos")
 
 net.Receive("donatos", function(len: number, ply: Player)
 	local nonce = net.ReadUInt(20)
+	if not takeRequestToken(ply) then
+		netMessage.toClient(ply, "resultFromServer", { nonce, err("Слишком много запросов. Подождите немного.") })
+		return
+	end
 	local message = util.JSONToTable(net.ReadString())
 	if message == nil then
 		return

@@ -16,7 +16,9 @@ local function hookId(name: string): string
 end
 
 -- Each bundle run takes a new id; work left over from a replaced bundle checks it and stops.
-_donatos._timersUuid = tostring(CurTime())
+-- A counter, so two runs in the same tick still differ (older bundles used CurTime()).
+_donatos._runCount = (_donatos._runCount or 0) + 1
+_donatos._timersUuid = `run${_donatos._runCount}`
 
 local currentUuid = _donatos._timersUuid
 
