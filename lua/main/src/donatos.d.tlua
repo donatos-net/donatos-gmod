@@ -148,9 +148,14 @@ interface DonatosServerApi {
 				kind: string;
 				source: "paid" | "free";
 				description: string;
+				-- A short form of `description` (the goods name for purchases and item
+				-- refunds); missing from APIs before it.
+				title?: string;
 			}[];
 			-- Present when there are older entries.
 			nextCursor?: number;
+			-- With the newest page only: bonuses bought, less refunds and chargebacks.
+			summary?: { toppedUp: number };
 		};
 	};
 }

@@ -908,7 +908,7 @@ function theme.spinner(cx: number, cy: number, radius: number, color: Color)
 	end
 end
 
-type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "chevronLeft" | "chevronRight" | "check" | "bag" | "cube" | "calendar" | "search" | "clock" | "card" | "wallet"
+type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "chevronLeft" | "chevronRight" | "check" | "bag" | "cube" | "calendar" | "search" | "clock" | "card" | "wallet" | "plus" | "undo" | "gift" | "shield"
 
 -- Icons are shapes on a 24-unit grid, like the web UI's Hugeicons, with 2-unit strokes.
 local HALF_STROKE = 1
@@ -947,6 +947,17 @@ local function dotsDistance(px: number, py: number, dots: [number, number][], ra
 end
 
 local CUBE_OUTLINE: [number, number][] = { { 12, 2.5 }, { 20.5, 7 }, { 20.5, 17 }, { 12, 21.5 }, { 3.5, 17 }, { 3.5, 7 } }
+
+-- An undo arrow's stem: along the top, round a half circle on the right, back along the
+-- bottom.
+local UNDO_PATH: [number, number][] = { { 5, 8 } }
+for i = 0, 12 do
+	local angle = -math.pi / 2 + math.pi * i / 12
+	table.insert(UNDO_PATH, { 14 + math.cos(angle) * 5.5, 13.5 + math.sin(angle) * 5.5 })
+end
+table.insert(UNDO_PATH, { 8, 19 })
+
+local SHIELD_OUTLINE: [number, number][] = { { 12, 2.5 }, { 19.5, 5.5 }, { 19.5, 11.5 }, { 12, 21 }, { 4.5, 11.5 }, { 4.5, 5.5 } }
 
 -- How far a grid point lies outside each icon's ink (<= 0 is inked).
 local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = {
@@ -1003,6 +1014,24 @@ local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = 
 		local d = roundRectDistance(px, py, 2.5, 5, 19, 14, 3)
 		d = math.min(d, segmentDistance(px, py, 3, 10, 21, 10))
 		return math.min(d, segmentDistance(px, py, 6.5, 15, 10, 15)) - HALF_STROKE
+	end,
+	plus = function(px: number, py: number): number
+		return math.min(segmentDistance(px, py, 12, 5, 12, 19), segmentDistance(px, py, 5, 12, 19, 12)) - HALF_STROKE
+	end,
+	undo = function(px: number, py: number): number
+		local d = pathDistance(px, py, UNDO_PATH)
+		return math.min(d, pathDistance(px, py, { { 8.5, 4.5 }, { 5, 8 }, { 8.5, 11.5 } })) - HALF_STROKE
+	end,
+	gift = function(px: number, py: number): number
+		-- A box with its lid, a ribbon down the middle and two bow loops on top.
+		local d = roundRectDistance(px, py, 3.5, 8, 17, 4.5, 1.5)
+		d = math.min(d, roundRectDistance(px, py, 5, 12.5, 14, 8.5, 1.5))
+		d = math.min(d, segmentDistance(px, py, 12, 8, 12, 21))
+		local bows = math.min(math.abs(math.sqrt((px - 9.5) ^ 2 + (py - 5.5) ^ 2) - 2.2), math.abs(math.sqrt((px - 14.5) ^ 2 + (py - 5.5) ^ 2) - 2.2))
+		return math.min(d, bows) - HALF_STROKE
+	end,
+	shield = function(px: number, py: number): number
+		return pathDistance(px, py, SHIELD_OUTLINE, true) - HALF_STROKE
 	end,
 	wallet = function(px: number, py: number): number
 		-- A wallet with its clasp on the right edge.
