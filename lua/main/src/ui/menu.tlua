@@ -4,6 +4,7 @@
 local log = require("utils.log")
 local async = require("utils.async")
 local state = require("utils.state")
+local gallery = require("ui.gallery")
 local history = require("ui.history")
 local items = require("ui.items")
 local shop = require("ui.shop")
@@ -43,6 +44,7 @@ local function getFrame(): Panel | nil
 end
 
 local function destroy()
+	gallery.closeViewer(true)
 	local frame = menuState.frame
 	if IsValid(frame) then
 		frame:Remove()
@@ -86,6 +88,7 @@ local function hide()
 	local frame = getFrame()
 	if frame ~= nil and frame:IsVisible() and not closing then
 		closing = true
+		gallery.closeViewer(true)
 		-- Input stays with the window for its 100ms exit: Set*InputEnabled cascades to every
 		-- child, and MakePopup turns it back on for the window alone.
 		windowIn.to(0, 0.1, "outQuad")
@@ -243,7 +246,7 @@ local function create(): Panel
 	frame.Paint = function(self: Panel, w: number, h: number): boolean
 		local t = windowIn.value()
 		theme.captureBehind("window", t)
-		theme.blur(self, w, h, px(RADIUS))
+		theme.blur(self, w, h, px(RADIUS), 1 - gallery.cover())
 		scaled = theme.pushScale(self, closing and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1), w / 2, h / 2)
 		theme.box(px(RADIUS), 0, 0, w, h, colors.glass)
 		return true
@@ -256,6 +259,8 @@ local function create(): Panel
 		return true
 	end
 	frame.Think = function(self: Panel)
+		-- Fades out as the picture viewer comes in over it, and back as it leaves.
+		self:SetAlpha(math.Round(255 * (1 - gallery.cover())))
 		if closing and windowIn.done() then
 			closing = false
 			self:SetVisible(false)
@@ -388,6 +393,10 @@ local function open(tab?: string): Panel
 		current.tab = requested
 	end
 
+	-- Brought up over an open picture viewer (by the server or another addon), the window
+	-- would take its input while still hidden under it.
+	gallery.closeViewer(true)
+
 	local frame = getFrame()
 	local entering = frame == nil or closing or not frame:IsVisible()
 	if frame == nil then
@@ -434,28 +443,47 @@ end
 
 destroy()
 
-hook.Add("GUIMousePressed", state.hookId("menu"), function()
+-- Closes the topmost layer: the picture viewer, a dropdown, then a dialog, then the menu
+-- itself.
+local function closeTopLayer()
+	local dialogs = frameDialogs
+	if gallery.closeViewer() or widgets.closeDropdown() then
+		return
+	elseif dialogs ~= nil and dialogs.isOpen() then
+		dialogs.close()
+		return
+	end
 	hide()
+end
+
+-- A click outside the window (on the game world) closes the topmost layer, so with a dialog
+-- open it closes just the dialog.
+hook.Add("GUIMousePressed", state.hookId("menu"), function()
+	local frame = getFrame()
+	if frame ~= nil and frame:IsVisible() and not closing then
+		closeTopLayer()
+	end
 end)
 
--- Escape closes the topmost layer instead of opening the pause menu: a dropdown, then a
--- dialog, then the menu itself.
+-- Escape closes the topmost layer instead of opening the pause menu.
 hook.Add("OnPauseMenuShow", state.hookId("menu"), function(): boolean | nil
 	local frame = getFrame()
 	if frame == nil or not frame:IsVisible() then
 		return nil
-	elseif closing then
-		return false
 	end
-	local dialogs = frameDialogs
-	if widgets.closeDropdown() then
-		return false
-	elseif dialogs ~= nil and dialogs.isOpen() then
-		dialogs.close()
-		return false
+	if not closing then
+		closeTopLayer()
 	end
-	hide()
 	return false
+end)
+
+-- Under the picture viewer the window isn't drawn (it stays open, keeping its state): the
+-- viewer fades in over the game alone, and out over the window, back as it starts leaving.
+gallery.setOnCover(function(covering: boolean)
+	local frame = getFrame()
+	if frame ~= nil then
+		frame:SetPaintedManually(covering)
+	end
 end)
 
 hook.Add("OnScreenSizeChanged", state.hookId("menu"), function()

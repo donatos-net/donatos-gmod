@@ -28,7 +28,9 @@ donatos-gmod/
 │       │   │   ├── theme.tlua    # HeroUI v3 colours, fonts, scale, rounded boxes, blur, icons
 │       │   │   ├── widgets.tlua  # Layout blocks, pill buttons, chips, switch, search, dialogs
 │       │   │   ├── views.tlua    # Page context, formatting, empty states, top-up
-│       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog
+│       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog with its image carousel
+│       │   │   ├── images.tlua   # Goods images: downloaded once into data/donatos/img/, loaded as materials
+│       │   │   ├── gallery.tlua  # Goods pictures: item dialog carousel and full-screen viewer, with swipe
 │       │   │   ├── items.tlua    # «Мои предметы»: active + inventory items, gift / freeze
 │       │   │   ├── history.tlua  # «История»: balance changes as a HeroUI table, paged
 │       │   │   ├── menu.tlua     # Window, gradient top bar, pages; open / refresh

@@ -1,0 +1,602 @@
+-- Client: goods pictures: the item dialog's carousel and the full-screen viewer it opens.
+-- Both move between pictures with ‹ › or by dragging (swiping) with the mouse.
+
+local images = require("ui.images")
+local theme = require("ui.theme")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+local OPAQUE_WHITE = Color(255, 255, 255, 255)
+-- The viewer's largest picture area, in design pixels.
+local VIEWER_W, VIEWER_H = 960, 580
+-- In the carousel a transparent picture takes this share of the frame, over stripes.
+local CUTOUT_FIT = 0.84
+local STRIPE = theme.translucent(255, 255, 255, 7)
+
+-- Diagonal stripes over the box at (x, y), for a transparent picture to sit on; clip to the
+-- box first, as the stripes run past its edges.
+-- The stripes' polygons for a w x h box at the origin, kept per size: the carousel draws them
+-- every frame, moved into place with a matrix.
+local stripeCache: { key: string; polygons: PolygonVertex[][] } | nil = nil
+local stripeOffset = Matrix()
+
+local function stripes(x: number, y: number, w: number, h: number, opacity: number)
+	local period, width = px(18), px(9)
+	local key = `${w}x${h}x${period}`
+	local cache = stripeCache
+	if cache == nil or cache.key ~= key then
+		local polygons: PolygonVertex[][] = {}
+		for sx = -h, w, period do
+			table.insert(polygons, {
+				{ x = sx, y = h },
+				{ x = sx + h, y = 0 },
+				{ x = sx + h + width, y = 0 },
+				{ x = sx + width, y = h },
+			})
+		end
+		cache = { key = key, polygons = polygons }
+		stripeCache = cache
+	end
+	draw.NoTexture()
+	surface.SetDrawColor(opacity >= 1 and STRIPE or theme.fade(STRIPE, opacity))
+	-- Anchored to the box, so the stripes slide with it.
+	stripeOffset:SetTranslation(Vector(math.Round(x), math.Round(y), 0))
+	cam.PushModelMatrix(stripeOffset, true)
+	for _, polygon in ipairs(cache.polygons) do
+		surface.DrawPoly(polygon)
+	end
+	cam.PopModelMatrix()
+end
+local BLACK = Color(0, 0, 0, 255)
+-- The carousel's other dots (40% white on the web).
+local DOT = theme.translucent(255, 255, 255, 102)
+-- The viewer's backdrop over the game and the menu.
+local VIEWER_SHADE = theme.translucent(0, 0, 0, 216)
+
+-- A press that moves less than this is a click, not a drag.
+local DRAG_THRESHOLD = 6
+-- How far a drag must go (of the width) to land on the next picture, unless flicked.
+local SWIPE_DISTANCE = 0.15
+-- A release faster than this (px per second, at the 900px reference) is a flick.
+local FLICK_SPEED = 600
+
+interface DonatosSwipe {
+	-- From OnMousePressed: starts following the mouse.
+	press: () => void;
+	-- From OnMouseReleased.
+	release: () => void;
+	-- From Think: moves `slide` with the mouse while dragging.
+	think: () => void;
+}
+
+-- Dragging `panel` horizontally moves `slide` (counted in pictures, a whole number at rest)
+-- by one picture per `width()` pixels. On release it settles on the neighbouring picture
+-- when dragged past SWIPE_DISTANCE or flicked, else back; a press that didn't move is a
+-- click instead. With `enabled` false every press is a click.
+local function swipe(panel: Panel, slide: DonatosTween, width: () => number, enabled: boolean, onClick: () => void): DonatosSwipe
+	local drag: { x: number; from: number; moved: boolean; lastX: number; lastTime: number; velocity: number } | nil = nil
+
+	local function release()
+		local current = drag
+		if current == nil then
+			return
+		end
+		drag = nil
+		panel:MouseCapture(false)
+		if not current.moved then
+			onClick()
+			return
+		end
+		local dx = gui.MouseX() - current.x
+		local w = width()
+		local step = 0
+		if dx < -w * SWIPE_DISTANCE or current.velocity < -px(FLICK_SPEED) then
+			step = 1
+		elseif dx > w * SWIPE_DISTANCE or current.velocity > px(FLICK_SPEED) then
+			step = -1
+		end
+		slide.to(math.Round(current.from) + step, 0.25, "outQuart")
+	end
+
+	return {
+		press = function()
+			local x = gui.MouseX()
+			drag = { x = x, from = slide.value(), moved = false, lastX = x, lastTime = RealTime(), velocity = 0 }
+			panel:MouseCapture(true)
+		end,
+		release = release,
+		think = function()
+			local current = drag
+			if current == nil then
+				return
+			end
+			if not input.IsMouseDown(MOUSE_LEFT) then
+				release()
+				return
+			end
+			local x = gui.MouseX()
+			local dx = x - current.x
+			if not current.moved and enabled and math.abs(dx) > px(DRAG_THRESHOLD) then
+				current.moved = true
+			end
+			if current.moved then
+				local now = RealTime()
+				if now > current.lastTime then
+					current.velocity = (x - current.lastX) / (now - current.lastTime)
+				end
+				current.lastX, current.lastTime = x, now
+				slide.set(current.from - dx / math.max(width(), 1))
+			end
+		end,
+	}
+end
+
+-- Picture `slot % #pictures + 1` (slots are unbounded so that wrapping slides on).
+local function pictureAt(pictures: DonatosGoodsImage[], slot: number): DonatosGoodsImage
+	return assert(pictures[slot % #pictures + 1])
+end
+
+local contain = images.contain
+
+------------------------------------------------------------------------------ viewer
+
+-- A reloaded addon (a live update) starts with no viewer of its own; one the previous copy
+-- left open would stay on screen for good, so it goes.
+local VIEWER_NAME = "donatos_viewer"
+for _, child in ipairs(vgui.GetWorldPanel():GetChildren() as Panel[]) do
+	local leftover = child
+	if leftover:GetName() == VIEWER_NAME then
+		leftover:Remove()
+	end
+end
+
+local viewer: { panel: Panel; close: (instant?: boolean) => void; presence: DonatosTween } | nil = nil
+
+-- A carousel the viewer opens from: `rect(slot)` turns it to that slot and gives where its
+-- picture is on the screen (nil once it is gone); `release()` when the viewer is gone, so it
+-- draws its picture again.
+local type ViewerLink = {
+	rect: (slot: number) => [number, number, number, number] | nil;
+	release: () => void;
+}
+
+local ZOOM_IN, ZOOM_OUT = 0.3, 0.25
+
+-- Told when a viewer opens (true) and starts leaving (false); the menu hides under it.
+local onCover: (covering: boolean) => void = function() end
+
+-- Starts closing the viewer; whether one was open.
+-- Starts closing the viewer, back into its carousel unless `instant` (the menu is going away
+-- too); whether one was open.
+local function closeViewer(instant?: boolean): boolean
+	local open = viewer
+	if open == nil or not IsValid(open.panel) then
+		viewer = nil
+		return false
+	end
+	open.close(instant)
+	return true
+end
+
+-- `pictures` over the whole screen from picture `start`: each one whole and as large as
+-- fits. ‹ ›, dragging or the arrow keys move between them; ×, Escape (via the menu) or a
+-- click outside the picture closes it. Opened from a carousel (`link`), the picture grows out
+-- of it and shrinks back into it on closing.
+local function openViewer(pictures: DonatosGoodsImage[], start: number, link?: ViewerLink)
+	local previousViewer = viewer
+	if previousViewer ~= nil and IsValid(previousViewer.panel) then
+		previousViewer.panel:Remove()
+	end
+
+	local count = #pictures
+	local many = count > 1
+	local slide = theme.tween(start - 1)
+	-- The backdrop and controls: in over the zoom's time, out over 100ms (like a dialog) or
+	-- with the zoom back.
+	local presence = theme.tween(0)
+	presence.to(1, ZOOM_IN, "smooth")
+	-- The picture's way from the carousel (0) to its place here (1).
+	local zoom = theme.tween(link ~= nil and 0 or 1)
+	zoom.to(1, ZOOM_IN, "outQuart")
+	-- Where the zoom starts or ends, on the screen; nil without a carousel to go back to.
+	local origin: [number, number, number, number] | nil = link ~= nil and link.rect(start - 1) or nil
+	local leaving = false
+	local covering = false
+
+	local panel = vgui.Create("EditablePanel")
+	panel:SetName(VIEWER_NAME)
+	panel:SetPos(0, 0)
+	panel:SetSize(ScrW(), ScrH())
+	panel:MakePopup()
+
+	local function close(instant?: boolean)
+		if leaving then
+			return
+		end
+		leaving = true
+		if covering then
+			covering = false
+			onCover(false)
+		end
+		-- Back into the carousel, turned to the picture shown, if it is still there.
+		origin = not instant and link ~= nil and link.rect(math.Round(slide.target())) or nil
+		if origin ~= nil then
+			zoom.to(0, ZOOM_OUT, "outQuart")
+			presence.to(0, ZOOM_OUT, "smooth")
+		else
+			presence.to(0, 0.1, "outQuad")
+		end
+	end
+	viewer = { panel = panel, close = close, presence = presence }
+
+	local function go(delta: number)
+		slide.to(math.Round(slide.target()) + delta, 0.25, "outQuart")
+	end
+
+	-- The picture area: at most VIEWER_W x VIEWER_H, centred, leaving room around it for the
+	-- arrows, the close button and the counter; the dimmed game around it closes the viewer.
+	local function area(w: number, h: number): (number, number, number, number)
+		local aw = math.min(px(VIEWER_W), w - px(32) * 2 - (many and px(64) * 2 or 0))
+		local ah = math.min(px(VIEWER_H), h - px(80) * 2)
+		return math.Round((w - aw) / 2), math.Round((h - ah) / 2), aw, ah
+	end
+
+	-- Where the current picture is on the panel.
+	local function currentRect(): (number, number, number, number)
+		local ax, ay, aw, ah = area(panel:GetWide(), panel:GetTall())
+		local entry = pictureAt(pictures, math.Round(slide.target()))
+		local x, y, iw, ih = contain(entry.width, entry.height, aw, ah)
+		return ax + x, ay + y, iw, ih
+	end
+
+	local swiping = swipe(panel, slide, function(): number
+		return panel:GetWide()
+	end, many, function()
+		local x, y, iw, ih = currentRect()
+		local mx, my = panel:CursorPos()
+		if mx < x or mx > x + iw or my < y or my > y + ih then
+			close()
+		end
+	end)
+
+	-- The picture in its slot on its way between the carousel and here.
+	local function paintZooming(t: number, w: number, h: number)
+		local from = assert(origin)
+		local entry = pictureAt(pictures, math.Round(slide.target()))
+		local tx, ty, tw, th = currentRect()
+		local sx, sy = panel:LocalToScreen(0, 0)
+		local x = Lerp(t, from[1] - sx, tx)
+		local y = Lerp(t, from[2] - sy, ty)
+		local iw, ih = Lerp(t, from[3], tw), Lerp(t, from[4], th)
+		local material = images.image(entry.full)
+		if material == nil then
+			return
+		end
+		local transparent = images.transparent(entry.full)
+		if not transparent then
+			theme.pushRoundClip(x, y, iw, ih, px(16))
+		end
+		surface.SetMaterial(material)
+		surface.SetDrawColor(OPAQUE_WHITE)
+		surface.DrawTexturedRectUV(x, y, iw, ih, 0, 0, 1, 1)
+		if not transparent then
+			theme.popRoundClip()
+		end
+	end
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		local shown = presence.value()
+		surface.SetDrawColor(shown >= 1 and VIEWER_SHADE or theme.fade(VIEWER_SHADE, shown))
+		surface.DrawRect(0, 0, w, h)
+		local ax, ay, aw, ah = area(w, h)
+		local z = zoom.value()
+		if origin ~= nil and (z < 1 or leaving) then
+			paintZooming(z, w, h)
+			return true
+		end
+		local position = slide.value()
+		local first = math.floor(position)
+		for slot = first, first + 1 do
+			local offset = math.Round((slot - position) * w)
+			if offset < w and offset > -w then
+				local entry = pictureAt(pictures, slot)
+				local x, y, iw, ih = contain(entry.width, entry.height, aw, ah)
+				x, y = x + ax + offset, y + ay
+				local material, readyAt = images.image(entry.full)
+				if material == nil then
+					theme.spinner(x + iw / 2, y + ih / 2, px(12), colors.muted)
+				else
+					local t = images.fadeIn(readyAt)
+					theme.pushRoundClip(x, y, iw, ih, px(16))
+					surface.SetMaterial(material)
+					-- With the backdrop as it fades out without a zoom back.
+					local opacity = t * (leaving and presence.value() or 1)
+					surface.SetDrawColor(opacity >= 1 and OPAQUE_WHITE or theme.fade(OPAQUE_WHITE, opacity))
+					surface.DrawTexturedRectUV(x, y, iw, ih, 0, 0, 1, 1)
+					theme.popRoundClip()
+				end
+			end
+		end
+		if many then
+			images.image(pictureAt(pictures, first + 1).full)
+			local current = math.Round(slide.target()) % count + 1
+			draw.SimpleText(`${current} / ${count}`, theme.font("smallMedium"), w / 2, ay + ah + px(24), shown >= 1 and colors.text or theme.fade(colors.text, shown), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+		return true
+	end
+
+	panel.OnMousePressed = function(self: Panel, keyCode: number): boolean
+		if keyCode == MOUSE_LEFT and not leaving then
+			swiping.press()
+		elseif keyCode == MOUSE_RIGHT then
+			close()
+		end
+		return true
+	end
+	panel.OnMouseReleased = function(self: Panel, keyCode: number): boolean
+		if keyCode == MOUSE_LEFT then
+			swiping.release()
+		end
+		return true
+	end
+	panel.OnKeyCodePressed = function(self: Panel, keyCode: number): boolean
+		if many and keyCode == KEY_LEFT then
+			go(-1)
+		elseif many and keyCode == KEY_RIGHT then
+			go(1)
+		end
+		return true
+	end
+	panel.Think = function(self: Panel)
+		swiping.think()
+		local controls = math.Round(255 * presence.value())
+		for _, button in ipairs(self:GetChildren() as Panel[]) do
+			button:SetAlpha(controls)
+		end
+		-- Once the picture has arrived the menu under the viewer isn't drawn.
+		if not leaving and not covering and zoom.done() then
+			covering = true
+			onCover(true)
+		end
+		if leaving and presence.done() and zoom.done() then
+			self:Remove()
+		end
+	end
+	-- However it goes (closed, replaced, swept on reload), the menu is drawn again and the
+	-- carousel gets its picture back.
+	panel.OnRemove = function(self: Panel)
+		if covering then
+			covering = false
+			onCover(false)
+		end
+		if viewer ~= nil and viewer.panel == self then
+			viewer = nil
+		end
+		if link ~= nil then
+			link.release()
+		end
+	end
+
+	local closeButton = widgets.button(panel, { icon = "close", size = "lg", variant = "shade", onClick = function()
+		close()
+	end })
+	local previous: DButton | nil = nil
+	local following: DButton | nil = nil
+	if many then
+		previous = widgets.button(panel, { icon = "chevronLeft", size = "lg", variant = "shade", onClick = function()
+			go(-1)
+		end })
+		following = widgets.button(panel, { icon = "chevronRight", size = "lg", variant = "shade", onClick = function()
+			go(1)
+		end })
+	end
+
+	-- ‹ › sit beside the picture area, × above › at the area's top: one column of controls
+	-- that stays put whatever the picture's shape.
+	panel.PerformLayout = function(self: Panel, w: number, h: number)
+		local ax, ay, aw, ah = area(w, h)
+		local gap = px(16)
+		closeButton:SetPos(ax + aw + gap, ay)
+		local left, right = previous, following
+		if left ~= nil and right ~= nil then
+			left:SetPos(ax - gap - left:GetWide(), ay + (ah - left:GetTall()) / 2)
+			right:SetPos(ax + aw + gap, ay + (ah - right:GetTall()) / 2)
+		end
+	end
+end
+
+------------------------------------------------------------------------------ carousel
+
+-- The item dialog's pictures in a 16:9 frame, each shown whole (letterboxed on the panel colour): ‹ ›, dots and dragging move
+-- between them, and a click opens the viewer on the one shown.
+local function carousel(parent: Panel, pictures: DonatosGoodsImage[]): Panel
+	local count = #pictures
+	local many = count > 1
+	-- The slide shown: a whole number at rest, unbounded so that wrapping slides on in the
+	-- same direction.
+	local slide = theme.tween(0)
+
+	local panel = vgui.Create("DPanel", parent)
+	panel:SetCursor("hand")
+
+	local function go(delta: number)
+		slide.to(math.Round(slide.target()) + delta, 0.25, "outQuart")
+	end
+
+	local function dotsGeometry(w: number, h: number): (number, number, number, number)
+		local size, gap = px(6), px(6)
+		local total = count * size + (count - 1) * gap
+		return math.Round((w - total) / 2), h - px(14) - size, size, gap
+	end
+
+	-- The dot under the cursor (0-based), if any; the hit area is a little larger than a dot.
+	local function dotAt(mx: number, my: number): number | nil
+		if not many then
+			return nil
+		end
+		local x, y, size, gap = dotsGeometry(panel:GetWide(), panel:GetTall())
+		if my < y - gap or my > y + size + gap then
+			return nil
+		end
+		local index = math.floor((mx - x + gap / 2) / (size + gap))
+		if index < 0 or index >= count then
+			return nil
+		end
+		return index
+	end
+
+	-- Whether the viewer has the picture shown (it grew out of here and will shrink back).
+	local lent = false
+	local link: ViewerLink = {
+		rect = function(slot: number): [number, number, number, number] | nil
+			if not IsValid(panel) or not panel:IsVisible() then
+				return nil
+			end
+			slide.set(slot)
+			local entry = pictureAt(pictures, slot)
+			local w, h = panel:GetSize()
+			local fit = images.transparent(entry.full) and CUTOUT_FIT or 1
+			local _, _, iw, ih = contain(entry.width, entry.height, w * fit, h * fit)
+			local sx, sy = panel:LocalToScreen(0, 0)
+			return { sx + (w - iw) / 2, sy + (h - ih) / 2, iw, ih }
+		end,
+		release = function()
+			lent = false
+		end,
+	}
+
+	local swiping = swipe(panel, slide, function(): number
+		return panel:GetWide()
+	end, many, function()
+		lent = true
+		openViewer(pictures, math.Round(slide.target()) % count + 1, link)
+	end)
+
+	local function paintSlide(slot: number, x: number, w: number, h: number)
+		local entry = pictureAt(pictures, slot)
+		-- The viewer is showing this one; the carousel keeps its place empty meanwhile.
+		local away = lent and slot == math.Round(slide.target())
+		local material, readyAt = images.image(entry.full)
+		if material == nil then
+			theme.spinner(x + w / 2, h / 2, px(10), colors.muted)
+			return
+		end
+		local t = images.fadeIn(readyAt)
+		if images.transparent(entry.full) then
+			-- A cut-out sits on stripes, with room around it.
+			-- The stripes run past the slide, so they are clipped to it.
+			local sx, sy = panel:LocalToScreen(math.Round(x), 0)
+			local px0, py0 = panel:LocalToScreen(0, 0)
+			local cx0, cy0 = math.max(sx, px0), sy
+			local cx1, cy1 = math.min(sx + w, px0 + w), sy + h
+			render.SetScissorRect(cx0, cy0, cx1, cy1, true)
+			stripes(x, 0, w, h, t)
+			render.SetScissorRect(0, 0, 0, 0, false)
+			if away then
+				return
+			end
+			local _, _, iw, ih = contain(entry.width, entry.height, w * CUTOUT_FIT, h * CUTOUT_FIT)
+			surface.SetMaterial(material)
+			surface.SetDrawColor(t >= 1 and OPAQUE_WHITE or theme.fade(OPAQUE_WHITE, t))
+			surface.DrawTexturedRect(math.Round(x + (w - iw) / 2), math.Round((h - ih) / 2), iw, ih)
+			return
+		end
+		if away then
+			return
+		end
+		surface.SetMaterial(material)
+		surface.SetDrawColor(t >= 1 and OPAQUE_WHITE or theme.fade(OPAQUE_WHITE, t))
+		local ix, iy, iw, ih = contain(entry.width, entry.height, w, h)
+		surface.DrawTexturedRectUV(x + ix, iy, iw, ih, 0, 0, 1, 1)
+	end
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		local radius = px(16)
+		theme.box(radius, 0, 0, w, h, colors.panel)
+		local position = slide.value()
+		local first = math.floor(position)
+		for slot = first, first + 1 do
+			local x = math.Round((slot - position) * w)
+			if x < w and x > -w then
+				paintSlide(slot, x, w, h)
+			end
+		end
+		if many then
+			-- The next picture starts loading before it is shown.
+			images.image(pictureAt(pictures, first + 1).full)
+
+			theme.shade(0, h * 0.7, w, h * 0.3, BLACK, "bottom", 0.4)
+			local x, y, size, gap = dotsGeometry(w, h)
+			for i = 0, count - 1 do
+				-- How current dot `i` is: 1 at rest on its picture, in between while sliding.
+				local distance = math.abs((position - i + count / 2) % count - count / 2)
+				local current = math.max(1 - distance, 0)
+				local color = current >= 1 and colors.text or current <= 0 and DOT or theme.mix(DOT, colors.text, current) or DOT
+				theme.box(size / 2, x + i * (size + gap), y, size, size, color)
+			end
+		end
+		-- The slides are drawn square; the dialog's surface is behind the corners.
+		theme.roundCutout(radius, 0, 0, w, h, colors.surface)
+		return true
+	end
+
+	panel.OnMousePressed = function(self: Panel, keyCode: number): boolean
+		if keyCode ~= MOUSE_LEFT then
+			return true
+		end
+		local index = dotAt(self:CursorPos())
+		if index ~= nil then
+			go(index - math.Round(slide.target()) % count)
+		else
+			swiping.press()
+		end
+		return true
+	end
+	panel.OnMouseReleased = function(self: Panel, keyCode: number): boolean
+		if keyCode == MOUSE_LEFT then
+			swiping.release()
+		end
+		return true
+	end
+	panel.Think = function(self: Panel)
+		swiping.think()
+	end
+
+	if many then
+		local previous = widgets.button(panel, { icon = "chevronLeft", size = "sm", variant = "shade", onClick = function()
+			go(-1)
+		end })
+		local following = widgets.button(panel, { icon = "chevronRight", size = "sm", variant = "shade", onClick = function()
+			go(1)
+		end })
+		panel.PerformLayout = function(self: Panel, w: number, h: number)
+			local inset = px(12)
+			previous:SetPos(inset, (h - previous:GetTall()) / 2)
+			following:SetPos(w - inset - following:GetWide(), (h - following:GetTall()) / 2)
+		end
+	end
+
+	return panel
+end
+
+-- How much a viewer covers the menu (0-1): it fades in and out with the viewer's backdrop.
+local function cover(): number
+	local open = viewer
+	if open == nil or not IsValid(open.panel) then
+		return 0
+	end
+	return open.presence.value()
+end
+
+local function setOnCover(callback: (covering: boolean) => void)
+	onCover = callback
+end
+
+return {
+	carousel = carousel,
+	closeViewer = closeViewer,
+	setOnCover = setOnCover,
+	cover = cover,
+}

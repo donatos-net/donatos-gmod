@@ -1,0 +1,218 @@
+-- Client: goods images, downloaded on first use and kept in data/donatos/img/. Image URLs are
+-- named by their content's hash, so a saved file never goes stale: later sessions load it
+-- from disk without asking the network. Until an image is ready (and for good, if it can't be
+-- had) there is no material, and the menu draws as it would without images.
+
+local theme = require("ui.theme")
+
+local DIRECTORY = "donatos/img"
+-- Downloads at a time; the rest wait their turn.
+local MAX_DOWNLOADS = 4
+-- A download that hasn't answered by then counts as failed, so it can't hold a slot forever.
+local DOWNLOAD_TIMEOUT = 30
+-- Decoding an image stalls the frame, so a page full of saved images loads one per frame.
+local LOADS_PER_FRAME = 1
+local FADE_IN = 0.25
+
+-- queued -> downloading -> saved -> ready, or failed (for the rest of the session).
+local type ImageState = "queued" | "downloading" | "saved" | "ready" | "failed"
+
+local type ImageEntry = {
+	state: ImageState;
+	-- Under data/.
+	path: string;
+	material?: IMaterial;
+	-- RealTime() when the material became ready.
+	readyAt: number;
+}
+
+local entries: Table<string, ImageEntry> = {}
+local queue: string[] = {}
+local downloading = 0
+local loadFrame, loadsThisFrame = -1, 0
+
+local function fail(entry: ImageEntry)
+	entry.state = "failed"
+	entry.material = nil
+end
+
+local pump: () => void = function() end
+
+-- Whether `body` starts like a JPEG or a PNG, the formats the API serves.
+local function isImage(body: string): boolean
+	return string.sub(body, 1, 3) == "\xFF\xD8\xFF" or string.sub(body, 1, 8) == "\x89PNG\r\n\x1A\n"
+end
+
+local function download(url: string, entry: ImageEntry)
+	entry.state = "downloading"
+	downloading = downloading + 1
+	local settled = false
+	local function settle(body: string | nil)
+		if settled then
+			return
+		end
+		settled = true
+		downloading = downloading - 1
+		-- Only an image is saved: a proxy's or captive portal's HTML page would otherwise be
+		-- kept, and loaded, every session.
+		if body ~= nil and not isImage(body) then
+			body = nil
+		end
+		if body ~= nil then
+			file.CreateDir(DIRECTORY)
+			file.Write(entry.path, body)
+		end
+		if body ~= nil and file.Exists(entry.path, "DATA") then
+			entry.state = "saved"
+		else
+			fail(entry)
+		end
+		pump()
+	end
+	timer.Simple(DOWNLOAD_TIMEOUT, function()
+		settle(nil)
+	end)
+	local ok = pcall(http.Fetch, url, function(body: string, size: number, headers: table, code: number)
+		settle((code == 200 and body ~= nil and #body > 0) and body or nil)
+	end, function(reason: string)
+		settle(nil)
+	end)
+	if not ok then
+		settle(nil)
+	end
+end
+
+pump = function()
+	while downloading < MAX_DOWNLOADS and #queue > 0 do
+		local url = table.remove(queue, 1) as string
+		local entry = entries[url]
+		if entry ~= nil and entry.state == "queued" then
+			download(url, entry)
+		end
+	end
+end
+
+-- Turns a saved file into a material, unless this frame has decoded enough already.
+local function load(entry: ImageEntry)
+	local frame = FrameNumber()
+	if frame ~= loadFrame then
+		loadFrame, loadsThisFrame = frame, 0
+	end
+	if loadsThisFrame >= LOADS_PER_FRAME then
+		return
+	end
+	loadsThisFrame = loadsThisFrame + 1
+	-- Material() reads .jpg / .png files from data/ by this relative path.
+	local material = Material(`../data/${entry.path}`, "smooth mips")
+	-- A file that doesn't decode can still give a material, with the error texture in it.
+	local texture = material ~= nil and material:GetTexture("$basetexture") or nil
+	if material == nil or material:IsError() or texture == nil or texture:IsError() then
+		-- A broken file is fetched again next session.
+		file.Delete(entry.path)
+		fail(entry)
+		return
+	end
+	entry.material = material
+	entry.state = "ready"
+	entry.readyAt = RealTime()
+end
+
+-- The image at `url` (a JPEG, or a PNG when the URL ends in .png), and when it became ready;
+-- nil until then. The first call starts loading it.
+local function image(url: string): (IMaterial | nil, number)
+	local entry = entries[url]
+	if entry == nil then
+		-- Material() picks the decoder by extension.
+		local extension = string.EndsWith(url, ".png") and "png" or "jpg"
+		local path = `${DIRECTORY}/${util.SHA256(url)}.${extension}`
+		local saved = file.Exists(path, "DATA")
+		entry = { state = saved and "saved" or "queued", path = path, readyAt = 0 }
+		entries[url] = entry
+		if not saved then
+			table.insert(queue, url)
+			pump()
+		end
+	end
+	if entry.state == "saved" then
+		load(entry)
+	end
+	return entry.material, entry.readyAt
+end
+
+-- How far an image that became ready at `readyAt` has faded in (0-1, eased).
+local function fadeIn(readyAt: number): number
+	local t = math.Clamp((RealTime() - readyAt) / FADE_IN, 0, 1)
+	return 1 - (1 - t) ^ 3
+end
+
+-- UVs that show an `imageWidth` x `imageHeight` image over a `w` x `h` box like CSS
+-- `object-fit: cover`: scaled to fill the box and cropped about the centre. GMod resamples a
+-- .jpg / .png to a power-of-two texture, stretching it to fill, so UVs 0-1 span the whole image and
+-- the aspect ratio comes from the image's own size, not the texture's.
+local function cover(imageWidth: number, imageHeight: number, w: number, h: number): (number, number, number, number)
+	if imageWidth <= 0 or imageHeight <= 0 or w <= 0 or h <= 0 then
+		return 0, 0, 1, 1
+	end
+	local imageAspect = imageWidth / imageHeight
+	local boxAspect = w / h
+	if imageAspect > boxAspect then
+		local inset = (1 - boxAspect / imageAspect) / 2
+		return inset, 0, 1 - inset, 1
+	end
+	local inset = (1 - imageAspect / boxAspect) / 2
+	return 0, inset, 1, 1 - inset
+end
+
+-- Where a `pictureWidth` x `pictureHeight` picture sits, whole and centred, in a `w` x `h`
+-- area, like CSS `object-fit: contain`.
+local function contain(pictureWidth: number, pictureHeight: number, w: number, h: number): (number, number, number, number)
+	if pictureWidth <= 0 or pictureHeight <= 0 or w <= 0 or h <= 0 then
+		return 0, 0, math.max(w, 0), math.max(h, 0)
+	end
+	local scale = math.min(w / pictureWidth, h / pictureHeight)
+	local iw, ih = math.Round(pictureWidth * scale), math.Round(pictureHeight * scale)
+	return math.Round((w - iw) / 2), math.Round((h - ih) / 2), iw, ih
+end
+
+-- Whether the image at `url` has transparency: those are stored as PNG, all others as JPEG.
+local function transparent(url: string): boolean
+	return string.EndsWith(url, ".png")
+end
+
+-- A transparent picture's glow and soft shadow are the picture itself, drawn enlarged in a
+-- ring of faint copies and offset below it (GMod has no blur for a texture with alpha). Meant
+-- for small sizes, such as shop cards: large, the copies show as ghost edges.
+local GLOW_COPIES = 8
+local GLOW_TINT = theme.translucent(255, 255, 255, 34)
+local SHADOW_TINT = theme.translucent(0, 0, 0, 40)
+local OPAQUE_WHITE = Color(255, 255, 255, 255)
+
+-- Draws a transparent picture `iw` x `ih` centred at (cx, cy), turned `tilt` degrees, over a
+-- glow of its own colours and a soft shadow; `opacity` (0-1) fades it all in.
+local function floating(material: IMaterial, cx: number, cy: number, iw: number, ih: number, tilt: number, opacity: number)
+	local function faded(color: Color): Color
+		return opacity >= 1 and color or theme.fade(color, opacity)
+	end
+	local unit = math.max(iw, ih) / 100
+	surface.SetMaterial(material)
+	surface.SetDrawColor(faded(GLOW_TINT))
+	for i = 1, GLOW_COPIES do
+		local angle = i / GLOW_COPIES * math.pi * 2
+		surface.DrawTexturedRectRotated(cx + math.cos(angle) * unit * 8, cy + math.sin(angle) * unit * 8, iw * 1.3, ih * 1.5, tilt)
+	end
+	surface.SetDrawColor(faded(SHADOW_TINT))
+	for i = 1, 4 do
+		surface.DrawTexturedRectRotated(cx + (i - 2.5) * unit, cy + unit * (2 + i), iw * 1.04, ih * 1.08, tilt)
+	end
+	surface.SetDrawColor(faded(OPAQUE_WHITE))
+	surface.DrawTexturedRectRotated(cx, cy, iw, ih, tilt)
+end
+
+return {
+	image = image,
+	fadeIn = fadeIn,
+	cover = cover,
+	contain = contain,
+	transparent = transparent,
+	floating = floating,
+}

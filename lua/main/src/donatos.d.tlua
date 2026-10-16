@@ -12,6 +12,17 @@ interface DonatosGoodsVariant {
 	duration?: number;
 }
 
+-- A goods image: absolute URLs named by their content hash, so a URL's content never
+-- changes. JPEG (`.jpg`), or PNG (`.png`) when the image has transparency. `card` is at most
+-- 640px on its longer side, for shop cards; `full` at most 1280px. `width` and `height` are the
+-- full image's.
+interface DonatosGoodsImage {
+	full: string;
+	card: string;
+	width: number;
+	height: number;
+}
+
 interface DonatosItemGoods {
 	key: string;
 	meta?: string;
@@ -35,6 +46,8 @@ interface DonatosServerApi {
 				key: string;
 				description?: string;
 				variants?: DonatosGoodsVariant[];
+				-- By position, the first is the cover; absent when there are none.
+				images?: DonatosGoodsImage[];
 			}[];
 			goodsCategories: { id: number; name: string }[];
 		};

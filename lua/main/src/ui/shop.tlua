@@ -3,6 +3,8 @@
 -- type. A card opens the item dialog, where the purchase happens.
 
 local netMessage = require("donatos.net")
+local gallery = require("ui.gallery")
+local images = require("ui.images")
 local theme = require("ui.theme")
 local views = require("ui.views")
 local widgets = require("ui.widgets")
@@ -21,6 +23,21 @@ local OTHER_SECTION = -1
 local SHORT_DESCRIPTION = 80
 
 local PURCHASE_ERROR = "Не удалось выполнить покупку. Попробуйте еще раз."
+
+-- A card with a cover shows it on its right ("showcase"); the text keeps this share of the
+-- card's width beside it.
+local SHOWCASE_TEXT = 0.58
+-- A photo-like cover fills the card's right part and fades into the card over its left half.
+local SHOWCASE_PHOTO = 0.62
+-- A transparent cover floats in this box (shares of the card), centred at SHOWCASE_CENTER,
+-- tilted when it is wide (a weapon, a vehicle), over a glow of its own colours.
+local SHOWCASE_BOX_W, SHOWCASE_BOX_H = 0.68, 0.7
+local SHOWCASE_CENTER_X, SHOWCASE_CENTER_Y = 0.71, 0.56
+local SHOWCASE_TILT, SHOWCASE_TILT_ASPECT = 12, 1.6
+local OPAQUE_WHITE = Color(255, 255, 255, 255)
+-- Over a photo: the term chip goes dark and the name gets a shadow.
+local CHIP_OVER_PHOTO = theme.translucent(10, 10, 12, 184)
+local TEXT_SHADOW = Color(0, 0, 0, 150)
 
 local function goodSections(config: DonatosRemoteConfig): ShopSection[]
 	local sections: ShopSection[] = {}
@@ -129,6 +146,9 @@ local function purchaseDone(ctx: DonatosMenuContext, name: string, activated: bo
 	})
 end
 
+-- The item dialog's pictures: a 16:9 frame that slides between them (250ms), with arrows at
+-- its sides and dots at its foot when there is more than one. It wraps around. Images load
+-- as their slides come near.
 local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: string)
 	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
 		local variants = good.variants or {}
@@ -160,6 +180,9 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		end
 
 		------------------------------------------------------------------ left column
+
+		local pictures = good.images or {}
+		local media = #pictures > 0 and gallery.carousel(box, pictures) or nil
 
 		local chips = widgets.painted(box, px(20), function(w: number, h: number)
 			local x = widgets.chip(sectionName, 0, 0, colors.default, colors.text) + px(6)
@@ -213,21 +236,14 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		end)
 		local close = widgets.button(aside, { icon = "close", size = "sm", variant = "secondary", onClick = ctx.dialogs.close })
 
-		-- The "Активировать сразу" switch; its hint follows the selected variant, since a
-		-- one-time good does its work once, on activation, and leaves no active item.
 		local instantOptions: DonatosUiSwitch = {
 			on = ctx.state.instant,
 			label = "Активировать сразу",
+			hint = "Или сохранить в «Мои предметы», например, чтобы подарить",
 			onChange = function(on: boolean)
 				ctx.state.instant = on
 			end,
 		}
-		local function syncInstantHint()
-			instantOptions.hint = selected ~= nil and selected.duration == nil
-					and "Разовый товар сработает сразу после покупки. Иначе он будет ждать в «Мои предметы», его можно подарить"
-				or "Иначе предмет будет ждать в «Мои предметы», его можно подарить"
-		end
-		syncInstantHint()
 
 		local function variantLabel(variant: DonatosGoodsVariant): string
 			return `${views.formatDays(variant.duration)} · ${views.formatNumber(variant.price)}`
@@ -248,7 +264,6 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				option.onClick = function()
 					selected = variant
 					errorText = nil
-					syncInstantHint()
 					for i, other in ipairs(options) do
 						other.variant = variants[i] == variant and "soft" or "secondary"
 					end
@@ -444,7 +459,10 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				local nameHeight = name.layout(leftInner)
 				local block = descriptionBlock
 				local descriptionHeight = block ~= nil and block.layout(leftInner - px(8)) or 0
-				local header = px(20) + px(10) + nameHeight
+				-- The pictures, 16:9 across the column, sit above the chips.
+				local mediaHeight = media ~= nil and math.Round(leftInner * 9 / 16) or 0
+				local mediaSpace = media ~= nil and mediaHeight + px(16) or 0
+				local header = mediaSpace + px(20) + px(10) + nameHeight
 				local leftNatural = px(18) + header + px(16) + descriptionHeight + px(18)
 				local asideNatural = layoutAside(ASIDE_WIDTH)
 				local maxHeight = math.min(px(632), areaHeight - px(32))
@@ -454,9 +472,13 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				box:SetPos((areaWidth - w) / 2, (areaHeight - h) / 2)
 
 				local x, y = pad + px(18), pad + px(18)
-				chips.panel:SetPos(x, y)
+				if media ~= nil then
+					media:SetPos(x, y)
+					media:SetSize(leftInner, mediaHeight)
+				end
+				chips.panel:SetPos(x, y + mediaSpace)
 				chips.panel:SetSize(leftInner, px(20))
-				name.panel:SetPos(x, y + px(30))
+				name.panel:SetPos(x, y + mediaSpace + px(30))
 				name.panel:SetSize(leftInner, nameHeight)
 				local top = y + header + px(16)
 				local areaHeightLeft = math.max(h - pad - px(18) - top, px(40))
@@ -503,8 +525,48 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local ring = theme.tween(0)
 	local press = theme.tween(1)
 
+	local gallery = good.images
+	local cover = gallery and gallery[1]
+	-- A photo runs under the name; a transparent picture stays beside the text.
+	local photo = cover ~= nil and not images.transparent(cover.card)
+
+	-- The cover on the card's right, inside its rounded corners: a photo fading into the card,
+	-- or a transparent picture floating over its glow and soft shadow.
+	local function paintCover(w: number, h: number, fill: Color)
+		if cover == nil then
+			return
+		end
+		local material, readyAt = images.image(cover.card)
+		if material == nil then
+			return
+		end
+		local t = images.fadeIn(readyAt)
+		local function faded(color: Color): Color
+			return t >= 1 and color or theme.fade(color, t)
+		end
+		-- A pixel inside the card's edge, which the box anti-aliases.
+		theme.pushRoundClip(1, 1, w - 2, h - 2, px(20) - 1)
+		surface.SetMaterial(material)
+		if photo then
+			local x, pw = w * (1 - SHOWCASE_PHOTO), w * SHOWCASE_PHOTO
+			surface.SetDrawColor(faded(OPAQUE_WHITE))
+			surface.DrawTexturedRectUV(math.Round(x), 0, math.Round(pw), h, images.cover(cover.width, cover.height, pw, h))
+			-- Twice: GMod blends in linear light, so one near-opaque shade still lets a bright
+			-- photo show through where it begins.
+			theme.shade(x - 1, 0, pw * 0.8, h, fill, "left", 1)
+			theme.shade(x - 1, 0, pw * 0.5, h, fill, "left", 1)
+		else
+			local _, _, iw, ih = images.contain(cover.width, cover.height, w * SHOWCASE_BOX_W, h * SHOWCASE_BOX_H)
+			local tilt = cover.width / cover.height >= SHOWCASE_TILT_ASPECT and SHOWCASE_TILT or 0
+			images.floating(material, w * SHOWCASE_CENTER_X, h * SHOWCASE_CENTER_Y, iw, ih, tilt, t)
+		end
+		theme.popRoundClip()
+	end
+
 	local function paintCard(self: DButton, w: number, h: number)
-		theme.box(px(20), 0, 0, w, h, theme.mix(colors.surface, colors.surfaceHover, hover.value()) or colors.surface)
+		local fill = theme.mix(colors.surface, colors.surfaceHover, hover.value()) or colors.surface
+		theme.box(px(20), 0, 0, w, h, fill)
+		paintCover(w, h, fill)
 		local ringColor = theme.mix(nil, colors.surfaceRing, ring.value())
 		if ringColor ~= nil then
 			theme.ring(px(20), 0, 0, w, h, ringColor)
@@ -513,10 +575,19 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		local lineHeight = px(22)
 		local nameHeight = theme.fontHeight(nameFont)
 		for i, line in ipairs(nameLines) do
-			draw.SimpleText(line, nameFont, padX, padY + (i - 1) * lineHeight + (lineHeight - nameHeight) / 2, colors.text)
+			local y = padY + (i - 1) * lineHeight + (lineHeight - nameHeight) / 2
+			if photo then
+				draw.SimpleText(line, nameFont, padX, y + 1, TEXT_SHADOW)
+			end
+			draw.SimpleText(line, nameFont, padX, y, colors.text)
 		end
 		if chipText ~= nil then
-			widgets.chip(chipText, w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2, chipBackground, chipForeground)
+			local x, y = w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
+			if photo then
+				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.text)
+			else
+				widgets.chip(chipText, x, y, chipBackground, chipForeground)
+			end
 		end
 
 		local y = padY + #nameLines * lineHeight + px(10)
@@ -556,11 +627,15 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		panel = card,
 		layout = function(width: number): number
 			local inner = width - padX * 2
+			-- Beside a cover the text keeps the card's left part; a photo's runs under the name.
+			local textWidth = cover ~= nil and width * SHOWCASE_TEXT - padX or inner
 			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText) + px(8) or 0
-			nameLines = theme.clamp(good.name, nameFont, inner - chipSpace, 2)
-			descriptionLines = description ~= "" and theme.clamp(description, smallFont, inner, 2) or {}
-			local descriptionHeight = #descriptionLines > 0 and px(38) + px(10) or 0
-			return padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY
+			nameLines = theme.clamp(good.name, nameFont, (photo or cover == nil) and inner - chipSpace or textWidth, 2)
+			local descriptionMax = cover ~= nil and 3 or 2
+			descriptionLines = description ~= "" and theme.clamp(description, smallFont, textWidth, descriptionMax) or {}
+			local descriptionHeight = #descriptionLines > 0 and descriptionMax * px(19) + px(10) or 0
+			local height = padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY
+			return cover ~= nil and math.max(height, px(150)) or height
 		end,
 	}
 end
