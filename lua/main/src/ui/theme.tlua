@@ -99,44 +99,57 @@ function theme.fade(color: Color, factor: number): Color
 	return faded
 end
 
+-- HeroUI v3's dark theme, as the menu's design uses it.
 theme.colors = {
-	background = shown(14, 14, 16),
-	card = shown(24, 24, 27),
-	popover = shown(24, 24, 27),
-	secondary = shown(39, 39, 42),
-	secondaryHover = shown(52, 52, 57),
-	text = Color(250, 250, 250),
-	textDim = translucent(250, 250, 250, 180),
-	muted = Color(161, 161, 170),
-	primary = Color(212, 212, 212),
-	primaryHover = Color(190, 190, 194),
-	primaryText = shown(24, 24, 27),
-	border = translucent(255, 255, 255, 24),
-	outlineFill = translucent(255, 255, 255, 24),
-	outlineHover = translucent(255, 255, 255, 38),
-	input = translucent(255, 255, 255, 40),
-	destructive = Color(248, 113, 113),
-	overlay = translucent(0, 0, 0, 150),
-	filterBar = shown(24, 24, 26),
-	headerShade = translucent(12, 12, 14, 115),
-	badge = translucent(255, 255, 255, 51),
-	track = shown(39, 39, 42),
+	-- The window: near-black glass over the blurred game (rgba(4, 4, 5, 0.88) on the web).
+	glass = translucent(lift(4), lift(4), lift(5), 224),
+	frameRing = translucent(255, 255, 255, 30),
+	surface = shown(24, 24, 27),
+	surfaceHover = shown(31, 31, 34),
+	surfaceRing = shown(46, 46, 49),
+	panel = shown(18, 18, 20),
+	group = shown(28, 28, 30),
+	default = shown(39, 39, 42),
+	defaultHover = shown(52, 52, 57),
+	separator = shown(33, 33, 36),
+	text = Color(252, 252, 252),
+	textSoft = Color(212, 212, 216),
+	textDim = translucent(255, 255, 255, 191),
+	muted = Color(159, 159, 169),
+	faint = Color(113, 113, 122),
+	accent = Color(4, 133, 247),
+	accentHover = Color(30, 147, 248),
+	accentText = Color(24, 142, 247),
+	accentSoft = translucent(4, 133, 247, 31),
+	accentSoftHover = translucent(4, 133, 247, 51),
+	success = Color(41, 205, 112),
+	successSoft = translucent(23, 201, 100, 38),
+	danger = Color(248, 113, 113),
+	inverse = Color(252, 252, 252),
+	inverseHover = Color(228, 228, 231),
+	inverseText = shown(6, 6, 7),
+	inverseMuted = Color(82, 82, 91),
+	-- On the gradient top bar.
+	barShade = translucent(0, 0, 0, 77),
+	barTabs = translucent(0, 0, 0, 56),
+	barHover = translucent(255, 255, 255, 20),
+	barSelected = translucent(255, 255, 255, 56),
+	overlay = translucent(0, 0, 0, 140),
 	scrollGrip = translucent(255, 255, 255, 40),
 	selection = translucent(96, 165, 250, 120),
 }
 
-local colors = theme.colors
-
--- Header gradient stops: the design's colours at 0.6 alpha, composited over the background.
+-- Header gradient stops ("ocean": cyan, the accent blue, indigo, teal) at 0.6 alpha,
+-- composited over the background.
 local function overBackground(r: number, g: number, b: number): Color
 	return shown(Lerp(0.6, 14, r), Lerp(0.6, 14, g), Lerp(0.6, 16, b))
 end
 
 local GRADIENT: Color[] = {
-	overBackground(238, 119, 82),
-	overBackground(231, 60, 126),
-	overBackground(35, 166, 213),
-	overBackground(35, 213, 171),
+	overBackground(6, 182, 212),
+	overBackground(4, 133, 247),
+	overBackground(99, 102, 241),
+	overBackground(20, 184, 166),
 }
 
 local scale = 1
@@ -148,17 +161,21 @@ function theme.px(value: number): number
 end
 
 -- A GMod font's size is its full cell height, about 1.17 times the CSS font-size for Roboto:
--- 14 here matches the web UI's 12px text (text-xs), 16 its 14px (text-sm), 12 its 10px.
--- Line heights (`leading` in widgets.text) are relative to that cell height too.
+-- 16 here matches the design's 14px text. The design's weight 600 is drawn as Roboto Medium.
+-- (The design uses Inter, which GMod doesn't ship.)
 local FONTS: { name: string; face: string; size: number; weight: number }[] = {
-	{ name = "title", face = "Roboto", size = 17, weight = 400 },
-	{ name = "body", face = "Roboto", size = 14, weight = 400 },
-	{ name = "bodyRegular", face = "Roboto", size = 14, weight = 400 },
-	{ name = "small", face = "Roboto", size = 14, weight = 400 },
-	{ name = "smallBold", face = "Roboto Medium", size = 12, weight = 500 },
-	{ name = "price", face = "Roboto", size = 17, weight = 400 },
-	{ name = "heading", face = "Roboto", size = 17, weight = 400 },
-	{ name = "dialogTitle", face = "Roboto Medium", size = 17, weight = 500 },
+	{ name = "chip", face = "Roboto Medium", size = 14, weight = 500 },
+	{ name = "small", face = "Roboto", size = 15, weight = 400 },
+	{ name = "smallMedium", face = "Roboto Medium", size = 15, weight = 500 },
+	{ name = "body", face = "Roboto", size = 16, weight = 400 },
+	{ name = "medium", face = "Roboto Medium", size = 16, weight = 500 },
+	{ name = "cardTitle", face = "Roboto Medium", size = 18, weight = 500 },
+	{ name = "reading", face = "Roboto", size = 18, weight = 400 },
+	{ name = "section", face = "Roboto Medium", size = 20, weight = 500 },
+	{ name = "price", face = "Roboto Medium", size = 23, weight = 500 },
+	{ name = "title", face = "Roboto Medium", size = 26, weight = 500 },
+	{ name = "dialogTitle", face = "Roboto Medium", size = 28, weight = 500 },
+	{ name = "priceLarge", face = "Roboto Medium", size = 37, weight = 500 },
 	{ name = "input", face = "Roboto", size = 16, weight = 400 },
 }
 
@@ -177,14 +194,18 @@ function theme.refresh()
 end
 
 local type DonatosFont =
-	| "title"
-	| "body"
-	| "bodyRegular"
+	| "chip"
 	| "small"
-	| "smallBold"
+	| "smallMedium"
+	| "body"
+	| "medium"
+	| "cardTitle"
+	| "reading"
+	| "section"
 	| "price"
-	| "heading"
+	| "title"
 	| "dialogTitle"
+	| "priceLarge"
 	| "input"
 
 function theme.font(name: DonatosFont): string
@@ -235,6 +256,32 @@ function theme.wrap(text: string, font: string, width: number): string[]
 	return lines
 end
 
+-- Like `theme.wrap`, but at most `maxLines` lines; a cut last line ends with an ellipsis.
+function theme.clamp(text: string, font: string, width: number, maxLines: number): string[]
+	local lines = theme.wrap(text, font, width)
+	if #lines <= maxLines then
+		return lines
+	end
+	local kept: string[] = {}
+	for i = 1, maxLines do
+		kept[i] = assert(lines[i])
+	end
+	surface.SetFont(font)
+	local last = string.TrimRight(assert(kept[maxLines]))
+	while last ~= "" and surface.GetTextSize(`${last}…`) > width do
+		-- Drops the last character (GMod's utf8.offset rejects negative counts).
+		last = string.TrimRight((string.gsub(last, `${utf8.charpattern}$`, "")))
+	end
+	kept[maxLines] = `${last}…`
+	return kept
+end
+
+-- The y at which to draw text in `font` so that its baseline lines up with text in
+-- `anchorFont` drawn at `anchorY`. Roboto's baseline sits at about 0.8 of the cell.
+function theme.baseline(anchorY: number, anchorFont: string, font: string): number
+	return math.Round(anchorY + (theme.fontHeight(anchorFont) - theme.fontHeight(font)) * 0.8)
+end
+
 ------------------------------------------------------------------------------ rounded boxes
 
 -- draw.RoundedBox's corner textures are close to 1-bit at small radii, so corners are drawn
@@ -262,6 +309,11 @@ local function bakeMask(name: string, size: number, alphaAt: (x: number, y: numb
 	render.PushRenderTarget(target)
 	render.OverrideAlphaWriteEnable(true, true)
 	cam.Start2D()
+	-- Masks bake on first use, which can be mid-paint inside a scaled or fading panel
+	-- (theme.pushScale, Panel:SetAlpha); the texels must take neither.
+	cam.PushModelMatrix(Matrix(), false)
+	local alphaMultiplier = surface.GetAlphaMultiplier()
+	surface.SetAlphaMultiplier(1)
 	render.OverrideBlend(true, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD)
 	draw.NoTexture()
 	for y = 0, size - 1 do
@@ -275,6 +327,8 @@ local function bakeMask(name: string, size: number, alphaAt: (x: number, y: numb
 		end
 	end
 	render.OverrideBlend(false)
+	surface.SetAlphaMultiplier(alphaMultiplier)
+	cam.PopModelMatrix()
 	cam.End2D()
 	render.OverrideAlphaWriteEnable(false)
 	render.PopRenderTarget()
@@ -390,6 +444,41 @@ function theme.circleCutout(x: number, y: number, size: number, color: Color)
 	drawCorner(mask, x + size - r, y + size - r, r, true, true)
 end
 
+-- Paints `color` outside the rounded corners of a box, for shapes drawn square (a gradient):
+-- `color` must be what lies behind each chosen corner.
+function theme.roundCutout(
+	radius: number,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	color: Color,
+	tl?: boolean,
+	tr?: boolean,
+	bl?: boolean,
+	br?: boolean
+)
+	x, y, w, h = math.Round(x), math.Round(y), math.Round(w), math.Round(h)
+	local r = math.min(math.Round(radius), math.floor(math.min(w, h) / 2))
+	if r <= 0 then
+		return
+	end
+	local mask = cornerMask(r, "outside")
+	surface.SetDrawColor(color)
+	if tl ~= false then
+		drawCorner(mask, x, y, r, false, false)
+	end
+	if tr ~= false then
+		drawCorner(mask, x + w - r, y, r, true, false)
+	end
+	if bl ~= false then
+		drawCorner(mask, x, y + h - r, r, false, true)
+	end
+	if br ~= false then
+		drawCorner(mask, x + w - r, y + h - r, r, true, true)
+	end
+end
+
 -- A one-pixel rounded border; the flags choose which corners are rounded, as for `theme.box`.
 function theme.ring(
 	radius: number,
@@ -439,11 +528,19 @@ function theme.outlined(radius: number, x: number, y: number, w: number, h: numb
 	theme.ring(radius, x, y, w, h, border)
 end
 
-local function sampleGradient(t: number): Color
-	local position = math.Clamp(t, 0, 1) * (#GRADIENT - 1)
-	local index = math.min(math.floor(position) + 1, #GRADIENT - 1)
-	local from = assert(GRADIENT[index])
-	local to = assert(GRADIENT[index + 1])
+-- The same stops at full strength, for progress bars.
+local VIVID: Color[] = {
+	Color(6, 182, 212),
+	Color(4, 133, 247),
+	Color(99, 102, 241),
+	Color(20, 184, 166),
+}
+
+local function sampleGradient(stops: Color[], t: number): Color
+	local position = math.Clamp(t, 0, 1) * (#stops - 1)
+	local index = math.min(math.floor(position) + 1, #stops - 1)
+	local from = assert(stops[index])
+	local to = assert(stops[index + 1])
 	local f = position - (index - 1)
 	return Color(
 		Lerp(f, from.r, to.r),
@@ -453,11 +550,12 @@ local function sampleGradient(t: number): Color
 	)
 end
 
--- The header gradient's colour at `x` of a header `w` wide, at the current moment.
-function theme.gradientAt(x: number, w: number): Color
+-- The header gradient's colour at `x` of a header `w` wide, at the current moment; `vivid`
+-- takes the full-strength stops.
+function theme.gradientAt(x: number, w: number, vivid?: boolean): Color
 	local cycle = (RealTime() % 10) / 10
 	local eased = (1 - math.cos(cycle * math.pi * 2)) / 2
-	return sampleGradient(eased * 0.75 + 0.25 * x / w)
+	return sampleGradient(vivid and VIVID or GRADIENT, eased * 0.75 + 0.25 * x / w)
 end
 
 -- The header's slowly drifting four-colour gradient (a quarter of it visible at a time), with
@@ -474,6 +572,244 @@ function theme.paintGradient(w: number, h: number, radius: number)
 	end
 	theme.box(radius, 0, 0, corner, h, at(radius), true, false, false, false)
 	theme.box(radius, w - corner, 0, corner, h, at(w - radius), false, true, false, false)
+end
+
+------------------------------------------------------------------------------ motion
+
+-- HeroUI's easing curves (@heroui/styles themes/shared/theme.css), as cubic Béziers.
+local function bezier(x1: number, y1: number, x2: number, y2: number): (t: number) => number
+	local function at(u: number, a: number, b: number): number
+		return 3 * (1 - u) ^ 2 * u * a + 3 * (1 - u) * u ^ 2 * b + u ^ 3
+	end
+	return function(t: number): number
+		if t <= 0 then
+			return 0
+		elseif t >= 1 then
+			return 1
+		end
+		-- Newton's method for the u where x(u) = t.
+		local u = t
+		for _ = 1, 8 do
+			local slope = 3 * (1 - u) ^ 2 * x1 + 6 * (1 - u) * u * (x2 - x1) + 3 * u ^ 2 * (1 - x2)
+			if math.abs(slope) < 1e-6 then
+				break
+			end
+			u = math.Clamp(u - (at(u, x1, x2) - t) / slope, 0, 1)
+		end
+		return at(u, y1, y2)
+	end
+end
+
+type DonatosEase = "smooth" | "out" | "outQuad" | "outQuart" | "outFluid"
+
+local EASES: { [K in DonatosEase]: (t: number) => number } = {
+	smooth = bezier(0.25, 0.1, 0.25, 1),
+	out = bezier(0, 0, 0.58, 1),
+	outQuad = bezier(0.25, 0.46, 0.45, 0.94),
+	outQuart = bezier(0.165, 0.84, 0.44, 1),
+	outFluid = bezier(0.32, 0.72, 0, 1),
+}
+
+interface DonatosTween {
+	-- The value now.
+	value: () => number;
+	-- Starts moving from the current value to `target` over `duration` seconds; a no-op when
+	-- `target` is already where it is heading.
+	to: (target: number, duration: number, ease: DonatosEase) => void;
+	-- Jumps to `target`.
+	set: (target: number) => void;
+	target: () => number;
+	-- Whether it has arrived.
+	done: () => boolean;
+}
+
+-- A number that eases towards its target, like a CSS transition.
+function theme.tween(initial: number): DonatosTween
+	local from, goal, start, duration = initial, initial, 0, 0
+	local curve = EASES.smooth
+	local function progress(): number
+		if duration <= 0 then
+			return 1
+		end
+		return math.Clamp((RealTime() - start) / duration, 0, 1)
+	end
+	local function value(): number
+		local t = progress()
+		return t >= 1 and goal or Lerp(curve(t), from, goal)
+	end
+	return {
+		value = value,
+		to = function(target: number, seconds: number, ease: DonatosEase)
+			if target == goal then
+				return
+			end
+			from = value()
+			goal = target
+			start = RealTime()
+			duration = seconds
+			curve = EASES[ease]
+		end,
+		set = function(target: number)
+			from, goal, duration = target, target, 0
+		end,
+		target = function(): number
+			return goal
+		end,
+		done = function(): boolean
+			return progress() >= 1
+		end,
+	}
+end
+
+-- `a` blended into `b` by `t`; nil is transparent. Translucent colours blend their web
+-- alphas (see `translucent`), so the result fades like the web's transition would.
+function theme.mix(a: Color | nil, b: Color | nil, t: number): Color | nil
+	if t <= 0 or b == a then
+		return a
+	elseif t >= 1 then
+		return b
+	end
+	local from = a or Color((b as Color).r, (b as Color).g, (b as Color).b, 0)
+	local to = b or Color(from.r, from.g, from.b, 0)
+	local fromAlpha = a ~= nil and (webAlphas[from] or from.a) or 0
+	local toAlpha = b ~= nil and (webAlphas[to] or to.a) or 0
+	local mixed = Color(Lerp(t, from.r, to.r), Lerp(t, from.g, to.g), Lerp(t, from.b, to.b), 255)
+	local alpha = Lerp(t, fromAlpha, toAlpha)
+	mixed.a = alpha >= 255 and 255 or blendAlpha(mixed, alpha)
+	webAlphas[mixed] = alpha
+	return mixed
+end
+
+-- Scales what is drawn next by `scale` about the point (ox, oy) of `panel`, as a CSS transform
+-- does. Returns whether a matrix was pushed: pass that to `theme.popScale` once drawing is
+-- done (in PaintOver, to include the panel's children).
+function theme.pushScale(panel: Panel, scale: number, ox: number, oy: number): boolean
+	if math.abs(scale - 1) < 0.001 then
+		return false
+	end
+	local x, y = panel:LocalToScreen(ox, oy)
+	local origin = Vector(x, y, 0)
+	local matrix = Matrix()
+	matrix:Translate(origin)
+	matrix:Scale(Vector(scale, scale, 1))
+	matrix:Translate(-origin)
+	cam.PushModelMatrix(matrix, true)
+	render.PushFilterMag(TEXFILTER.ANISOTROPIC)
+	render.PushFilterMin(TEXFILTER.ANISOTROPIC)
+	return true
+end
+
+function theme.popScale(pushed: boolean)
+	if pushed then
+		render.PopFilterMin()
+		render.PopFilterMag()
+		cam.PopModelMatrix()
+	end
+end
+
+------------------------------------------------------------------------------ group fades
+
+-- Panel:SetAlpha fades each draw of a panel tree on its own, so mid-fade the layers (the
+-- window, a card on it, the card's text) show through one another and the cards look more
+-- solid than the window. CSS opacity fades the group as one picture. That is done here by
+-- copying the screen before the group draws, then laying the copy back over it at
+-- 1 - opacity.
+local behindTargets: Table<string, IMaterial> = {}
+
+local function behindMaterial(name: string): IMaterial
+	local key = `${name}_${ScrW()}x${ScrH()}`
+	local cached = behindTargets[key]
+	if cached ~= nil then
+		return cached
+	end
+	local texture = GetRenderTargetEx(`donatos_behind_${key}`, ScrW(), ScrH(), RT_SIZE_FULL_FRAME_BUFFER, MATERIAL_RT_DEPTH_NONE, CORNER_TEXTURE_FLAGS, 0, IMAGE_FORMAT_BGRA8888)
+	local material = CreateMaterial(`donatos_behind_${key}`, "UnlitGeneric", {
+		["$basetexture"] = texture:GetName(),
+		["$vertexalpha"] = 1,
+		["$vertexcolor"] = 1,
+	})
+	behindTargets[key] = material
+	return material
+end
+
+-- First thing in the Paint of a group that is fading (`opacity` < 1): remembers what is
+-- behind it.
+function theme.captureBehind(name: string, opacity: number)
+	if opacity < 1 then
+		render.CopyRenderTargetToTexture(behindMaterial(name):GetTexture("$basetexture"))
+	end
+end
+
+-- Last thing in the group's PaintOver (after its children, unscaled): fades the group by
+-- covering it with what was behind it. The cover spans the screen, unclipped, because a group
+-- scaled up (theme.pushScale) draws past its own bounds; outside the group the copy is what is
+-- already there. Its alpha is converted like a near-black colour's (see blendAlpha), so the
+-- dark window fades the way CSS opacity would rather than lagging behind its text.
+function theme.coverBehind(name: string, panel: Panel, opacity: number)
+	if opacity >= 1 then
+		return
+	end
+	local sx, sy = panel:LocalToScreen(0, 0)
+	local clipping = DisableClipping(true)
+	surface.SetMaterial(behindMaterial(name))
+	surface.SetDrawColor(255, 255, 255, math.Round(255 * (1 - math.Clamp(opacity, 0, 1)) ^ 2.2))
+	surface.DrawTexturedRect(-sx, -sy, ScrW(), ScrH())
+	DisableClipping(clipping)
+end
+
+------------------------------------------------------------------------------ blur
+
+local blurMaterial = Material("pp/blurscreen")
+
+-- The points of a rounded rectangle, for a stencil mask.
+local function roundedPolygon(w: number, h: number, r: number): PolygonVertex[]
+	local points: PolygonVertex[] = {}
+	local steps = 8
+	local centres: [number, number, number][] = {
+		{ w - r, r, -90 },
+		{ w - r, h - r, 0 },
+		{ r, h - r, 90 },
+		{ r, r, 180 },
+	}
+	for _, centre in ipairs(centres) do
+		for i = 0, steps do
+			local angle = math.rad(centre[3] + i / steps * 90)
+			table.insert(points, { x = centre[1] + math.cos(angle) * r, y = centre[2] + math.sin(angle) * r, u = 0, v = 0 })
+		end
+	end
+	return points
+end
+
+-- Blurs what is on screen behind `panel` (drawn first in its Paint), inside a rounded box of
+-- `radius`. The design's 64px backdrop blur is approximated with three passes.
+function theme.blur(panel: Panel, w: number, h: number, radius: number)
+	local sx, sy = panel:LocalToScreen(0, 0)
+	render.ClearStencil()
+	render.SetStencilEnable(true)
+	render.SetStencilWriteMask(255)
+	render.SetStencilTestMask(255)
+	render.SetStencilReferenceValue(1)
+	render.SetStencilFailOperation(STENCIL_KEEP)
+	render.SetStencilZFailOperation(STENCIL_KEEP)
+	render.SetStencilPassOperation(STENCIL_REPLACE)
+	render.SetStencilCompareFunction(STENCIL_ALWAYS)
+	render.OverrideColorWriteEnable(true, false)
+	draw.NoTexture()
+	surface.SetDrawColor(255, 255, 255, 255)
+	surface.DrawPoly(roundedPolygon(w, h, radius))
+	render.OverrideColorWriteEnable(false, false)
+
+	render.SetStencilCompareFunction(STENCIL_EQUAL)
+	render.SetStencilPassOperation(STENCIL_KEEP)
+	surface.SetMaterial(blurMaterial)
+	surface.SetDrawColor(255, 255, 255, 255)
+	for pass = 1, 3 do
+		blurMaterial:SetFloat("$blur", pass * 2.5)
+		blurMaterial:Recompute()
+		render.UpdateScreenEffectTexture()
+		surface.DrawTexturedRect(-sx, -sy, ScrW(), ScrH())
+	end
+	render.SetStencilEnable(false)
 end
 
 -- A ring of dots with a rotating bright head.
@@ -496,7 +832,7 @@ function theme.spinner(cx: number, cy: number, radius: number, color: Color)
 	end
 end
 
-local type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "bag" | "cube" | "calendar"
+type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "bag" | "cube" | "calendar" | "search"
 
 -- Icons are shapes on a 24-unit grid, like the web UI's Hugeicons, with 2-unit strokes.
 local HALF_STROKE = 1
@@ -561,6 +897,10 @@ local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = 
 		local inner = pathDistance(px, py, { { 3.5, 7 }, { 12, 11.5 }, { 20.5, 7 } })
 		inner = math.min(inner, segmentDistance(px, py, 12, 11.5, 12, 21.5))
 		return math.min(edges, inner) - HALF_STROKE
+	end,
+	search = function(px: number, py: number): number
+		local lens = math.abs(math.sqrt((px - 11) ^ 2 + (py - 11) ^ 2) - 7)
+		return math.min(lens, segmentDistance(px, py, 16.5, 16.5, 20, 20)) - HALF_STROKE
 	end,
 	calendar = function(px: number, py: number): number
 		local d = roundRectDistance(px, py, 2.5, 3.5, 19, 18.5, 4)

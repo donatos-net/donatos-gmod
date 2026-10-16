@@ -4,6 +4,8 @@
 local log = require("utils.log")
 local async = require("utils.async")
 local state = require("utils.state")
+local items = require("ui.items")
+local shop = require("ui.shop")
 local theme = require("ui.theme")
 local views = require("ui.views")
 local widgets = require("ui.widgets")
@@ -11,15 +13,19 @@ local widgets = require("ui.widgets")
 local colors = theme.colors
 local px = theme.px
 
-type DonatosMenuTab = "shop" | "inventory" | "activeItems"
-
 local menuState = state.menu
 
-local current: {
-	tab: DonatosMenuTab;
-	category: number | nil;
-	scroll: Table<string, number>;
-} = { tab = "shop", category = nil, scroll = {} }
+local current: DonatosMenuState = {
+	tab = "shop",
+	scroll = {},
+	query = "",
+	section = nil,
+	instant = true,
+	searchEntry = nil,
+}
+
+-- The window's corner radius; the top bar and the dialog overlay follow it.
+local RADIUS = 24
 
 local lastUsedAt = RealTime()
 
@@ -69,119 +75,153 @@ local function openPayUrl(deposit: string)
 	gui.OpenURL(`${string.Replace(config.payUrl, "{id}", id)}&openDeposit=${deposit}`)
 end
 
+-- The window enters and leaves like HeroUI's modal: fading in while settling from 1.05 to 1
+-- over 250ms ease-out-quad, and out to 0.95 over 100ms.
+local windowIn = theme.tween(0)
+local closing = false
+
 local function hide()
 	markUsed()
 	local frame = getFrame()
-	if frame ~= nil then
-		frame:SetVisible(false)
+	if frame ~= nil and frame:IsVisible() and not closing then
+		closing = true
+		-- Input stays with the window for its 100ms exit: Set*InputEnabled cascades to every
+		-- child, and MakePopup turns it back on for the window alone.
+		windowIn.to(0, 0.1, "outQuad")
 	end
 end
 
+-- The selected tab's indicator, kept across top bar rebuilds so it can slide (HeroUI's tabs:
+-- 250ms ease-out-fluid).
+local indicatorX = theme.tween(0)
+local indicatorW = theme.tween(0)
+
 local render: () => void = function() end
 
-local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
-	local header = vgui.Create("DPanel", frame)
-	header:Dock(TOP)
-	header:SetTall(px(36))
-	header.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.paintGradient(w, h, px(10))
+-- The open window's dialog host, for Escape.
+local frameDialogs: DonatosUiDialogHost | nil = nil
+
+-- The gradient top bar: server, page tabs, balance with top-up, and the player.
+local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
+	local bar = vgui.Create("DPanel", frame)
+	bar:SetTall(px(60))
+	bar.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.paintGradient(w, h, px(RADIUS))
 		return true
 	end
 
 	local data = remoteData()
-	local config = state.remoteConfig.value
-	local tabs: { tab: DonatosMenuTab; label: string; icon: "bag" | "cube" | "calendar"; badge?: number }[] = {
+	-- The badge is a to-do count: items waiting to be activated.
+	local waiting = data and #data.inventoryItems or 0
+	local tabs = widgets.blankPanel(bar)
+	tabs.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(h / 2, 0, 0, w, h, colors.barTabs)
+		local inset = px(4)
+		theme.box((h - inset * 2) / 2, indicatorX.value(), inset, indicatorW.value(), h - inset * 2, colors.inverse)
+		return true
+	end
+	local tabSpecs: { tab: DonatosMenuTab; label: string; icon: DonatosIcon; badge?: number }[] = {
 		{ tab = "shop", label = "Магазин", icon = "bag" },
-		{ tab = "inventory", label = "Инвентарь", icon = "cube", badge = data and #data.inventoryItems or 0 },
-		{ tab = "activeItems", label = "Активные предметы", icon = "calendar", badge = data and #data.activeItems or 0 },
+		{ tab = "items", label = "Мои предметы", icon = "cube", badge = waiting },
 	}
-	local left: DButton[] = {}
-	for _, entry in ipairs(tabs) do
-		table.insert(left, widgets.button(header, {
-			label = entry.label,
-			icon = entry.icon,
+	local tabButtons: DButton[] = {}
+	for _, spec in ipairs(tabSpecs) do
+		local tabButton: DButton | nil = nil
+		tabButton = widgets.button(tabs, {
+			label = spec.label,
+			icon = spec.icon,
 			size = "sm",
-			variant = "tab",
-			active = current.tab == entry.tab,
-			badge = entry.badge,
-			onClick = function()
-				if current.tab ~= entry.tab then
-					current.tab = entry.tab
-					render()
+			variant = "segment",
+			active = current.tab == spec.tab,
+			badge = spec.badge,
+			selection = function(): number
+				local btn = tabButton
+				if btn == nil then
+					return 0
 				end
+				local left, right = btn:GetX(), btn:GetX() + btn:GetWide()
+				local from = indicatorX.value()
+				local covered = math.min(right, from + indicatorW.value()) - math.max(left, from)
+				return math.max(covered, 0) / math.max(btn:GetWide(), 1)
 			end,
-		}))
+			onClick = function()
+				ctx.showTab(spec.tab)
+			end,
+		})
+		table.insert(tabButtons, tabButton)
 	end
 
-	local payable = canPay()
-	local balance = widgets.button(header, {
-		label = `Бонусы: ${data and data.player.balance or 0}`,
-		size = "sm",
-		variant = "outline",
-		group = "start",
-		disabled = not payable,
-		onClick = function()
-			openPayUrl("true")
-		end,
-	})
-	local more = widgets.button(header, {
-		icon = "more",
-		size = "sm",
-		variant = "outline",
-		group = "end",
+	local wallet = widgets.blankPanel(bar)
+	local balanceText = views.formatNumber(data and data.player.balance or 0)
+	wallet.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(h / 2, 0, 0, w, h, colors.barShade)
+		local font = theme.font("medium")
+		local y = (h - theme.fontHeight(font)) / 2
+		draw.SimpleText(balanceText, font, px(14), y, colors.text)
+		draw.SimpleText("бонусов", font, px(14) + theme.textSize(`${balanceText} `, font), y, colors.textDim)
+		return true
+	end
+	local topUp = widgets.button(wallet, {
+		label = "Пополнить",
+		size = "xs",
+		variant = "light",
+		disabled = not canPay(),
 		onClick = function(btn: DButton)
-			widgets.dropdown(btn, {
-				{
-					label = "Пополнить баланс",
-					disabled = not payable,
-					onClick = function()
-						openPayUrl("true")
-					end,
-				},
-				{
-					label = "Другие способы",
-					disabled = config == nil or not config.igs.enabled,
-					onClick = function()
-						views.igsDeposit(ctx)
-					end,
-				},
-			})
+			views.topUp(ctx, btn)
 		end,
 	})
-	more:SetWide(px(28))
 
 	local ply = LocalPlayer()
-	local avatarSize = px(24)
+	local avatarSize = px(32)
 	local avatar: Panel | nil = nil
 	if IsValid(ply) then
-		local holder = widgets.avatar(header, avatarSize, ply, function(): Color[]
-			local center = (avatar and avatar:GetX() or 0) + avatarSize / 2
-			return { colors.background, theme.gradientAt(center, header:GetWide()) }
+		avatar = widgets.avatar(bar, avatarSize, ply, function(): Color[]
+			local holder = avatar
+			local center = (holder and holder:GetX() or 0) + avatarSize / 2
+			return { colors.glass, theme.gradientAt(center, bar:GetWide()) }
 		end)
-		avatar = holder
 	end
-	local close = widgets.button(header, { icon = "close", size = "icon", variant = "ghost", onClick = hide })
 
-	header.PerformLayout = function(self: Panel, w: number, h: number)
-		local x = px(8)
-		for _, btn in ipairs(left) do
-			btn:SetPos(x, (h - btn:GetTall()) / 2)
-			x = x + btn:GetWide() + px(6)
+	local close = widgets.button(bar, { icon = "close", size = "sm", variant = "shade", onClick = ctx.close })
+
+	bar.PerformLayout = function(self: Panel, w: number, h: number)
+		local x = px(12)
+		local inset = px(4)
+		local tx = inset
+		for i, btn in ipairs(tabButtons) do
+			btn:SetPos(tx, inset)
+			local spec = assert(tabSpecs[i])
+			if spec.tab == current.tab then
+				if indicatorW.target() == 0 then
+					indicatorX.set(tx)
+					indicatorW.set(btn:GetWide())
+				else
+					indicatorX.to(tx, 0.25, "outFluid")
+					indicatorW.to(btn:GetWide(), 0.25, "outFluid")
+				end
+			end
+			tx = tx + btn:GetWide()
 		end
-		local right = w - px(8)
-		right = right - close:GetWide()
+		tabs:SetPos(x, (h - px(40)) / 2)
+		tabs:SetSize(tx + inset, px(40))
+
+		local right = w - px(14) - close:GetWide()
 		close:SetPos(right, (h - close:GetTall()) / 2)
-		if avatar ~= nil then
-			right = right - px(10) - avatar:GetWide()
-			avatar:SetPos(right, (h - avatar:GetTall()) / 2)
+		right = right - px(12)
+		local holder = avatar
+		if holder ~= nil then
+			right = right - avatarSize
+			holder:SetPos(right, (h - avatarSize) / 2)
+			right = right - px(12)
 		end
-		right = right - px(10) - more:GetWide()
-		more:SetPos(right, (h - more:GetTall()) / 2)
-		right = right - balance:GetWide()
-		balance:SetPos(right, (h - balance:GetTall()) / 2)
+		local balanceWidth = px(14) + theme.textSize(`${balanceText} бонусов`, theme.font("medium")) + px(10) + topUp:GetWide() + px(4)
+		right = right - balanceWidth
+		wallet:SetPos(right, (h - px(36)) / 2)
+		wallet:SetSize(balanceWidth, px(36))
+		topUp:SetPos(balanceWidth - px(4) - topUp:GetWide(), (px(36) - topUp:GetTall()) / 2)
 	end
 
-	return header
+	return bar
 end
 
 local function create(): Panel
@@ -190,25 +230,55 @@ local function create(): Panel
 
 	local frame = vgui.Create("EditablePanel")
 	menuState.frame = frame
-	-- Half the screen, as the old DHTML menu was (its 960x540 CSS layout at 1080p and up), but
-	-- never smaller than that layout on small screens.
-	local width = math.min(math.max(math.min(ScrW() / 2, 2000), px(960)), ScrW() - 20)
-	local height = math.min(math.max(ScrH() / 2, px(540)), ScrH() - 20)
+	-- The design's 1200x680 window, scaled with the screen, inside a 20 margin on small screens.
+	local width = math.min(px(1200), ScrW() - 40)
+	local height = math.min(px(680), ScrH() - 40)
 	frame:SetSize(math.Round(width), math.Round(height))
 	frame:Center()
+	local scaled = false
 	frame.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.box(px(10), 0, 0, w, h, colors.background)
+		local t = windowIn.value()
+		theme.captureBehind("window", t)
+		theme.blur(self, w, h, px(RADIUS))
+		scaled = theme.pushScale(self, closing and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1), w / 2, h / 2)
+		theme.box(px(RADIUS), 0, 0, w, h, colors.glass)
 		return true
 	end
-
-	local dialogs = widgets.dialogHost(frame)
-	frame.PerformLayout = function(self: Panel, w: number, h: number)
-		dialogs.cover(w, h)
+	frame.PaintOver = function(self: Panel, w: number, h: number): boolean
+		theme.ring(px(RADIUS), 0, 0, w, h, colors.frameRing)
+		theme.popScale(scaled)
+		scaled = false
+		theme.coverBehind("window", self, windowIn.value())
+		return true
+	end
+	frame.Think = function(self: Panel)
+		if closing and windowIn.done() then
+			closing = false
+			self:SetVisible(false)
+		end
 	end
 
+	local dialogs = widgets.dialogHost(frame, px(RADIUS))
+	frameDialogs = dialogs
 	local header: Panel | nil = nil
 	local body: Panel | nil = nil
-	local area: DScrollPanel | nil = nil
+	local area: () => DScrollPanel | nil = function()
+		return nil
+	end
+
+	frame.PerformLayout = function(self: Panel, w: number, h: number)
+		dialogs.cover(w, h)
+		local top = 0
+		if header ~= nil and IsValid(header) then
+			header:SetPos(0, 0)
+			header:SetSize(w, px(60))
+			top = px(60)
+		end
+		if body ~= nil and IsValid(body) then
+			body:SetPos(0, top)
+			body:SetSize(w, h - top)
+		end
+	end
 
 	local ctx: DonatosMenuContext = {
 		dialogs = dialogs,
@@ -225,14 +295,29 @@ local function create(): Panel
 		rerender = function()
 			render()
 		end,
+		showTab = function(tab: DonatosMenuTab)
+			if current.tab ~= tab then
+				current.tab = tab
+				render()
+			end
+		end,
+		close = hide,
 		state = current,
 	}
 
 	-- Rebuilds the header and the current tab, keeping each tab's scroll position.
+	local renderedTab: DonatosMenuTab | nil = nil
+
+	-- Rebuilds the top bar and the current page, keeping each page's scroll position and the
+	-- search field's focus.
 	local function renderFrame()
-		if area ~= nil and IsValid(area) then
-			current.scroll[current.tab] = area:GetVBar():GetScroll()
+		local previous = area()
+		if renderedTab ~= nil and previous ~= nil and IsValid(previous) then
+			current.scroll[renderedTab] = previous:GetVBar():GetScroll()
 		end
+		local search = current.searchEntry
+		local searching = search ~= nil and IsValid(search) and search:HasFocus()
+		current.searchEntry = nil
 		if header ~= nil and IsValid(header) then
 			header:Remove()
 		end
@@ -240,25 +325,29 @@ local function create(): Panel
 			body:Remove()
 		end
 
-		header = buildHeader(frame, ctx)
+		header = buildTopBar(frame, ctx)
 		local content = widgets.blankPanel(frame)
 		body = content
-		content:Dock(FILL)
 		if current.tab == "shop" then
-			area = views.shop(content, ctx)
-		elseif current.tab == "inventory" then
-			area = views.inventory(content, ctx)
+			area = shop.shop(content, ctx)
 		else
-			area = views.activeItems(content, ctx)
+			area = items.items(content, ctx)
 		end
+		renderedTab = current.tab
 
-		local scrollArea = area
+		frame:InvalidateLayout(true)
+		content:InvalidateLayout(true)
+		local scrollArea = area()
 		local saved = current.scroll[current.tab]
 		if scrollArea ~= nil and saved ~= nil then
-			frame:InvalidateLayout(true)
-			content:InvalidateLayout(true)
 			scrollArea:InvalidateLayout(true)
 			scrollArea:GetVBar():SetScroll(saved)
+		end
+		-- The page just set it; read it back without the narrowing from the reset above.
+		local entry = current.searchEntry as DTextEntry | nil
+		if searching and entry ~= nil and IsValid(entry) then
+			entry:RequestFocus()
+			entry:SetCaretPos(#entry:GetValue())
 		end
 	end
 
@@ -271,10 +360,11 @@ local function create(): Panel
 	return frame
 end
 
+-- donatos.OpenUI and the server's openUi name the old tabs; both item tabs are «Мои предметы».
 local TABS: Table<string, DonatosMenuTab> = {
 	shop = "shop",
-	inventory = "inventory",
-	activeItems = "activeItems",
+	inventory = "items",
+	activeItems = "items",
 }
 
 local function open(tab?: string): Panel
@@ -291,12 +381,21 @@ local function open(tab?: string): Panel
 	end
 
 	local frame = getFrame()
+	local entering = frame == nil or closing or not frame:IsVisible()
 	if frame == nil then
 		frame = create()
 	else
 		render()
 	end
 
+	if entering then
+		-- Reopened mid-exit, it turns back from where it is.
+		if not closing then
+			windowIn.set(0)
+		end
+		closing = false
+		windowIn.to(1, 0.25, "outQuad")
+	end
 	frame:SetVisible(true)
 	frame:MakePopup()
 	return frame
@@ -331,14 +430,24 @@ hook.Add("GUIMousePressed", state.hookId("menu"), function()
 	hide()
 end)
 
--- Escape closes the menu instead of opening the pause menu.
+-- Escape closes the topmost layer instead of opening the pause menu: a dropdown, then a
+-- dialog, then the menu itself.
 hook.Add("OnPauseMenuShow", state.hookId("menu"), function(): boolean | nil
 	local frame = getFrame()
-	if frame ~= nil and frame:IsVisible() then
-		hide()
+	if frame == nil or not frame:IsVisible() then
+		return nil
+	elseif closing then
 		return false
 	end
-	return nil
+	local dialogs = frameDialogs
+	if widgets.closeDropdown() then
+		return false
+	elseif dialogs ~= nil and dialogs.isOpen() then
+		dialogs.close()
+		return false
+	end
+	hide()
+	return false
 end)
 
 hook.Add("OnScreenSizeChanged", state.hookId("menu"), function()

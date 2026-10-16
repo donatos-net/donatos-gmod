@@ -25,11 +25,12 @@ donatos-gmod/
 │       │   ├── donatos/          # Net handlers, API calls, releases, remote updates
 │       │   ├── player/           # Player objects (shared + server methods)
 │       │   ├── ui/               # VGUI menu (client only)
-│       │   │   ├── theme.tlua    # Colours, fonts, scale, rounded boxes, icons
-│       │   │   ├── widgets.tlua  # Layout blocks, buttons, cards, dropdowns, dialogs
-│       │   │   ├── views.tlua    # Shop / inventory / active items tabs and their dialogs
-│       │   │   └── menu.tlua     # Window, header, tabs; open / refresh
-│       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
+│       │   │   ├── theme.tlua    # HeroUI v3 colours, fonts, scale, rounded boxes, blur, icons
+│       │   │   ├── widgets.tlua  # Layout blocks, pill buttons, chips, switch, search, dialogs
+│       │   │   ├── views.tlua    # Page context, formatting, page header, empty states, top-up
+│       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog
+│       │   │   ├── items.tlua    # «Мои предметы»: active + inventory items, gift / freeze
+│       │   │   └── menu.tlua     # Window, gradient top bar, pages; open / refresh
 │       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
 │       │   └── main.tlua, client.tlua, server.tlua  # Entry points
 │       ├── tluaconfig.json
@@ -47,7 +48,7 @@ donatos-gmod/
 
 ### Menu
 - GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DScrollPanel` / `DMenu` / `DTextEntry`,
-  all painted by `ui/theme.tlua` helpers (a dark shadcn-style look)
+  all painted by `ui/theme.tlua` helpers (HeroUI v3's dark theme over a blurred glass window)
 - Bun package manager for the tooling
 
 ## Key Runtime Flows
@@ -76,9 +77,15 @@ that reinstall the addon.
 - Entry: `lua/main/src/ui/menu.tlua` (`open(tab)`, `refresh()`); opened by the `donatos`
   console command, the menu key (`config.menuKeyBind`, F6 by default), the context-menu
   desktop icon, `donatos.OpenUI(tab)` and the server's `openUi` net message.
-- The frame is built once and kept hidden between uses (removed after 5 idle minutes, or
-  rebuilt on every open when `donatos.dev.enabled`). Each render rebuilds the header and the
-  current tab from state; scroll position is kept per tab.
+- The frame (1200x680 design pixels, scaled) is built once and kept hidden between uses
+  (removed after 5 idle minutes, or rebuilt on every open when `donatos.dev.enabled`). Each
+  render rebuilds the top bar and the current page from state; scroll position is kept per
+  page, and the search field keeps its text and focus.
+- Two pages: the shop (every good in its category's section, 4 card columns, a chip bar that
+  jumps between sections and follows the scroll, search) and «Мои предметы» (active and
+  inventory items). The old `inventory` / `activeItems` tab names open «Мои предметы».
+- A card opens the item dialog: description on the left, purchase on the right, with the
+  "Активировать сразу" switch (purchase, then `activateItem`).
 - Layout uses blocks (`{ panel, layout(width) -> height }`) from `widgets.tlua` rather than
   docking, so cards and wrapped text size to the available width.
 - Dialogs (`widgets.dialogHost`) sit over the frame; actions answer through net callbacks.
@@ -137,7 +144,7 @@ bun run build
 1. Keep contract updates synchronized across:
 - `lua/main/src/donatos.d.tlua` (API payloads, `DonatosServerActions`, `DonatosClientMessages`)
 - Lua net handlers (`lua/main/src/donatos/net/server.tlua`, `net/client.tlua`)
-- The menu views that call them (`lua/main/src/ui/views.tlua`)
+- The menu pages that call them (`lua/main/src/ui/shop.tlua`, `items.tlua`)
 
 2. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
 map in `lua/main/src/donatos/net/server.tlua`.

@@ -280,6 +280,8 @@ interface DTextEntry {
 -- Created by garrysmod/lua/vgui/dvscrollbar.lua; not documented on the wiki.
 interface DVScrollBar {
 	btnGrip: DScrollBarGrip;
+	-- Set while the grip is held.
+	Dragging?: boolean;
 }
 
 -- https://wiki.facepunch.com/gmod/utf8.charpattern

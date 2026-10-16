@@ -1,0 +1,815 @@
+-- Client: the shop page. Every good is shown, grouped into its category's section; a bar of
+-- category chips jumps between sections and follows the scroll, and search filters as you
+-- type. A card opens the item dialog, where the purchase happens.
+
+local netMessage = require("donatos.net")
+local theme = require("ui.theme")
+local views = require("ui.views")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+local type Good = DonatosRemoteConfig["goods"][number]
+
+local type ShopSection = { id: number; name: string; goods: Good[]; hits: Good[] }
+
+-- Goods without a category, collected into a last "Другое" section.
+local OTHER_SECTION = -1
+
+-- Card descriptions are cut to this many characters, on a word boundary, then to two lines.
+local SHORT_DESCRIPTION = 80
+
+local PURCHASE_ERROR = "Не удалось выполнить покупку. Попробуйте еще раз."
+
+local function goodSections(config: DonatosRemoteConfig): ShopSection[]
+	local sections: ShopSection[] = {}
+	local byId: Table<number, ShopSection> = {}
+	for _, category in ipairs(config.goodsCategories) do
+		local section: ShopSection = { id = category.id, name = category.name, goods = {}, hits = {} }
+		table.insert(sections, section)
+		byId[category.id] = section
+	end
+	local other: ShopSection = { id = OTHER_SECTION, name = "Другое", goods = {}, hits = {} }
+	table.insert(sections, other)
+	for _, good in ipairs(config.goods) do
+		local categoryId = good.categoryId
+		local section = categoryId ~= nil and byId[categoryId] or other
+		table.insert(section.goods, good)
+	end
+	local filled: ShopSection[] = {}
+	for _, section in ipairs(sections) do
+		if #section.goods > 0 then
+			table.insert(filled, section)
+		end
+	end
+	return filled
+end
+
+local function matches(good: Good, query: string): boolean
+	if query == "" then
+		return true
+	end
+	local haystack = views.lower(`${good.name} ${good.description or ""}`)
+	return string.find(haystack, query, 1, true) ~= nil
+end
+
+-- One line of plain text, at most SHORT_DESCRIPTION characters, cut on a word boundary.
+local function shortDescription(raw?: string): string
+	if raw == nil then
+		return ""
+	end
+	local flat = string.Trim((string.gsub((string.gsub(raw, "•%s*", "")), "%s+", " ")))
+	if (utf8.len(flat) or #flat) <= SHORT_DESCRIPTION then
+		return flat
+	end
+	local cut = string.sub(flat, 1, (utf8.offset(flat, SHORT_DESCRIPTION + 1) or #flat + 1) - 1)
+	local lastSpace = string.find(string.reverse(cut), " ", 1, true)
+	if lastSpace ~= nil then
+		cut = string.sub(cut, 1, #cut - lastSpace)
+	end
+	return `${(string.gsub(cut, "[,.;:]$", ""))}…`
+end
+
+-- What the player already has of `good`: an active item (matched by key) or one waiting in
+-- the inventory.
+local function goodStatus(ctx: DonatosMenuContext, good: Good): (string | nil, Color)
+	local data = ctx.data()
+	if data == nil then
+		return nil, colors.muted
+	end
+	for _, item in ipairs(data.activeItems) do
+		if item.goods.key == good.key then
+			if item.isFrozen then
+				return "Заморожено", colors.muted
+			end
+			local expires = item.expires
+			if expires ~= nil then
+				return `Активно · ${views.formatRemaining(expires.inS)}`, colors.success
+			end
+			return "Активно", colors.success
+		end
+	end
+	for _, item in ipairs(data.inventoryItems) do
+		if item.goodsId == good.id then
+			return "В инвентаре", colors.muted
+		end
+	end
+	return nil, colors.muted
+end
+
+------------------------------------------------------------------------------ item dialog
+
+local function purchaseDone(ctx: DonatosMenuContext, name: string, activated: boolean)
+	ctx.dialogs.show({
+		title = "Покупка совершена",
+		description = activated and `«${name}» активирован.` or `«${name}» ждёт активации в «Мои предметы».`,
+		actions = {
+			{
+				label = "Мои предметы",
+				variant = "secondary",
+				onClick = function()
+					ctx.dialogs.close()
+					ctx.showTab("items")
+				end,
+			},
+			{ label = "Готово", onClick = ctx.dialogs.close },
+		},
+	})
+end
+
+local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: string)
+	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
+		local variants = good.variants or {}
+		local selected: DonatosGoodsVariant | nil = variants[1]
+		local errorText: string | nil = nil
+
+		local function balance(): number | nil
+			local data = ctx.data()
+			return data and data.player.balance
+		end
+		-- How much the player is short of the selected price (0 when unknown or enough).
+		local function missing(): number
+			local current = balance()
+			if selected == nil or current == nil then
+				return 0
+			end
+			return math.max(selected.price - current, 0)
+		end
+
+		local box = vgui.Create("DPanel", parent)
+		box.Paint = function(self: Panel, w: number, h: number): boolean
+			theme.box(px(28), 0, 0, w, h, colors.surface)
+			theme.ring(px(28), 0, 0, w, h, colors.frameRing)
+			return true
+		end
+		-- Clicks inside the dialog must not reach the overlay, which closes it.
+		box.OnMousePressed = function(self: Panel, keyCode: number): boolean
+			return true
+		end
+
+		------------------------------------------------------------------ left column
+
+		local chips = widgets.painted(box, px(20), function(w: number, h: number)
+			local x = widgets.chip(sectionName, 0, 0, colors.default, colors.text) + px(6)
+			local duration = selected and selected.duration
+			if selected ~= nil then
+				local label = views.formatDaysLong(duration)
+				local permanent = duration == nil or duration == 0
+				widgets.chip(label, x, 0, permanent and colors.successSoft or colors.accentSoft, permanent and colors.success or colors.accentText)
+			end
+		end)
+		local name = widgets.text(box, { text = good.name, font = theme.font("dialogTitle"), color = colors.text, lineHeight = 32 })
+
+		local description = good.description
+		local hasDescription = description ~= nil and string.Trim(description) ~= ""
+		local descriptionBlock: DonatosUiBlock | nil = nil
+		local descriptionArea = widgets.scroll(box, function(canvas: Panel): DonatosUiBlock
+			local block = widgets.text(canvas, {
+				text = hasDescription and string.Trim(description or "") or "Описание не задано.",
+				font = theme.font("reading"),
+				color = hasDescription and colors.textSoft or colors.muted,
+				lineHeight = 23,
+			})
+			descriptionBlock = block
+			return block
+		end)
+		-- Fades the description out at the bottom while there is more to scroll to.
+		local fade = widgets.blankPanel(box)
+		fade:SetMouseInputEnabled(false)
+		fade.Paint = function(self: Panel, w: number, h: number): boolean
+			local canvas = descriptionArea:GetCanvas()
+			local hidden = canvas:GetTall() - descriptionArea:GetTall() - descriptionArea:GetVBar():GetScroll()
+			if hidden <= 1 then
+				return true
+			end
+			local strip = math.max(px(2), 2)
+			for y = 0, h - 1, strip do
+				surface.SetDrawColor(theme.fade(colors.surface, y / h))
+				surface.DrawRect(0, y, w, strip)
+			end
+			return true
+		end
+
+		------------------------------------------------------------------ purchase panel
+
+		local aside = vgui.Create("DPanel", box)
+		aside.Paint = function(self: Panel, w: number, h: number): boolean
+			theme.box(px(22), 0, 0, w, h, colors.panel)
+			return true
+		end
+
+		local heading = widgets.painted(aside, px(32), function(w: number, h: number)
+			draw.SimpleText("Покупка", theme.font("cardTitle"), 0, h / 2, colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		end)
+		local close = widgets.button(aside, { icon = "close", size = "sm", variant = "secondary", onClick = ctx.dialogs.close })
+
+		local variantPicker: DonatosUiBlock | nil = nil
+		if #variants > 1 then
+			local options: DonatosUiButton[] = {}
+			local buttons: Panel[] = {}
+			for _, variant in ipairs(variants) do
+				local option: DonatosUiButton = {
+					label = `${views.formatDays(variant.duration)} · ${views.formatNumber(variant.price)}`,
+					size = "sm",
+					variant = variant == selected and "soft" or "secondary",
+				}
+				option.onClick = function()
+					selected = variant
+					errorText = nil
+					for i, other in ipairs(options) do
+						other.variant = variants[i] == variant and "soft" or "secondary"
+					end
+					relayout()
+				end
+				table.insert(options, option)
+				table.insert(buttons, widgets.button(aside, option))
+			end
+			variantPicker = widgets.flow(aside, px(6), 0, buttons)
+		end
+
+		local price = widgets.painted(aside, px(40), function(w: number, h: number)
+			local priceFont = theme.font("priceLarge")
+			local text = selected ~= nil and views.formatNumber(selected.price) or "—"
+			local y = (h - theme.fontHeight(priceFont)) / 2
+			draw.SimpleText(text, priceFont, 0, y, colors.text)
+			if selected ~= nil then
+				local unitFont = theme.font("reading")
+				draw.SimpleText("бонусов", unitFont, theme.textSize(text, priceFont) + px(6), theme.baseline(y, priceFont, unitFont), colors.muted)
+			end
+		end)
+
+		-- One line under the price: what the balance comes to, or how much is missing. The
+		-- balance itself is in the top bar.
+		local summary = widgets.painted(aside, px(20), function(w: number, h: number)
+			local current = balance()
+			if current == nil or selected == nil then
+				return
+			end
+			local font = theme.font("body")
+			local y = (h - theme.fontHeight(font)) / 2
+			local short = missing()
+			if short > 0 then
+				draw.SimpleText(`Не хватает ${views.formatNumber(short)} бонусов`, font, 0, y, colors.danger)
+			else
+				draw.SimpleText(`После покупки останется ${views.formatNumber(current - selected.price)}`, font, 0, y, colors.muted)
+			end
+		end)
+
+		local instant = widgets.switch(aside, {
+			on = ctx.state.instant,
+			label = "Активировать сразу",
+			hint = "Иначе предмет будет ждать в «Мои предметы», его можно подарить",
+			onChange = function(on: boolean)
+				ctx.state.instant = on
+			end,
+		})
+
+		local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger, lineHeight = 18 }
+		local errorBlock = widgets.text(aside, errorOptions)
+
+		local buy: DonatosUiButton = { label = "", size = "lg" }
+		local cancel: DonatosUiButton = { label = "Отмена", size = "lg", variant = "secondary", onClick = ctx.dialogs.close }
+		local buyButton = widgets.button(aside, buy)
+		local actions = widgets.column(aside, px(8), { buyButton, widgets.button(aside, cancel) })
+
+		local function syncBuy()
+			local short = missing()
+			if selected == nil then
+				buy.label = "Недоступно для покупки"
+				buy.disabled = true
+			elseif short > 0 then
+				buy.label = `Пополнить на ${views.formatNumber(short)} бонусов`
+				buy.disabled = not ctx.canPay()
+			else
+				buy.label = `Купить за ${views.formatNumber(selected.price)} бонусов`
+				buy.disabled = false
+			end
+		end
+		syncBuy()
+		buyButton.Think = function(self: DButton)
+			syncBuy()
+		end
+
+		local function fail(message: string)
+			buy.pending = false
+			cancel.disabled = false
+			errorText = message
+			relayout()
+		end
+
+		buy.onClick = function(btn: DButton)
+			local variant = selected
+			if variant == nil then
+				return
+			end
+			local short = missing()
+			if short > 0 then
+				views.topUp(ctx, btn, tostring(short))
+				return
+			end
+			errorText = nil
+			buy.pending = true
+			cancel.disabled = true
+			relayout()
+			netMessage.toServer("purchaseGoods", { goodsId = good.id, variantId = variant.id }, function(result)
+				if not result.success then
+					fail(result.error ~= "" and result.error or PURCHASE_ERROR)
+					return
+				end
+				local goodsName = result.data.goods.name
+				if not ctx.state.instant then
+					purchaseDone(ctx, goodsName, false)
+					return
+				end
+				netMessage.toServer("activateItem", { id = result.data.item.id }, function(activation)
+					if activation.success then
+						purchaseDone(ctx, goodsName, true)
+					else
+						views.showError(ctx, `«${goodsName}» куплен, но не активирован: ${activation.error ~= "" and activation.error or "попробуйте позже"}. Он ждёт в «Мои предметы».`)
+					end
+				end)
+			end)
+		end
+
+		------------------------------------------------------------------ layout
+
+		local ASIDE_WIDTH = px(300)
+
+		-- Lays out the purchase panel at `width`; returns its natural height.
+		local function layoutAside(width: number, height?: number): number
+			local padX = px(18)
+			local inner = width - padX * 2
+			local y = px(16)
+			heading.panel:SetPos(padX, y)
+			heading.panel:SetSize(inner, px(32))
+			close:SetPos(width - padX - close:GetWide() + px(6), y)
+			y = y + px(32) + px(16)
+			local picker = variantPicker
+			if picker ~= nil then
+				local ph = picker.layout(inner)
+				picker.panel:SetPos(padX, y)
+				picker.panel:SetSize(inner, ph)
+				y = y + ph + px(16)
+			end
+			price.panel:SetPos(padX, y)
+			price.panel:SetSize(inner, px(40))
+			y = y + px(40) + px(4)
+			summary.panel:SetPos(padX, y)
+			summary.panel:SetSize(inner, px(20))
+			y = y + px(20) + px(20)
+			local sh = instant.layout(inner)
+			instant.panel:SetPos(padX, y)
+			instant.panel:SetSize(inner, sh)
+			y = y + sh + px(16)
+
+			local message = errorText
+			local eh = 0
+			errorBlock.panel:SetVisible(message ~= nil)
+			if message ~= nil then
+				errorOptions.text = message
+				eh = errorBlock.layout(inner)
+			end
+			local ah = actions.layout(inner)
+			local natural = y + px(4) + (eh > 0 and eh + px(8) or 0) + ah + px(18)
+			local bottom = math.max(height or natural, natural) - px(18)
+			actions.panel:SetPos(padX, bottom - ah)
+			actions.panel:SetSize(inner, ah)
+			if eh > 0 then
+				errorBlock.panel:SetPos(padX, bottom - ah - px(8) - eh)
+				errorBlock.panel:SetSize(inner, eh)
+			end
+			return natural
+		end
+
+		return {
+			panel = box,
+			place = function(areaWidth: number, areaHeight: number)
+				local w = math.min(px(820), areaWidth - px(32))
+				local pad, gap = px(8), px(8)
+				local leftWidth = w - pad * 2 - gap - ASIDE_WIDTH
+				local leftInner = leftWidth - px(18) - px(12)
+
+				local nameHeight = name.layout(leftInner)
+				local block = descriptionBlock
+				local descriptionHeight = block ~= nil and block.layout(leftInner - px(8)) or 0
+				local header = px(20) + px(10) + nameHeight
+				local leftNatural = px(18) + header + px(16) + descriptionHeight + px(18)
+				local asideNatural = layoutAside(ASIDE_WIDTH)
+				local maxHeight = math.min(px(632), areaHeight - px(32))
+				local h = math.min(math.max(leftNatural, asideNatural) + pad * 2, maxHeight)
+
+				box:SetSize(w, h)
+				box:SetPos((areaWidth - w) / 2, (areaHeight - h) / 2)
+
+				local x, y = pad + px(18), pad + px(18)
+				chips.panel:SetPos(x, y)
+				chips.panel:SetSize(leftInner, px(20))
+				name.panel:SetPos(x, y + px(30))
+				name.panel:SetSize(leftInner, nameHeight)
+				local top = y + header + px(16)
+				local areaHeightLeft = math.max(h - pad - px(18) - top, px(40))
+				descriptionArea:SetPos(x, top)
+				descriptionArea:SetSize(leftInner + px(8), areaHeightLeft)
+				descriptionArea:InvalidateLayout(true)
+				fade:SetPos(x, top + areaHeightLeft - px(28))
+				fade:SetSize(leftInner, px(28))
+
+				aside:SetPos(w - pad - ASIDE_WIDTH, pad)
+				aside:SetSize(ASIDE_WIDTH, h - pad * 2)
+				layoutAside(ASIDE_WIDTH, h - pad * 2)
+			end,
+		}
+	end)
+end
+
+------------------------------------------------------------------------------ cards
+
+local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sectionName: string): DonatosUiBlock
+	local card = vgui.Create("DButton", parent) as DButton
+	card:SetText("")
+	local variants = good.variants or {}
+	local first = variants[1]
+	local priceText = first ~= nil and `${#variants > 1 and "от " or ""}${views.formatNumber(first.price)}` or "—"
+	local duration = first and first.duration
+	local chipText = #variants == 1 and duration ~= nil and duration > 0 and views.formatDays(duration) or nil
+	local description = shortDescription(good.description)
+	local status, statusColor = goodStatus(ctx, good)
+	local nameLines: string[] = {}
+	local descriptionLines: string[] = {}
+
+	local padX, padY = px(18), px(16)
+	local nameFont = theme.font("cardTitle")
+	local smallFont = theme.font("small")
+
+	-- Background 150ms ease and ring 150ms ease-out on hover; pressed, the card scales to 0.97
+	-- over 250ms, as HeroUI's pressable surfaces do.
+	local hover = theme.tween(0)
+	local ring = theme.tween(0)
+	local press = theme.tween(1)
+
+	local function paintCard(self: DButton, w: number, h: number)
+		theme.box(px(20), 0, 0, w, h, theme.mix(colors.surface, colors.surfaceHover, hover.value()) or colors.surface)
+		local ringColor = theme.mix(nil, colors.surfaceRing, ring.value())
+		if ringColor ~= nil then
+			theme.ring(px(20), 0, 0, w, h, ringColor)
+		end
+
+		local lineHeight = px(22)
+		local nameHeight = theme.fontHeight(nameFont)
+		for i, line in ipairs(nameLines) do
+			draw.SimpleText(line, nameFont, padX, padY + (i - 1) * lineHeight + (lineHeight - nameHeight) / 2, colors.text)
+		end
+		if chipText ~= nil then
+			widgets.chip(chipText, w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2, colors.accentSoft, colors.accentText)
+		end
+
+		local y = padY + #nameLines * lineHeight + px(10)
+		local smallHeight = theme.fontHeight(smallFont)
+		for i, line in ipairs(descriptionLines) do
+			draw.SimpleText(line, smallFont, padX, y + (i - 1) * px(19) + (px(19) - smallHeight) / 2, colors.muted)
+		end
+
+		local priceFont = theme.font("price")
+		local unitFont = theme.font("smallMedium")
+		local statusFont = theme.font("chip")
+		local priceY = h - padY - px(28) + (px(28) - theme.fontHeight(priceFont)) / 2
+		draw.SimpleText(priceText, priceFont, padX, priceY, colors.text)
+		if first ~= nil then
+			draw.SimpleText("бонусов", unitFont, padX + theme.textSize(priceText, priceFont) + px(5), theme.baseline(priceY, priceFont, unitFont), colors.muted)
+		end
+		if status ~= nil then
+			draw.SimpleText(status, statusFont, w - padX, theme.baseline(priceY, priceFont, statusFont), statusColor, TEXT_ALIGN_RIGHT)
+		end
+	end
+
+	card.Paint = function(self: DButton, w: number, h: number): boolean
+		local hovered = self:IsHovered()
+		hover.to(hovered and 1 or 0, 0.15, "smooth")
+		ring.to(hovered and 1 or 0, 0.15, "out")
+		press.to(self:IsDown() and 0.97 or 1, 0.25, "smooth")
+		local scaled = theme.pushScale(self, press.value(), w / 2, h / 2)
+		paintCard(self, w, h)
+		theme.popScale(scaled)
+		return true
+	end
+	card.DoClick = function(self: DButton)
+		itemDialog(ctx, good, sectionName)
+	end
+
+	return {
+		panel = card,
+		layout = function(width: number): number
+			local inner = width - padX * 2
+			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText) + px(8) or 0
+			nameLines = theme.clamp(good.name, nameFont, inner - chipSpace, 2)
+			descriptionLines = description ~= "" and theme.clamp(description, smallFont, inner, 2) or {}
+			local descriptionHeight = #descriptionLines > 0 and px(38) + px(10) or 0
+			return padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY
+		end,
+	}
+end
+
+local function sectionHeading(parent: Panel, name: string, count: number): DonatosUiBlock
+	return widgets.painted(parent, px(24), function(w: number, h: number)
+		local font = theme.font("section")
+		local countFont = theme.font("small")
+		local y = (h - theme.fontHeight(font)) / 2
+		draw.SimpleText(name, font, 0, y, colors.text)
+		draw.SimpleText(tostring(count), countFont, theme.textSize(name, font) + px(8), theme.baseline(y, font, countFont), colors.muted)
+	end)
+end
+
+------------------------------------------------------------------------------ category bar
+
+interface CategoryChip {
+	section: ShopSection;
+	count: number;
+	dim: boolean;
+}
+
+local function chipMetrics(chipSpec: CategoryChip): number
+	local labelWidth = theme.textSize(chipSpec.section.name, theme.font("medium"))
+	local countWidth = theme.textSize(tostring(chipSpec.count), theme.font("chip"))
+	return px(14) + labelWidth + px(6) + countWidth + px(12)
+end
+
+-- The chip row under the page header. Chips that don't fit go into a final "Ещё" dropdown.
+local function categoryBar(parent: Panel, ctx: DonatosMenuContext, chips: CategoryChip[], jump: (section: ShopSection) => void): Panel
+	local bar = widgets.blankPanel(parent)
+	bar.Paint = function(self: Panel, w: number, h: number): boolean
+		surface.SetDrawColor(colors.group)
+		surface.DrawRect(0, h - 1, w, 1)
+		return true
+	end
+
+	local buttons: DButton[] = {}
+	for _, spec in ipairs(chips) do
+		local chipButton = vgui.Create("DButton", bar) as DButton
+		chipButton:SetText("")
+		chipButton:SetSize(chipMetrics(spec), px(32))
+		-- Colours follow the current section and the hover over 150ms ease.
+		local activeTween = theme.tween(ctx.state.section == spec.section.id and 1 or 0)
+		local hoverTween = theme.tween(0)
+		chipButton.Paint = function(self: DButton, w: number, h: number): boolean
+			activeTween.to((not spec.dim and ctx.state.section == spec.section.id) and 1 or 0, 0.15, "smooth")
+			hoverTween.to((self:IsHovered() and not spec.dim) and 1 or 0, 0.15, "smooth")
+			local a = activeTween.value()
+			local idle = theme.mix(colors.group, colors.default, hoverTween.value()) or colors.group
+			local fill = theme.mix(idle, colors.inverse, a) or idle
+			local ink = theme.mix(colors.textSoft, colors.inverseText, a) or colors.textSoft
+			local countInk = theme.mix(colors.faint, colors.inverseMuted, a) or colors.faint
+			local alpha = spec.dim and 0.4 or 1
+			theme.box(h / 2, 0, 0, w, h, theme.fade(fill, alpha))
+			local font = theme.font("medium")
+			local countFont = theme.font("chip")
+			local y = (h - theme.fontHeight(font)) / 2
+			draw.SimpleText(spec.section.name, font, px(14), y, theme.fade(ink, alpha))
+			local countX = px(14) + theme.textSize(spec.section.name, font) + px(6)
+			draw.SimpleText(tostring(spec.count), countFont, countX, theme.baseline(y, font, countFont), theme.fade(countInk, alpha))
+			return true
+		end
+		chipButton.DoClick = function(self: DButton)
+			if not spec.dim then
+				jump(spec.section)
+			end
+		end
+		table.insert(buttons, chipButton)
+	end
+
+	local more = widgets.button(bar, { label = "Ещё", icon = "chevronDown", size = "sm", variant = "secondary" })
+	more:SetVisible(false)
+	local hidden: CategoryChip[] = {}
+	more.DoClick = function(self: DButton)
+		local entries: DonatosUiMenuItem[] = {}
+		for _, spec in ipairs(hidden) do
+			table.insert(entries, {
+				label = `${spec.section.name} · ${spec.count}`,
+				disabled = spec.dim,
+				onClick = function()
+					jump(spec.section)
+				end,
+			})
+		end
+		widgets.dropdown(self, entries, nil, true)
+	end
+
+	bar.PerformLayout = function(self: Panel, w: number, h: number)
+		local padX, gap = px(24), px(6)
+		local available = w - padX * 2
+		local total = 0
+		for i, btn in ipairs(buttons) do
+			total = total + btn:GetWide() + (i > 1 and gap or 0)
+		end
+		local overflow = total > available
+		local limit = overflow and available - more:GetWide() - gap or available
+		hidden = {}
+		local x = padX
+		for i, btn in ipairs(buttons) do
+			local fits = x + btn:GetWide() <= padX + limit and #hidden == 0
+			btn:SetVisible(fits)
+			if fits then
+				btn:SetPos(x, (h - 1 - btn:GetTall()) / 2)
+				x = x + btn:GetWide() + gap
+			else
+				table.insert(hidden, assert(chips[i]))
+			end
+		end
+		more:SetVisible(#hidden > 0)
+		more:SetPos(x, (h - 1 - more:GetTall()) / 2)
+	end
+	return bar
+end
+
+------------------------------------------------------------------------------ page
+
+-- Builds the shop into `parent`; returns a getter for its current scroll area (search
+-- rebuilds it).
+local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+	local config = ctx.config()
+	if config == nil then
+		local spinner = views.loading(parent)
+		spinner:Dock(FILL)
+		return function()
+			return nil
+		end
+	end
+
+	local sections = goodSections(config)
+	local area: DScrollPanel | nil = nil
+
+	local build: () => void = function() end
+	local field, entry = widgets.searchField(parent, "Поиск по всем товарам", function(value: string)
+		ctx.state.query = value
+		ctx.state.section = nil
+		build()
+	end)
+	field:SetWide(px(280))
+	entry:SetValue(ctx.state.query)
+	ctx.state.searchEntry = entry
+
+	local header = views.pageHeader(parent, function(): string
+		return string.Trim(ctx.state.query) ~= "" and "Результаты поиска" or "Магазин"
+	end, { field })
+
+	local bar: Panel | nil = nil
+	local list = widgets.blankPanel(parent)
+
+	-- Scrolls to `section`; the bar shows it as current until the user scrolls elsewhere.
+	local pinned: { id: number; scroll: number; till: number } | nil = nil
+	local sectionPanels: Table<number, Panel> = {}
+
+	local function jump(section: ShopSection)
+		ctx.state.section = section.id
+		local scrollArea = area
+		local target = sectionPanels[section.id]
+		if scrollArea == nil or not IsValid(scrollArea) or target == nil then
+			return
+		end
+		local maxScroll = math.max(scrollArea:GetCanvas():GetTall() - scrollArea:GetTall(), 0)
+		local scrollTo = math.Clamp(target:GetY() - px(16), 0, maxScroll)
+		pinned = { id = section.id, scroll = scrollTo, till = RealTime() + 0.4 }
+		scrollArea:GetVBar():AnimateTo(scrollTo, 0.3, 0, -1)
+	end
+
+	build = function()
+		local query = views.lower(string.Trim(ctx.state.query))
+		local total = 0
+		for _, section in ipairs(sections) do
+			section.hits = {}
+			for _, good in ipairs(section.goods) do
+				if matches(good, query) then
+					table.insert(section.hits, good)
+				end
+			end
+			total = total + #section.hits
+		end
+
+		local visible: ShopSection[] = {}
+		for _, section in ipairs(sections) do
+			if #section.hits > 0 then
+				table.insert(visible, section)
+			end
+		end
+		local first = visible[1]
+		local currentVisible = false
+		for _, section in ipairs(visible) do
+			currentVisible = currentVisible or section.id == ctx.state.section
+		end
+		if not currentVisible then
+			ctx.state.section = first ~= nil and first.id or nil
+		end
+
+		local oldBar = bar
+		if oldBar ~= nil and IsValid(oldBar) then
+			oldBar:Remove()
+		end
+		bar = nil
+		if #sections > 1 then
+			local chips: CategoryChip[] = {}
+			for _, section in ipairs(sections) do
+				table.insert(chips, { section = section, count = #section.hits, dim = #section.hits == 0 })
+			end
+			bar = categoryBar(parent, ctx, chips, jump)
+		end
+
+		list:Clear()
+		area = nil
+		sectionPanels = {}
+		pinned = nil
+
+		if #sections == 0 then
+			views.emptyState(list, {
+				icon = "bag",
+				title = "Магазин пока пуст",
+				text = "Администратор сервера ещё не добавил товары.",
+			}):Dock(FILL)
+		elseif total == 0 then
+			views.emptyState(list, {
+				icon = "search",
+				title = "Ничего не найдено",
+				text = `По запросу «${string.Trim(ctx.state.query)}» товаров нет. Попробуйте другое слово.`,
+				action = {
+					label = "Сбросить поиск",
+					variant = "secondary",
+					onClick = function()
+						entry:SetValue("")
+						entry:OnChange()
+					end,
+				},
+			}):Dock(FILL)
+		else
+			local scrollArea = widgets.scroll(list, function(canvas: Panel): DonatosUiBlock
+				local content, addSection = widgets.stack(canvas, px(16), px(24), px(16))
+				for _, section in ipairs(visible) do
+					local block, add = widgets.stack(content.panel, px(12))
+					add(sectionHeading(block.panel, section.name, #section.hits))
+					local cards, addCard = widgets.grid(block.panel, 4, px(12))
+					for _, good in ipairs(section.hits) do
+						addCard(goodCard(cards.panel, ctx, good, section.name))
+					end
+					add(cards)
+					addSection(block)
+					sectionPanels[section.id] = block.panel
+				end
+				return content
+			end)
+			scrollArea:Dock(FILL)
+			area = scrollArea
+
+			-- Follows the scroll: the current section is the last one whose top has passed
+			-- near the top of the area, or the last one at the very bottom.
+			scrollArea.Think = function(self: DScrollPanel)
+				local scroll = self:GetVBar():GetScroll()
+				local pin = pinned
+				if pin ~= nil then
+					if RealTime() < pin.till or math.abs(scroll - pin.scroll) < 2 then
+						ctx.state.section = pin.id
+						return
+					end
+					pinned = nil
+				end
+				local current = first ~= nil and first.id or nil
+				for _, section in ipairs(visible) do
+					local panel = sectionPanels[section.id]
+					if panel ~= nil and panel:GetY() - scroll <= px(48) then
+						current = section.id
+					end
+				end
+				local maxScroll = self:GetCanvas():GetTall() - self:GetTall()
+				local last = visible[#visible]
+				if maxScroll > 0 and scroll >= maxScroll - 1 and last ~= nil then
+					current = last.id
+				end
+				ctx.state.section = current
+			end
+		end
+		parent:InvalidateLayout()
+	end
+
+	parent.PerformLayout = function(self: Panel, w: number, h: number)
+		local padX, top = px(24), px(20)
+		header:SetPos(padX, top)
+		header:SetSize(w - padX * 2, px(36))
+		local y = top + px(36) + px(10)
+		local currentBar = bar
+		if currentBar ~= nil and IsValid(currentBar) then
+			currentBar:SetPos(0, y)
+			currentBar:SetSize(w, px(52))
+			y = y + px(52)
+		else
+			y = y + px(6)
+		end
+		list:SetPos(0, y)
+		list:SetSize(w, h - y)
+	end
+
+	build()
+	return function(): DScrollPanel | nil
+		return area
+	end
+end
+
+return {
+	shop = shop,
+}

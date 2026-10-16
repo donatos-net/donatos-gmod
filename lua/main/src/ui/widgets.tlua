@@ -1,7 +1,7 @@
 -- Client: the menu's building blocks. A block is a panel that lays itself out for a given
--- width and reports the height it needs; containers (stack, grid, card) compose blocks.
+-- width and reports the height it needs; containers (stack, grid) compose blocks.
 -- Option tables passed to widgets stay live: painting reads them every frame, so changing
--- `options.pending` or `options.variant` updates the widget in place.
+-- `options.pending` or `options.label` updates the widget in place.
 
 local theme = require("ui.theme")
 
@@ -28,7 +28,9 @@ interface DonatosUiTextOptions {
 	text: string;
 	font: string;
 	color: Color;
-	leading?: number;
+	-- Line height in the design's CSS pixels; the font's own height when unset.
+	lineHeight?: number;
+	maxLines?: number;
 	align?: "left" | "center";
 }
 
@@ -58,9 +60,11 @@ local function text(parent: Panel, options: DonatosUiTextOptions): DonatosUiBloc
 	return {
 		panel = panel,
 		layout = function(width: number): number
-			lines = theme.wrap(options.text, options.font, width)
+			local maxLines = options.maxLines
+			lines = maxLines ~= nil and theme.clamp(options.text, options.font, width, maxLines)
+				or theme.wrap(options.text, options.font, width)
 			fontHeight = theme.fontHeight(options.font)
-			lineHeight = math.Round(fontHeight * (options.leading or 1.3))
+			lineHeight = options.lineHeight ~= nil and math.max(px(options.lineHeight), fontHeight) or fontHeight
 			return #lines * lineHeight
 		end,
 	}
@@ -82,25 +86,45 @@ local function painted(parent: Panel, height: number, paint: (w: number, h: numb
 	}
 end
 
+-- A rounded pill label (the design's Chip), drawn at (x, y); returns its width.
+local function chip(label: string, x: number, y: number, background: Color, foreground: Color): number
+	local font = theme.font("chip")
+	local w = theme.textSize(label, font) + px(16)
+	local h = px(20)
+	theme.box(h / 2, x, y, w, h, background)
+	draw.SimpleText(label, font, x + w / 2, y + h / 2, foreground, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	return w
+end
+
+local function chipWidth(label: string): number
+	return theme.textSize(label, theme.font("chip")) + px(16)
+end
+
 ------------------------------------------------------------------------------ containers
 
--- Blocks top to bottom with `gap` between them.
-local function stack(parent: Panel, gap: number, padding?: number): (DonatosUiBlock, (child: DonatosUiBlock) => void)
+-- Blocks top to bottom with `gap` between them, inset by `padding` (or `padX` / `padY`).
+local function stack(
+	parent: Panel,
+	gap: number,
+	padding?: number,
+	padY?: number
+): (DonatosUiBlock, (child: DonatosUiBlock) => void)
 	local panel = blankPanel(parent)
 	local children: DonatosUiBlock[] = {}
-	local pad = padding or 0
+	local padX = padding or 0
+	local padTop = padY or padX
 
 	local block: DonatosUiBlock = {
 		panel = panel,
 		layout = function(width: number): number
-			local y = pad
+			local y = padTop
 			for i, child in ipairs(children) do
-				local h = child.layout(width - pad * 2)
-				child.panel:SetPos(pad, y)
-				child.panel:SetSize(width - pad * 2, h)
+				local h = child.layout(width - padX * 2)
+				child.panel:SetPos(padX, y)
+				child.panel:SetSize(width - padX * 2, h)
 				y = y + h + (i < #children and gap or 0)
 			end
-			return y + pad
+			return y + padTop
 		end,
 	}
 	return block, function(child: DonatosUiBlock)
@@ -108,15 +132,14 @@ local function stack(parent: Panel, gap: number, padding?: number): (DonatosUiBl
 	end
 end
 
--- Auto-filling columns at least `minWidth` wide; every cell in a row takes the row's height.
-local function grid(parent: Panel, minWidth: number, gap: number): (DonatosUiBlock, (child: DonatosUiBlock) => void)
+-- `columns` equal columns; every cell in a row takes the row's height.
+local function grid(parent: Panel, columns: number, gap: number): (DonatosUiBlock, (child: DonatosUiBlock) => void)
 	local panel = blankPanel(parent)
 	local children: DonatosUiBlock[] = {}
 
 	local block: DonatosUiBlock = {
 		panel = panel,
 		layout = function(width: number): number
-			local columns = math.max(1, math.floor((width + gap) / (minWidth + gap)))
 			local cellWidth = (width - gap * (columns - 1)) / columns
 			local y = 0
 			local rowStart = 1
@@ -188,6 +211,43 @@ local function scroll(parent: Panel, content: (canvas: Panel) => DonatosUiBlock)
 		return true
 	end
 
+	-- The wheel glides: each step eases 100px over 300ms (ease-out-quart), steps in a row add
+	-- up, and dragging the grip or another scroll (a category jump) takes over at once.
+	local glide = theme.tween(0)
+	local glideTarget: number | nil = nil
+	local glideLast = 0
+	area.OnMouseWheeled = function(self: DScrollPanel, delta: number): boolean
+		local maxScroll = self:GetCanvas():GetTall() - self:GetTall()
+		if maxScroll <= 0 then
+			return false
+		end
+		local current = bar:GetScroll()
+		local from = glideTarget or current
+		glideTarget = math.Clamp(from - delta * px(100), 0, maxScroll)
+		glide.set(current)
+		glide.to(glideTarget, 0.3, "outQuart")
+		glideLast = current
+		return true
+	end
+	local driver = vgui.Create("Panel", area)
+	driver:SetSize(0, 0)
+	driver:SetMouseInputEnabled(false)
+	driver.Think = function(self: Panel)
+		local target = glideTarget
+		if target == nil then
+			return
+		end
+		if bar.Dragging or math.abs(bar:GetScroll() - glideLast) > 1 then
+			glideTarget = nil
+			return
+		end
+		glideLast = glide.done() and target or glide.value()
+		bar:SetScroll(glideLast)
+		if glide.done() then
+			glideTarget = nil
+		end
+	end
+
 	local block = content(area:GetCanvas())
 	local canvasPerformLayout = area.PerformLayout
 	area.PerformLayout = function(self: DScrollPanel, w: number, h: number)
@@ -204,19 +264,23 @@ end
 
 ------------------------------------------------------------------------------ buttons
 
-type DonatosUiButtonVariant = "default" | "outline" | "secondary" | "ghost" | "tab"
+-- HeroUI's button variants; "segment" is a tab on the gradient top bar.
+-- "shade" is a translucent button on the gradient top bar.
+type DonatosUiButtonVariant = "primary" | "secondary" | "soft" | "light" | "ghost" | "segment" | "shade"
 
 interface DonatosUiButton {
 	label?: string;
-	icon?: "more" | "moreHorizontal" | "close" | "bag" | "cube" | "calendar";
+	icon?: DonatosIcon;
 	variant?: DonatosUiButtonVariant;
-	size?: "sm" | "xs" | "icon";
+	-- Heights: lg 40, md 36 (the default), sm 32, xs 28.
+	size?: "lg" | "md" | "sm" | "xs";
 	active?: boolean;
+	-- Tabs: how much of the tab the sliding selection covers (0-1). Under it the text and
+	-- badge turn dark, so they stay readable while it moves.
+	selection?: () => number;
 	badge?: number;
 	pending?: boolean;
 	disabled?: boolean;
-	-- Joined edge in a button group: "start" squares the right corners, "end" the left.
-	group?: "start" | "end";
 	-- Stretch to the width the parent gives instead of fitting the label.
 	fill?: boolean;
 	-- Draw as a select trigger: the label on the left (muted while `placeholder`), a chevron on
@@ -226,90 +290,104 @@ interface DonatosUiButton {
 	onClick?: (button: DButton) => void;
 }
 
+local BUTTON_HEIGHTS = { lg = 40, md = 36, sm = 32, xs = 28 }
+local BUTTON_PADDING = { lg = 20, md = 16, sm = 14, xs = 12 }
+
 local function buttonFont(options: DonatosUiButton): string
-	return options.size == "xs" and theme.font("smallBold") or theme.font("body")
+	return options.size == "xs" and theme.font("smallMedium") or theme.font("medium")
 end
 
--- Sizes follow the web UI's buttons in CSS pixels: sm 24 high (h-6), xs 20 (h-5), icon 24
--- square (icon-sm), 8 of padding each side (px-2).
-local function buttonHeight(options: DonatosUiButton): number
-	return options.size == "xs" and px(20) or px(24)
-end
-
-local function badgeSpace(badgeText: string): number
-	return math.max(theme.textSize(badgeText, theme.font("smallBold")) + px(8), px(16)) + px(4)
+local function badgeWidth(badgeText: string): number
+	return math.max(theme.textSize(badgeText, theme.font("chip")) + px(12), px(18))
 end
 
 local function buttonMetrics(options: DonatosUiButton): (number, number)
-	local height = buttonHeight(options)
-	if options.size == "icon" or (options.label == nil and options.icon ~= nil) then
+	local size = options.size or "md"
+	local height = px(BUTTON_HEIGHTS[size])
+	if options.label == nil and options.icon ~= nil then
 		return height, height
 	end
-	local padX = px(8)
-	local textWidth = theme.textSize(options.label or "", buttonFont(options))
-	local width = textWidth + padX * 2
+	local padX = px(BUTTON_PADDING[size])
+	local width = theme.textSize(options.label or "", buttonFont(options)) + padX * 2
 	if options.badge ~= nil and options.badge > 0 then
-		width = width + badgeSpace(tostring(options.badge))
+		width = width + px(6) + badgeWidth(tostring(options.badge)) - px(2)
 	end
 	if options.icon ~= nil then
-		-- A 12 icon and a 4 gap before the label (size-3, gap-1).
-		width = width + px(12) + px(4)
+		width = width + px(16) + px(8)
 	end
 	return width, height
 end
 
-local function buttonColors(options: DonatosUiButton, hovered: boolean): (Color | nil, Color, Color | nil)
-	local variant = options.variant or "default"
-	if variant == "default" then
-		return hovered and colors.primaryHover or colors.primary, colors.primaryText, nil
-	elseif variant == "outline" then
-		return hovered and colors.outlineHover or colors.outlineFill, colors.text, colors.border
+local TAB_HOVER_INK = theme.fade(colors.text, 0.7)
+
+local function buttonColors(options: DonatosUiButton, hovered: boolean): (Color | nil, Color)
+	local variant = options.variant or "primary"
+	if variant == "primary" then
+		return hovered and colors.accentHover or colors.accent, colors.text
 	elseif variant == "secondary" then
-		return hovered and colors.secondaryHover or colors.secondary, colors.text, nil
-	elseif variant == "tab" then
-		local shaded = options.active or hovered
-		return shaded and colors.headerShade or nil, options.active and colors.text or colors.textDim, nil
+		return hovered and colors.defaultHover or colors.default, colors.text
+	elseif variant == "soft" then
+		return hovered and colors.accentSoftHover or colors.accentSoft, colors.accentText
+	elseif variant == "light" then
+		return hovered and colors.inverseHover or colors.inverse, colors.inverseText
+	elseif variant == "shade" then
+		return hovered and colors.barSelected or colors.barShade, colors.text
+	elseif variant == "segment" then
+		-- HeroUI's tabs: the tab list draws the selected indicator (white here); an unselected
+		-- tab dims to 70% while hovered.
+		return nil, hovered and TAB_HOVER_INK or colors.text
 	end
 	-- ghost
-	local fill = options.active and colors.secondary or (hovered and colors.secondaryHover or nil)
-	return fill, (options.active or hovered) and colors.text or colors.textDim, nil
+	return hovered and colors.default or nil, hovered and colors.text or colors.muted
 end
 
-local function paintBox(options: DonatosUiButton, radius: number, w: number, h: number, fill: Color, border: Color | nil)
-	local square = options.group
-	local tl, bl = square ~= "end", square ~= "end"
-	local tr, br = square ~= "start", square ~= "start"
-	theme.box(radius, 0, 0, w, h, fill, tl, tr, bl, br)
-	if border ~= nil then
-		theme.ring(radius, 0, 0, w, h, border, tl, tr, bl, br)
+-- HeroUI's pressed scale: by size, and smaller for icon-only (close) buttons; tabs don't scale.
+local function pressScale(options: DonatosUiButton): number
+	if options.variant == "segment" then
+		return 1
+	elseif options.label == nil and options.icon ~= nil then
+		return 0.93
+	elseif options.size == "lg" then
+		return 0.96
+	elseif options.size == "sm" or options.size == "xs" then
+		return 0.98
 	end
+	return 0.97
 end
 
 local function button(parent: Panel, options: DonatosUiButton): DButton
 	local btn = vgui.Create("DButton", parent) as DButton
 	btn:SetText("")
 	btn:SetSize(buttonMetrics(options))
+	local hover = theme.tween(0)
+	local press = theme.tween(1)
 
-	btn.Paint = function(self: DButton, w: number, h: number): boolean
-		local inactive = options.disabled or options.pending
-		local hovered = self:IsHovered() and not inactive
-		local fill, textColor, border = buttonColors(options, hovered)
+	local function paintContent(self: DButton, w: number, h: number)
 		local alpha = options.disabled and 0.5 or 1
-		local radius = options.size == "xs" and px(6) or px(8)
+		local base, baseInk = buttonColors(options, false)
+		local hot, hotInk = buttonColors(options, true)
+		local t = hover.value()
+		local fill = theme.mix(base, hot, t)
 		if fill ~= nil then
-			paintBox(options, radius, w, h, theme.fade(fill, alpha), border)
+			theme.box(h / 2, 0, 0, w, h, theme.fade(fill, alpha))
 		end
-		local ink = theme.fade(textColor, alpha)
+		local ink = theme.mix(baseInk, hotInk, t) or baseInk
+		local selection = options.selection
+		local selected = selection ~= nil and math.Clamp(selection(), 0, 1) or 0
+		if selected > 0 then
+			ink = theme.mix(ink, colors.inverseText, selected) or ink
+		end
+		ink = theme.fade(ink, alpha)
 
 		if options.pending then
-			theme.spinner(w / 2, h / 2, h * 0.26, ink)
-			return true
+			theme.spinner(w / 2, h / 2, h * 0.24, ink)
+			return
 		end
 
 		if options.select then
-			local font = theme.font("bodyRegular")
-			local padX = px(8)
-			local chevron = px(14)
+			local font = theme.font("body")
+			local padX = px(14)
+			local chevron = px(16)
 			local label = options.label or ""
 			local _, textHeight = theme.textSize(label, font)
 			surface.SetFont(font)
@@ -317,7 +395,7 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 			surface.SetTextPos(padX, (h - textHeight) / 2)
 			surface.DrawText(label)
 			theme.icon("chevronDown", w - padX - chevron, (h - chevron) / 2, chevron, colors.muted)
-			return true
+			return
 		end
 
 		local font = buttonFont(options)
@@ -325,15 +403,12 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 		if options.label ~= nil then
 			labelWidth = theme.textSize(options.label, font)
 		end
-		local badgeWidth = 0
 		local badgeText = options.badge ~= nil and options.badge > 0 and tostring(options.badge) or nil
-		if badgeText ~= nil then
-			badgeWidth = badgeSpace(badgeText)
-		end
-		local iconSize = options.icon ~= nil and px(12) or 0
-		local iconGap = options.icon ~= nil and options.label ~= nil and px(4) or 0
-		local contentWidth = labelWidth + badgeWidth + iconSize + iconGap
-		local x = options.fill and (w - contentWidth) / 2 or math.max((w - contentWidth) / 2, 0)
+		local badgeSpace = badgeText ~= nil and px(6) + badgeWidth(badgeText) or 0
+		local iconSize = options.icon ~= nil and (options.label ~= nil and px(16) or math.Round(h * 0.44)) or 0
+		local iconGap = options.icon ~= nil and options.label ~= nil and px(8) or 0
+		local contentWidth = labelWidth + badgeSpace + iconSize + iconGap
+		local x = (w - contentWidth) / 2
 
 		if options.icon ~= nil then
 			theme.icon(options.icon, x, (h - iconSize) / 2, iconSize, ink)
@@ -348,12 +423,29 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 			x = x + labelWidth
 		end
 		if badgeText ~= nil then
-			local bw = badgeWidth - px(4)
-			local bh = px(16)
-			local bx, by = x + px(4), (h - bh) / 2
-			theme.box(px(4), bx, by, bw, bh, colors.badge)
-			draw.SimpleText(badgeText, theme.font("smallBold"), bx + bw / 2, by + bh / 2, colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			local bw, bh = badgeWidth(badgeText), px(18)
+			local bx, by = x + px(6), (h - bh) / 2
+			local badgeFill, badgeInk = colors.barShade, colors.text
+			if options.variant == "segment" then
+				-- White on the gradient, dark under the white selection.
+				badgeFill = theme.mix(colors.inverse, colors.inverseText, selected) or colors.inverse
+				badgeInk = theme.mix(colors.inverseText, colors.text, selected) or colors.inverseText
+			end
+			theme.box(bh / 2, bx, by, bw, bh, badgeFill)
+			draw.SimpleText(badgeText, theme.font("chip"), bx + bw / 2, by + bh / 2, badgeInk, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
+	end
+
+	btn.Paint = function(self: DButton, w: number, h: number): boolean
+		local inactive = options.disabled or options.pending
+		-- Background 100ms ease-out (tabs: 150ms ease); the pressed scale 250ms ease.
+		local tab = options.variant == "segment"
+		local hovered = self:IsHovered() and not inactive and not (tab and options.active)
+		hover.to(hovered and 1 or 0, tab and 0.15 or 0.1, tab and "smooth" or "out")
+		press.to((self:IsDown() and not inactive) and pressScale(options) or 1, 0.25, "smooth")
+		local scaled = theme.pushScale(self, press.value(), w / 2, h / 2)
+		paintContent(self, w, h)
+		theme.popScale(scaled)
 		return true
 	end
 
@@ -370,7 +462,7 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 	return btn
 end
 
--- Buttons side by side (a joined group when `joined`), right-aligned in the block.
+-- Buttons side by side, right-aligned in the block (or left with `align`).
 local function row(parent: Panel, gap: number, buttons: DButton[], align?: "left" | "right"): DonatosUiBlock
 	local panel = blankPanel(parent)
 	local height = 0
@@ -395,12 +487,80 @@ local function row(parent: Panel, gap: number, buttons: DButton[], align?: "left
 	}
 end
 
-local function rowWidth(buttons: DButton[], gap: number): number
-	local total = 0
-	for i, child in ipairs(buttons) do
-		total = total + child:GetWide() + (i > 1 and gap or 0)
+-- Buttons stacked full width, `gap` apart.
+local function column(parent: Panel, gap: number, buttons: DButton[]): DonatosUiBlock
+	local panel = blankPanel(parent)
+	for _, child in ipairs(buttons) do
+		child:SetParent(panel)
 	end
-	return total
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local y = 0
+			for i, child in ipairs(buttons) do
+				child:SetPos(0, y)
+				child:SetWide(width)
+				y = y + child:GetTall() + (i < #buttons and gap or 0)
+			end
+			return y
+		end,
+	}
+end
+
+------------------------------------------------------------------------------ switch
+
+interface DonatosUiSwitch {
+	on: boolean;
+	label: string;
+	hint?: string;
+	onChange?: (on: boolean) => void;
+}
+
+-- A HeroUI switch with a label and a hint beside it; the whole row toggles it.
+local function switch(parent: Panel, options: DonatosUiSwitch): DonatosUiBlock
+	local panel = vgui.Create("DButton", parent) as DButton
+	panel:SetText("")
+	local hintLines: string[] = {}
+	-- HeroUI's switch: the thumb moves 300ms ease-out-fluid, the track recolours 250ms ease.
+	local position = theme.tween(options.on and 1 or 0)
+	local track = theme.tween(options.on and 1 or 0)
+
+	panel.Paint = function(self: DButton, w: number, h: number): boolean
+		position.to(options.on and 1 or 0, 0.3, "outFluid")
+		track.to(options.on and 1 or 0, 0.25, "smooth")
+		local tw, th = px(40), px(24)
+		theme.box(th / 2, 0, 0, tw, th, theme.mix(colors.default, colors.accent, track.value()) or colors.default)
+		local thumb = px(18)
+		local inset = px(3)
+		theme.box(thumb / 2, inset + (tw - thumb - inset * 2) * position.value(), inset, thumb, thumb, colors.inverse)
+
+		local x = tw + px(12)
+		local labelFont = theme.font("medium")
+		local hintFont = theme.font("chip")
+		draw.SimpleText(options.label, labelFont, x, (th - theme.fontHeight(labelFont)) / 2, colors.text)
+		local y = th + px(2)
+		for _, line in ipairs(hintLines) do
+			draw.SimpleText(line, theme.font("small"), x, y, colors.muted)
+			y = y + px(16)
+		end
+		return true
+	end
+	panel.DoClick = function(self: DButton)
+		options.on = not options.on
+		local onChange = options.onChange
+		if onChange ~= nil then
+			onChange(options.on)
+		end
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local hint = options.hint
+			hintLines = hint ~= nil and theme.wrap(hint, theme.font("small"), width - px(52)) or {}
+			return px(24) + (#hintLines > 0 and px(2) + #hintLines * px(16) or 0)
+		end,
+	}
 end
 
 ------------------------------------------------------------------------------ menus
@@ -412,32 +572,57 @@ interface DonatosUiMenuItem {
 	onClick: () => void;
 }
 
+local openDropdown: DMenu | nil = nil
+
+-- Closes the open dropdown, if there is one; returns whether it did.
+local function closeDropdown(): boolean
+	local menu = openDropdown
+	openDropdown = nil
+	if menu ~= nil and IsValid(menu) and menu:IsVisible() then
+		CloseDermaMenus()
+		return true
+	end
+	return false
+end
+
 -- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
 local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
 	local menu = DermaMenu(false, nil)
-	local font = theme.font("bodyRegular")
-	local itemHeight = px(28)
+	local font = theme.font("body")
+	local itemHeight = px(32)
 	local avatarSize = px(20)
-	local hasAvatars = false
-	local width = math.max(minWidth or 0, px(128))
+	local width = math.max(minWidth or 0, px(160))
 	for _, item in ipairs(items) do
 		local textWidth = theme.textSize(item.label, font)
-		hasAvatars = hasAvatars or item.steamID64 ~= nil
-		width = math.max(width, textWidth + px(24) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
+		width = math.max(width, textWidth + px(32) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
 	end
 
 	menu:SetMinimumWidth(width)
-	menu:SetMaxHeight(px(260))
+	menu:SetMaxHeight(px(280))
+	-- HeroUI's popover entrance: 150ms ease, fading in and growing from 0.9 at its top edge.
+	local enter = theme.tween(0)
+	enter.to(1, 0.15, "smooth")
+	local scaled = false
 	menu.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.outlined(px(10), 0, 0, w, h, colors.popover, colors.border)
+		local t = enter.value()
+		theme.captureBehind("menu", t)
+		scaled = theme.pushScale(self, Lerp(t, 0.9, 1), w / 2, 0)
+		theme.box(px(16), 0, 0, w, h, colors.surface)
+		theme.ring(px(16), 0, 0, w, h, colors.separator)
+		return true
+	end
+	menu.PaintOver = function(self: Panel, w: number, h: number): boolean
+		theme.popScale(scaled)
+		scaled = false
+		theme.coverBehind("menu", self, enter.value())
 		return true
 	end
 
-	-- DMenu stacks its items edge to edge; spacers give it the web menu's 4 of padding (p-1)
-	-- above and below, so a hovered item's highlight stays inside the rounded border.
+	-- DMenu stacks its items edge to edge; spacers pad it above and below, so a hovered item's
+	-- highlight stays inside the rounded border.
 	local function spacer()
 		local panel = blankPanel(menu)
-		panel:SetTall(px(4))
+		panel:SetTall(px(6))
 		panel:SetMouseInputEnabled(false)
 		menu:AddPanel(panel)
 	end
@@ -453,21 +638,29 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 		option.PerformLayout = function(self: Panel, w: number, h: number)
 			self:SetTall(itemHeight)
 		end
-		local textX = px(12)
+		local textX = px(16)
 		if item.steamID64 ~= nil then
 			local avatar = vgui.Create("AvatarImage", option)
 			avatar:SetSize(avatarSize, avatarSize)
-			avatar:SetPos(px(12), (itemHeight - avatarSize) / 2)
+			avatar:SetPos(px(16), (itemHeight - avatarSize) / 2)
 			avatar:SetSteamID(item.steamID64, 32)
 			avatar:SetMouseInputEnabled(false)
-			textX = px(12) + avatarSize + px(8)
+			textX = px(16) + avatarSize + px(8)
 		end
+		-- Menu items: background 150ms ease, pressed scale 0.98.
+		local hover = theme.tween(0)
+		local press = theme.tween(1)
 		option.Paint = function(self: Panel, w: number, h: number): boolean
-			if self:IsHovered() and not item.disabled then
-				theme.box(px(8), px(4), 0, w - px(8), h, colors.secondaryHover)
+			hover.to((self:IsHovered() and not item.disabled) and 1 or 0, 0.15, "smooth")
+			press.to(((self as DButton):IsDown() and not item.disabled) and 0.98 or 1, 0.25, "smooth")
+			local fill = theme.mix(nil, colors.default, hover.value())
+			if fill ~= nil then
+				theme.box(px(10), px(6), 0, w - px(12), h, fill)
 			end
 			local color = item.disabled and colors.muted or colors.text
+			local itemScaled = theme.pushScale(self, press.value(), w / 2, h / 2)
 			draw.SimpleText(item.label, font, textX, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			theme.popScale(itemScaled)
 			return true
 		end
 	end
@@ -476,131 +669,31 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 
 	local ax, ay = anchor:LocalToScreen(0, 0)
 	local x = alignLeft and ax or ax + anchor:GetWide() - width
-	menu:Open(x, ay + anchor:GetTall() + px(4), false, anchor)
+	menu:Open(x, ay + anchor:GetTall() + px(6), false, anchor)
+	openDropdown = menu
 	return menu
 end
 
------------------------------------------------------------------------------- cards
+------------------------------------------------------------------------------ progress
 
-interface DonatosUiCardSpec {
-	title: string;
-	-- Right of the title.
-	actions?: DButton[];
-	-- Below the title row, top-aligned.
-	body?: DonatosUiBlock[];
-	-- Pinned to the card's bottom edge; `footerActions` sit at its right.
-	footer?: DonatosUiBlock[];
-	footerActions?: DButton[];
-	footerGap?: number;
-}
-
-local function card(parent: Panel, build: (panel: Panel) => DonatosUiCardSpec): DonatosUiBlock
-	local panel = vgui.Create("DPanel", parent)
-	panel.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.box(px(10), 0, 0, w, h, colors.card)
-		return true
-	end
-
-	local spec = build(panel)
-	-- The web UI's small card: 12 of padding (p-3), 12 from the header to the content (gap-3).
-	local pad = px(12)
-	local gap = px(8)
-	local actionGap = px(8)
-	local title = text(panel, { text = spec.title, font = theme.font("title"), color = colors.text, leading = 1.22 })
-	local actions = spec.actions or {}
-	local body = spec.body or {}
-	local footer = spec.footer or {}
-	local footerActions = spec.footerActions or {}
-	for _, child in ipairs(actions) do
-		child:SetParent(panel)
-	end
-	for _, child in ipairs(footerActions) do
-		child:SetParent(panel)
-	end
-
-	-- Measured by layout, applied by PerformLayout once the real height is known.
-	local footerHeight = 0
-	local footerSizes: number[] = {}
-	local innerWidth = 0
-
-	local function placeFooter(h: number)
-		local y = h - pad - footerHeight
-		local footerActionsWidth = rowWidth(footerActions, 0)
-		local x = pad + innerWidth - footerActionsWidth
-		for _, child in ipairs(footerActions) do
-			child:SetPos(x, y + (footerHeight - child:GetTall()) / 2)
-			x = x + child:GetWide()
+-- An 8-high bar filled with the vivid gradient; `fraction` is read every frame. `behind` is
+-- the colour the bar sits on (its rounded ends are cut out of it).
+local function progress(parent: Panel, fraction: () => number, behind: Color): DonatosUiBlock
+	return painted(parent, px(8), function(w: number, h: number)
+		local r = h / 2
+		theme.box(r, 0, 0, w, h, colors.default)
+		local fill = math.Round(math.Clamp(fraction(), 0, 1) * w)
+		if fill <= 0 then
+			return
 		end
-		local fy = y
-		for i, child in ipairs(footer) do
-			local fh = footerSizes[i] or 0
-			child.panel:SetPos(pad, fy + (#footer == 1 and (footerHeight - fh) / 2 or 0))
-			fy = fy + fh + px(2)
+		fill = math.max(fill, h)
+		local strip = math.max(px(2), 2)
+		for x = 0, fill - 1, strip do
+			surface.SetDrawColor(theme.gradientAt(x, w, true))
+			surface.DrawRect(x, 0, math.min(strip, fill - x), h)
 		end
-	end
-
-	panel.PerformLayout = function(self: Panel, w: number, h: number)
-		placeFooter(h)
-	end
-
-	return {
-		panel = panel,
-		layout = function(width: number): number
-			innerWidth = width - pad * 2
-			local actionsWidth = rowWidth(actions, actionGap)
-			local titleWidth = innerWidth - (actionsWidth > 0 and actionsWidth + gap or 0)
-			local titleHeight = title.layout(titleWidth)
-			local actionsHeight = 0
-			for _, child in ipairs(actions) do
-				actionsHeight = math.max(actionsHeight, child:GetTall())
-			end
-			local headerHeight = math.max(titleHeight, actionsHeight)
-			title.panel:SetPos(pad, pad + (actionsHeight > titleHeight and (actionsHeight - titleHeight) / 2 or 0))
-			title.panel:SetSize(titleWidth, titleHeight)
-			local x = pad + innerWidth - actionsWidth
-			for _, child in ipairs(actions) do
-				child:SetPos(x, pad + (headerHeight - child:GetTall()) / 2)
-				x = x + child:GetWide() + actionGap
-			end
-
-			local y = pad + headerHeight
-			for i, child in ipairs(body) do
-				local h = child.layout(innerWidth)
-				y = y + (i == 1 and px(12) or px(4))
-				child.panel:SetPos(pad, y)
-				child.panel:SetSize(innerWidth, h)
-				y = y + h
-			end
-
-			local footerActionsWidth = rowWidth(footerActions, 0)
-			local footerWidth = innerWidth - (footerActionsWidth > 0 and footerActionsWidth + gap or 0)
-			footerHeight = 0
-			footerSizes = {}
-			for i, child in ipairs(footer) do
-				local h = child.layout(footerWidth)
-				child.panel:SetSize(footerWidth, h)
-				footerSizes[i] = h
-				footerHeight = footerHeight + h + (i > 1 and px(2) or 0)
-			end
-			for _, child in ipairs(footerActions) do
-				footerHeight = math.max(footerHeight, child:GetTall())
-			end
-			if footerHeight > 0 then
-				y = y + (#body > 0 and spec.footerGap or px(12)) + footerHeight
-			end
-			return y + pad
-		end,
-	}
-end
-
--- A thin progress bar; `fraction` is read every frame.
-local function progress(parent: Panel, fraction: () => number): DonatosUiBlock
-	return painted(parent, px(4), function(w: number, h: number)
-		theme.box(h / 2, 0, 0, w, h, colors.track)
-		local fill = math.Clamp(fraction(), 0, 1) * w
-		if fill > 0 then
-			theme.box(h / 2, 0, 0, math.max(fill, h), h, colors.primary)
-		end
+		theme.roundCutout(r, 0, 0, fill, h, behind, true, false, true, false)
+		theme.roundCutout(r, 0, 0, fill, h, fill < w and colors.default or behind, false, true, false, true)
 	end)
 end
 
@@ -611,7 +704,7 @@ end
 local function textEntry(parent: Panel, placeholder: string, numeric: boolean): (Panel, DTextEntry)
 	local field = vgui.Create("DPanel", parent)
 	field:SetCursor("beam")
-	field:SetTall(px(28))
+	field:SetTall(px(36))
 	local entry = vgui.Create("DTextEntry", field) as DTextEntry
 	entry:SetFont(theme.font("input"))
 	entry:SetNumeric(numeric)
@@ -624,12 +717,69 @@ local function textEntry(parent: Panel, placeholder: string, numeric: boolean): 
 		return true
 	end
 	field.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.outlined(px(8), 0, 0, w, h, colors.outlineFill, entry:HasFocus() and colors.muted or colors.input)
+		theme.box(px(12), 0, 0, w, h, entry:HasFocus() and colors.defaultHover or colors.default)
 		return true
 	end
 	field.PerformLayout = function(self: Panel, w: number, h: number)
-		entry:SetPos(px(8), 0)
-		entry:SetSize(w - px(16), h)
+		entry:SetPos(px(12), 0)
+		entry:SetSize(w - px(24), h)
+	end
+	field.OnMousePressed = function(self: Panel, keyCode: number): boolean
+		entry:RequestFocus()
+		return true
+	end
+	return field, entry
+end
+
+-- A pill search field with a magnifier and, once there is text, a clear button.
+-- `onChange` runs on every edit with the new text.
+local function searchField(parent: Panel, placeholder: string, onChange: (value: string) => void): (Panel, DTextEntry)
+	local field = vgui.Create("DPanel", parent)
+	field:SetCursor("beam")
+	field:SetTall(px(36))
+	local entry = vgui.Create("DTextEntry", field) as DTextEntry
+	entry:SetFont(theme.font("input"))
+	entry:SetPaintBackground(false)
+	entry.Paint = function(self: DTextEntry, w: number, h: number): boolean
+		if self:GetValue() == "" then
+			draw.SimpleText(placeholder, theme.font("input"), 2, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		end
+		self:DrawTextEntryText(colors.text, colors.selection, colors.text)
+		return true
+	end
+
+	local clear = button(field, { icon = "close", size = "xs", variant = "secondary" })
+	clear:SetSize(px(24), px(24))
+	clear:SetVisible(false)
+	clear.DoClick = function(self: DButton)
+		entry:SetValue("")
+		entry:OnChange()
+		entry:RequestFocus()
+	end
+
+	entry.OnChange = function(self: DTextEntry)
+		local value = self:GetValue()
+		clear:SetVisible(value ~= "")
+		onChange(value)
+	end
+
+	local focus = theme.tween(0)
+	field.Paint = function(self: Panel, w: number, h: number): boolean
+		focus.to(entry:HasFocus() and 1 or 0, 0.15, "out")
+		theme.box(h / 2, 0, 0, w, h, colors.surface)
+		local ring = theme.mix(nil, colors.surfaceRing, focus.value())
+		if ring ~= nil then
+			theme.ring(h / 2, 0, 0, w, h, ring)
+		end
+		local icon = px(16)
+		theme.icon("search", px(12), (h - icon) / 2, icon, colors.muted)
+		return true
+	end
+	field.PerformLayout = function(self: Panel, w: number, h: number)
+		local left = px(12) + px(16) + px(8)
+		clear:SetPos(w - px(6) - clear:GetWide(), (h - clear:GetTall()) / 2)
+		entry:SetPos(left, 0)
+		entry:SetSize(w - left - px(6) - clear:GetWide() - px(4), h)
 	end
 	field.OnMousePressed = function(self: Panel, keyCode: number): boolean
 		entry:RequestFocus()
@@ -658,21 +808,6 @@ local function avatar(parent: Panel, size: number, target: Player, behind: () =>
 	return holder
 end
 
--- A message in a bordered box, centred in whatever space the parent gives.
-local function emptyState(parent: Panel, message: string): Panel
-	local panel = blankPanel(parent)
-	local font = theme.font("input")
-	panel.Paint = function(self: Panel, w: number, h: number): boolean
-		local tw, th = theme.textSize(message, font)
-		local bw, bh = tw + px(40), th + px(32)
-		local bx, by = (w - bw) / 2, (h - bh) / 2
-		theme.outlined(px(8), bx, by, bw, bh, theme.fade(colors.card, 180 / 255), colors.border)
-		draw.SimpleText(message, font, w / 2, h / 2, colors.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		return true
-	end
-	return panel
-end
-
 ------------------------------------------------------------------------------ dialogs
 
 interface DonatosUiDialog {
@@ -683,30 +818,69 @@ interface DonatosUiDialog {
 	actions: DonatosUiButton[];
 }
 
+-- A dialog that sizes and places itself in the area the host gives it.
+interface DonatosUiFloating {
+	panel: Panel;
+	place: (areaWidth: number, areaHeight: number) => void;
+}
+
 interface DonatosUiDialogHost {
 	show: (dialog: DonatosUiDialog) => void;
+	-- Shows a dialog built by `build` (the parent is the dimmed overlay).
+	showCustom: (build: (parent: Panel, relayout: () => void) => DonatosUiFloating) => void;
 	close: () => void;
+	-- Whether a dialog is showing (and not already on its way out).
+	isOpen: () => boolean;
 	-- Puts the host over the whole of `frame` (call from the frame's PerformLayout).
 	cover: (w: number, h: number) => void;
 }
 
-local function dialogHost(frame: Panel): DonatosUiDialogHost
+local function dialogHost(frame: Panel, radius: number): DonatosUiDialogHost
 	local overlay = blankPanel(frame)
 	overlay:SetVisible(false)
 	overlay:SetZPos(1000)
+
+	-- HeroUI's modal: the backdrop fades in over 150ms (out over 100ms); the dialog fades in
+	-- while settling from 1.05 to 1 over 250ms ease-out-quad, and leaves fading to 0.95 over
+	-- 100ms.
+	local backdrop = theme.tween(0)
+	local dialogIn = theme.tween(0)
+	local exiting = false
+
 	overlay.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.box(px(10), 0, 0, w, h, colors.overlay)
+		local fill = theme.mix(nil, colors.overlay, backdrop.value())
+		if fill ~= nil then
+			theme.box(radius, 0, 0, w, h, fill)
+		end
 		return true
 	end
 
 	local current: Panel | nil = nil
 
-	local function close()
+	local function remove()
 		if current ~= nil and IsValid(current) then
 			current:Remove()
 		end
 		current = nil
+		-- A late callback's relayout must not place a dialog that is gone.
+		overlay.PerformLayout = function(self: Panel, w: number, h: number) end
 		overlay:SetVisible(false)
+		exiting = false
+	end
+
+	local function close()
+		if current == nil or exiting then
+			return
+		end
+		exiting = true
+		backdrop.to(0, 0.1, "out")
+		dialogIn.to(0, 0.1, "outQuad")
+	end
+
+	overlay.Think = function(self: Panel)
+		if exiting and backdrop.done() and dialogIn.done() then
+			remove()
+		end
 	end
 
 	overlay.OnMousePressed = function(self: Panel, keyCode: number): boolean
@@ -714,57 +888,97 @@ local function dialogHost(frame: Panel): DonatosUiDialogHost
 		return true
 	end
 
-	local function show(dialog: DonatosUiDialog)
-		close()
-		local box = vgui.Create("DPanel", overlay)
-		current = box
-		box.Paint = function(self: Panel, w: number, h: number): boolean
-			theme.outlined(px(14), 0, 0, w, h, colors.background, colors.border)
+	local function relayout()
+		overlay:InvalidateLayout()
+	end
+
+	local function showCustom(build: (parent: Panel, relayout: () => void) => DonatosUiFloating)
+		local replacing = current ~= nil and not exiting
+		remove()
+		local floating = build(overlay, relayout)
+		local panel = floating.panel
+		current = panel
+
+		local scaled = false
+		local paint = panel.Paint
+		panel.Paint = function(self: Panel, w: number, h: number): boolean
+			local t = dialogIn.value()
+			theme.captureBehind("dialog", t)
+			local scale = exiting and Lerp(t, 0.95, 1) or Lerp(t, 1.05, 1)
+			scaled = theme.pushScale(self, scale, w / 2, h / 2)
+			return paint(self, w, h)
+		end
+		panel.PaintOver = function(self: Panel, w: number, h: number): boolean
+			theme.popScale(scaled)
+			scaled = false
+			theme.coverBehind("dialog", self, dialogIn.value())
 			return true
 		end
 
-		-- The web UI's dialog: 16 of padding and gaps (p-4, gap-4), at most 384 wide (max-w-sm).
-		local content, add = stack(box, px(16), px(16))
-		local header, addHeader = stack(content.panel, px(4))
-		addHeader(text(header.panel, { text = dialog.title, font = theme.font("dialogTitle"), color = colors.text }))
-		if dialog.description ~= nil then
-			addHeader(text(header.panel, { text = dialog.description, font = theme.font("bodyRegular"), color = colors.muted, leading = 1.39 }))
-		end
-		add(header)
-		local makeBody = dialog.body
-		if makeBody ~= nil then
-			add(makeBody(content.panel, function()
-				overlay:InvalidateLayout()
-			end))
-		end
-		local buttons: DButton[] = {}
-		for _, action in ipairs(dialog.actions) do
-			table.insert(buttons, button(content.panel, action))
-		end
-		add(row(content.panel, px(8), buttons))
-
-		box.PerformLayout = function(self: Panel, w: number, h: number)
-			content.panel:SetSize(w, content.layout(w))
-		end
-
-		local function place()
-			local fw, fh = overlay:GetSize()
-			local w = math.min(px(384), fw - px(32))
-			local h = content.layout(w)
-			box:SetSize(w, h)
-			box:SetPos((fw - w) / 2, math.max((fh - h) / 2, px(16)))
-		end
 		overlay.PerformLayout = function(self: Panel, w: number, h: number)
-			place()
+			floating.place(w, h)
 		end
-		place()
+		floating.place(overlay:GetSize())
+		-- A dialog replacing another keeps the backdrop; the new one still enters.
+		if not replacing then
+			backdrop.set(0)
+		end
+		backdrop.to(1, 0.15, "out")
+		dialogIn.set(0)
+		dialogIn.to(1, 0.25, "outQuad")
 		overlay:SetVisible(true)
 		overlay:MoveToFront()
 	end
 
+	local function show(dialog: DonatosUiDialog)
+		showCustom(function(parent: Panel, relayoutDialog: () => void): DonatosUiFloating
+			local box = vgui.Create("DPanel", parent)
+			box.Paint = function(self: Panel, w: number, h: number): boolean
+				theme.box(px(24), 0, 0, w, h, colors.surface)
+				theme.ring(px(24), 0, 0, w, h, colors.frameRing)
+				return true
+			end
+
+			local content, add = stack(box, px(16), px(20))
+			local header, addHeader = stack(content.panel, px(6))
+			addHeader(text(header.panel, { text = dialog.title, font = theme.font("section"), color = colors.text, lineHeight = 26 }))
+			if dialog.description ~= nil then
+				addHeader(text(header.panel, { text = dialog.description, font = theme.font("body"), color = colors.muted, lineHeight = 20 }))
+			end
+			add(header)
+			local makeBody = dialog.body
+			if makeBody ~= nil then
+				add(makeBody(content.panel, relayoutDialog))
+			end
+			local buttons: DButton[] = {}
+			for _, action in ipairs(dialog.actions) do
+				table.insert(buttons, button(content.panel, action))
+			end
+			add(row(content.panel, px(8), buttons))
+
+			box.PerformLayout = function(self: Panel, w: number, h: number)
+				content.panel:SetSize(w, content.layout(w))
+			end
+
+			return {
+				panel = box,
+				place = function(areaWidth: number, areaHeight: number)
+					local w = math.min(px(420), areaWidth - px(32))
+					local h = content.layout(w)
+					box:SetSize(w, h)
+					box:SetPos((areaWidth - w) / 2, math.max((areaHeight - h) / 2, px(16)))
+				end,
+			}
+		end)
+	end
+
 	return {
 		show = show,
+		showCustom = showCustom,
 		close = close,
+		isOpen = function(): boolean
+			return current ~= nil and not exiting
+		end,
 		cover = function(w: number, h: number)
 			overlay:SetPos(0, 0)
 			overlay:SetSize(w, h)
@@ -776,17 +990,22 @@ return {
 	blankPanel = blankPanel,
 	text = text,
 	painted = painted,
+	chip = chip,
+	chipWidth = chipWidth,
 	stack = stack,
 	grid = grid,
 	flow = flow,
 	scroll = scroll,
 	button = button,
+	buttonMetrics = buttonMetrics,
 	row = row,
+	column = column,
+	switch = switch,
 	dropdown = dropdown,
-	card = card,
+	closeDropdown = closeDropdown,
 	progress = progress,
 	textEntry = textEntry,
+	searchField = searchField,
 	avatar = avatar,
-	emptyState = emptyState,
 	dialogHost = dialogHost,
 }

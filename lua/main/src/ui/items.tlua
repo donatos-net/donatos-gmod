@@ -1,0 +1,446 @@
+-- Client: «Мои предметы», the player's active items and the inventory items still waiting
+-- for activation, in two grouped sections.
+
+local netMessage = require("donatos.net")
+local theme = require("ui.theme")
+local views = require("ui.views")
+local widgets = require("ui.widgets")
+
+local colors = theme.colors
+local px = theme.px
+
+------------------------------------------------------------------------------ dialogs
+
+local function giftDialog(ctx: DonatosMenuContext, item: DonatosInventoryItem)
+	local players: DonatosOnlinePlayer[] | nil = nil
+	local selected: DonatosOnlinePlayer | nil = nil
+	local submit: DonatosUiButton = { label = "Подарить", disabled = true }
+	local goods = item.goods
+
+	submit.onClick = function()
+		local target = selected
+		if target == nil then
+			return
+		end
+		submit.pending = true
+		netMessage.toServer("giftItem", { id = item.id, gifteeExternalId = target.externalId }, function(result)
+			submit.pending = false
+			if result.success then
+				ctx.dialogs.close()
+			else
+				views.showError(ctx, result.error)
+			end
+		end)
+	end
+
+	ctx.dialogs.show({
+		title = "Подарить предмет",
+		description = `Выберите игрока, которому хотите подарить ${goods and goods.name or "этот предмет"}.`,
+		actions = { views.cancelAction(ctx), submit },
+		body = function(parent: Panel, relayout: () => void): DonatosUiBlock
+			local panel = widgets.blankPanel(parent)
+			local pickerOptions: DonatosUiButton = {
+				label = "Выберите игрока",
+				variant = "secondary",
+				fill = true,
+				select = true,
+				placeholder = true,
+			}
+			local picker = widgets.button(panel, pickerOptions)
+			picker:SetVisible(false)
+
+			pickerOptions.onClick = function(btn: DButton)
+				local entries: DonatosUiMenuItem[] = {}
+				for _, candidate in ipairs(players or {}) do
+					table.insert(entries, {
+						label = candidate.name,
+						steamID64 = candidate.externalId,
+						onClick = function()
+							selected = candidate
+							pickerOptions.label = candidate.name
+							pickerOptions.placeholder = false
+							submit.disabled = false
+						end,
+					})
+				end
+				widgets.dropdown(btn, entries, btn:GetWide(), true)
+			end
+
+			local nextFetch = 0
+			local function fetch()
+				nextFetch = RealTime() + 5
+				netMessage.toServer("getOnlinePlayers", nil, function(result)
+					if not IsValid(panel) or not result.success then
+						return
+					end
+					local wasEmpty = players == nil or #players == 0
+					players = result.data
+					if selected ~= nil then
+						local stillOnline = false
+						for _, candidate in ipairs(result.data) do
+							stillOnline = stillOnline or candidate.externalId == selected.externalId
+						end
+						if not stillOnline then
+							selected = nil
+							pickerOptions.label = "Выберите игрока"
+							pickerOptions.placeholder = true
+							submit.disabled = true
+						end
+					end
+					if wasEmpty ~= (#result.data == 0) then
+						relayout()
+					end
+				end)
+			end
+			fetch()
+			panel.Think = function(self: Panel)
+				if RealTime() >= nextFetch then
+					fetch()
+				end
+			end
+
+			panel.Paint = function(self: Panel, w: number, h: number): boolean
+				if players == nil then
+					theme.spinner(px(8), h / 2, px(6), colors.muted)
+					draw.SimpleText("Загружаем список игроков...", theme.font("small"), px(22), h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+				elseif #players == 0 then
+					draw.SimpleText("На сервере нет доступных игроков для подарка.", theme.font("small"), 0, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+				end
+				return true
+			end
+
+			return {
+				panel = panel,
+				layout = function(width: number): number
+					local ready = players ~= nil and #players > 0
+					picker:SetVisible(ready)
+					if ready then
+						picker:SetPos(0, 0)
+						picker:SetSize(width, px(36))
+						return px(36)
+					end
+					return px(20)
+				end,
+			}
+		end,
+	})
+end
+
+local function freezeDialog(ctx: DonatosMenuContext, item: DonatosActiveItem)
+	ctx.dialogs.show({
+		title = "Заморозить предмет",
+		description = "Пока предмет заморожен, его срок не идёт. Заморозить его можно только 1 раз. Продолжить?",
+		actions = {
+			views.cancelAction(ctx),
+			{
+				label = "Заморозить",
+				onClick = function()
+					ctx.dialogs.close()
+					netMessage.toServer("freezeActiveItem", { id = item.id }, function(result)
+						if not result.success then
+							views.showError(ctx, result.error)
+						end
+					end)
+				end,
+			},
+		},
+	})
+end
+
+------------------------------------------------------------------------------ rows
+
+-- Draws a name with a chip after it, and a muted line below, from (x, y).
+local function paintTitle(x: number, y: number, name: string, chipText: string, chipBackground: Color, chipForeground: Color, subtitle: string)
+	local nameFont = theme.font("medium")
+	local lineHeight = px(20)
+	draw.SimpleText(name, nameFont, x, y + (lineHeight - theme.fontHeight(nameFont)) / 2, colors.text)
+	widgets.chip(chipText, x + theme.textSize(name, nameFont) + px(8), y, chipBackground, chipForeground)
+	local smallFont = theme.font("small")
+	draw.SimpleText(subtitle, smallFont, x, y + lineHeight + (px(18) - theme.fontHeight(smallFont)) / 2, colors.muted)
+end
+
+local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosActiveItem): DonatosUiBlock
+	local panel = widgets.blankPanel(parent)
+	local expires = item.expires
+	local fraction = expires ~= nil and expires.durationS > 0 and expires.inS / expires.durationS or 1
+
+	local chipText, chipBackground, chipForeground = "Активен", colors.successSoft, colors.success
+	local subtitle = "Без срока"
+	if item.isFrozen then
+		chipText, chipBackground, chipForeground = "Заморожен", colors.default, colors.textSoft
+		subtitle = "Срок не идёт, пока предмет заморожен"
+	elseif expires ~= nil then
+		subtitle = `Истекает через ${views.formatRemaining(expires.inS)}`
+	end
+
+	local action: DButton | nil = nil
+	if item.isFrozen then
+		local unfreeze: DonatosUiButton = { label = "Разморозить", variant = "secondary" }
+		unfreeze.onClick = function()
+			unfreeze.pending = true
+			netMessage.toServer("unfreezeActiveItem", { id = item.id }, function(result)
+				unfreeze.pending = false
+				if not result.success then
+					views.showError(ctx, result.error)
+				end
+			end)
+		end
+		action = widgets.button(panel, unfreeze)
+	elseif expires ~= nil then
+		action = widgets.button(panel, {
+			label = "Заморозить",
+			variant = "secondary",
+			onClick = function()
+				freezeDialog(ctx, item)
+			end,
+		})
+	end
+
+	local bar: DonatosUiBlock | nil = nil
+	if expires ~= nil then
+		bar = widgets.progress(panel, function(): number
+			return fraction
+		end, colors.panel)
+	end
+
+	local LEFT = px(220)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		paintTitle(px(18), (h - px(38)) / 2, item.goods.name, chipText, chipBackground, chipForeground, subtitle)
+		local progressBar = bar
+		if expires ~= nil and progressBar ~= nil then
+			local x = progressBar.panel:GetX()
+			local y = progressBar.panel:GetY() - px(6) - px(18)
+			local font = theme.font("smallMedium")
+			local textY = y + (px(18) - theme.fontHeight(font)) / 2
+			local left = expires.durationS >= 86400
+					and `${math.ceil(expires.inS / 86400)} из ${math.Round(expires.durationS / 86400)} дн.`
+				or views.formatRemaining(expires.inS)
+			draw.SimpleText("Осталось", font, x, textY, colors.muted)
+			draw.SimpleText(left, font, x + progressBar.panel:GetWide(), textY, colors.text, TEXT_ALIGN_RIGHT)
+		end
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local h = px(38)
+			local actionButton = action
+			if actionButton ~= nil then
+				h = math.max(h, actionButton:GetTall())
+			end
+			h = h + px(32)
+			local right = width - px(16)
+			if actionButton ~= nil then
+				right = right - actionButton:GetWide()
+				actionButton:SetPos(right, (h - actionButton:GetTall()) / 2)
+				right = right - px(20)
+			end
+			local progressBar = bar
+			if progressBar ~= nil then
+				local x = px(18) + LEFT + px(20)
+				local barTop = (h - px(32)) / 2 + px(24)
+				progressBar.panel:SetPos(x, barTop)
+				progressBar.panel:SetSize(math.max(right - x, px(40)), px(8))
+			end
+			return h
+		end,
+	}
+end
+
+local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosInventoryItem): DonatosUiBlock
+	local panel = widgets.blankPanel(parent)
+	local goods = item.goods
+	local variant = item.variant
+	local duration = variant and variant.duration
+	local permanent = duration == nil or duration == 0
+	local name = goods and goods.name or "Удалённый товар"
+	local paid = item.amountPaid
+	local subtitle = paid ~= nil and `Куплено за ${views.formatNumber(paid)} бонусов` or "Получено в подарок"
+
+	local gift = widgets.button(panel, {
+		label = "Подарить",
+		variant = "secondary",
+		onClick = function()
+			giftDialog(ctx, item)
+		end,
+	})
+	local activate: DonatosUiButton = { label = "Активировать" }
+	activate.onClick = function()
+		activate.pending = true
+		netMessage.toServer("activateItem", { id = item.id }, function(result)
+			activate.pending = false
+			if not result.success then
+				views.showError(ctx, result.error)
+			end
+		end)
+	end
+	local activateButton = widgets.button(panel, activate)
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		paintTitle(
+			px(18),
+			(h - px(38)) / 2,
+			name,
+			views.formatDays(duration),
+			permanent and colors.successSoft or colors.accentSoft,
+			permanent and colors.success or colors.accentText,
+			subtitle
+		)
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local h = math.max(px(38), activateButton:GetTall()) + px(28)
+			local right = width - px(16) - activateButton:GetWide()
+			activateButton:SetPos(right, (h - activateButton:GetTall()) / 2)
+			right = right - px(8) - gift:GetWide()
+			gift:SetPos(right, (h - gift:GetTall()) / 2)
+			return h
+		end,
+	}
+end
+
+-- A grouped section: a title with a count, and the rows on an inset panel, divided by lines.
+local function section(parent: Panel, title: string, rows: ((parent: Panel) => DonatosUiBlock)[]): DonatosUiBlock
+	local panel = vgui.Create("DPanel", parent)
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(28), 0, 0, w, h, colors.group)
+		local font = theme.font("cardTitle")
+		local y = px(4) + px(10) + (px(22) - theme.fontHeight(font)) / 2
+		draw.SimpleText(title, font, px(20), y, colors.text)
+		widgets.chip(tostring(#rows), px(20) + theme.textSize(title, font) + px(8), px(4) + px(10) + px(1), colors.default, colors.text)
+		return true
+	end
+
+	local inner = vgui.Create("DPanel", panel)
+	local blocks: DonatosUiBlock[] = {}
+	for _, makeRow in ipairs(rows) do
+		table.insert(blocks, makeRow(inner))
+	end
+	inner.Paint = function(self: Panel, w: number, h: number): boolean
+		theme.box(px(24), 0, 0, w, h, colors.panel)
+		for i = 2, #blocks do
+			local block = assert(blocks[i])
+			surface.SetDrawColor(colors.group)
+			surface.DrawRect(0, block.panel:GetY(), w, 1)
+		end
+		return true
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local innerWidth = width - px(8)
+			local y = 0
+			for _, block in ipairs(blocks) do
+				local h = block.layout(innerWidth)
+				block.panel:SetPos(0, y)
+				block.panel:SetSize(innerWidth, h)
+				y = y + h
+			end
+			local top = px(4) + px(44)
+			inner:SetPos(px(4), top)
+			inner:SetSize(innerWidth, y)
+			return top + y + px(4)
+		end,
+	}
+end
+
+local function expiryFraction(item: DonatosActiveItem): number | nil
+	local expires = item.expires
+	if expires == nil then
+		return nil
+	end
+	return expires.durationS > 0 and expires.inS / expires.durationS or 1
+end
+
+------------------------------------------------------------------------------ page
+
+local function items(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+	local header = views.pageHeader(parent, function(): string
+		return "Мои предметы"
+	end)
+	local body = widgets.blankPanel(parent)
+	local area: DScrollPanel | nil = nil
+
+	parent.PerformLayout = function(self: Panel, w: number, h: number)
+		local padX, top = px(24), px(20)
+		header:SetPos(padX, top)
+		header:SetSize(w - padX * 2, px(36))
+		local y = top + px(36) + px(16)
+		body:SetPos(0, y)
+		body:SetSize(w, h - y)
+	end
+
+	local data = ctx.data()
+	if not ctx.loaded() then
+		views.loading(body):Dock(FILL)
+	elseif data == nil or (#data.activeItems == 0 and #data.inventoryItems == 0) then
+		views.emptyState(body, {
+			icon = "cube",
+			title = "Здесь пока пусто",
+			text = "Купленные предметы появятся здесь. Пока предмет не активирован, его можно подарить.",
+			action = {
+				label = "В магазин",
+				variant = "secondary",
+				onClick = function()
+					ctx.showTab("shop")
+				end,
+			},
+		}):Dock(FILL)
+	else
+		-- Expiring items first, closest to expiry first; permanent ones last.
+		local active: DonatosActiveItem[] = {}
+		for _, item in ipairs(data.activeItems) do
+			table.insert(active, item)
+		end
+		table.sort(active, function(a: DonatosActiveItem, b: DonatosActiveItem): boolean
+			local fa, fb = expiryFraction(a), expiryFraction(b)
+			if fa ~= nil and fb ~= nil and fa ~= fb then
+				return fa < fb
+			end
+			if (fa == nil) ~= (fb == nil) then
+				return fa ~= nil
+			end
+			return a.id < b.id
+		end)
+
+		local scrollArea = widgets.scroll(body, function(canvas: Panel): DonatosUiBlock
+			local content, add = widgets.stack(canvas, px(16), px(24), 0)
+			if #active > 0 then
+				local rows: ((parent: Panel) => DonatosUiBlock)[] = {}
+				for _, item in ipairs(active) do
+					table.insert(rows, function(rowParent: Panel): DonatosUiBlock
+						return activeRow(rowParent, ctx, item)
+					end)
+				end
+				add(section(content.panel, "Действуют", rows))
+			end
+			if #data.inventoryItems > 0 then
+				local rows: ((parent: Panel) => DonatosUiBlock)[] = {}
+				for _, item in ipairs(data.inventoryItems) do
+					table.insert(rows, function(rowParent: Panel): DonatosUiBlock
+						return inventoryRow(rowParent, ctx, item)
+					end)
+				end
+				add(section(content.panel, "Не активированы", rows))
+			end
+			-- Room below the last section.
+			add(widgets.painted(content.panel, px(4), function() end))
+			return content
+		end)
+		scrollArea:Dock(FILL)
+		area = scrollArea
+	end
+
+	return function(): DScrollPanel | nil
+		return area
+	end
+end
+
+return {
+	items = items,
+}
