@@ -1,0 +1,136 @@
+local netMessage = require("donatos.net")
+local serverNet = require("donatos.net.server")
+local releases = require("donatos.releases")
+local remoteConfig = require("donatos.utils.load-remote-config")
+local meta = require("meta")
+local serverPlayer = require("player.server")
+local async = require("utils.async")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local function setBootstrapConVars(version: string, bundle?: string)
+	local bootstrap = donatosBootstrap
+	if bootstrap == nil then
+		return
+	end
+	local versionConVar = bootstrap.addonVersionConVar
+	if versionConVar then
+		versionConVar:SetString(version)
+	end
+	local shaConVar = bootstrap.bundleSha256ConVar
+	if bundle and shaConVar then
+		shaConVar:SetString(util.SHA256(bundle))
+	end
+end
+
+-- Installs `release`, tells clients to fetch it, and runs it in place of this bundle.
+local applyRelease = suspend function(release: DonatosAddonRelease, failure: string)
+	local bundle, err = releases.installRelease(release)
+
+	if bundle == nil then
+		log.error(`${failure}: ${err}`)
+		return
+	end
+
+	setBootstrapConVars(release.name, bundle)
+	netMessage.toClient(nil, "updateAddon", release.name)
+
+	log.info("Подгружаю bundle.lua")
+	RunString(bundle, "donatos/bundle.lua")
+end
+
+setBootstrapConVars(meta.VERSION)
+
+async.run(suspend function()
+	remoteConfig.loadRemoteConfig()
+end)
+
+hook.Add("PlayerInitialSpawn", state.hookId("player_initial_spawn"), function(ply: Player)
+	if ply:IsBot() then
+		return
+	end
+
+	local p = serverPlayer.of(ply)
+	async.run(suspend function()
+		p:loadRemoteData()
+		p:onPlayerJoined()
+	end)
+end)
+
+hook.Add("PlayerSay", state.hookId("player_say"), function(ply: Player, text: string)
+	if string.lower(text) == "/donate" then
+		netMessage.toClient(ply, "openUi", nil)
+		return ""
+	end
+end)
+
+concommand.Add("donatos_update", function(ply: Player)
+	if IsValid(ply) and not ply:IsSuperAdmin() then
+		return
+	end
+
+	async.run(suspend function()
+		log.info("Проверяю обновления...")
+
+		local response, err = releases.fetchAddonReleases()
+
+		if response == nil then
+			log.error(`Не удалось получить список релизов: ${err}`)
+			return
+		end
+
+		local latestRelease = response.releases[1]
+
+		if latestRelease == nil then
+			log.error("Нет доступных релизов.")
+			return
+		end
+
+		applyRelease(latestRelease, `Не удалось скачать релиз ${latestRelease.name}`)
+	end)
+end)
+
+concommand.Add("donatos_activate_items", function(ply: Player)
+	async.run(suspend function()
+		for _, inventoryItem in ipairs(ply:Donatos():GetInventoryItems()) do
+			serverNet.handlers.activateItem(ply, { id = inventoryItem.id })
+		end
+	end)
+end)
+
+local checkForAddonUpdates = suspend function()
+	local runningVersion = meta.VERSION
+	if runningVersion == "" then
+		return
+	end
+
+	log.info("Проверка обновлений аддона...")
+
+	local response, err = releases.fetchAddonReleases()
+	if response == nil then
+		log.error(`Не удалось проверить обновления аддона: ${err}`)
+		return
+	end
+
+	local latestRelease = response.releases[1]
+	if latestRelease == nil then
+		return
+	end
+
+	if latestRelease.name == runningVersion then
+		log.info("Обновлений нет.")
+		return
+	end
+
+	log.info(`Доступно обновление аддона: ${latestRelease.name}`)
+
+	local config = donatos.config
+	if config and config.autoUpdate then
+		log.info("Устанавливаю обновление аддона, так как включено авто-обновление.")
+		applyRelease(latestRelease, "Не удалось установить обновления аддона")
+	end
+end
+
+async.run(checkForAddonUpdates)
+
+return {}

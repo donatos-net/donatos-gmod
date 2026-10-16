@@ -1,0 +1,66 @@
+local http = require("utils.http")
+local log = require("utils.log")
+
+interface DonatosAddonRelease {
+	id: number;
+	name: string;
+	createdAt: string;
+	publishedAt?: string;
+	assets: { name: string; size: number; url: string }[];
+}
+
+local interface AddonApiResponse {
+	releases: DonatosAddonRelease[];
+}
+
+local localReleaseJson = "donatos/release.json"
+local localBundlePath = CLIENT and "donatos/bundle.txt" or "donatos/bundle.server.txt"
+
+local fetchAddonReleases = suspend function(): (AddonApiResponse, nil) | (nil, string)
+	local bootstrap = donatosBootstrap
+	local response, err = http.request({
+		method = "GET",
+		url = bootstrap and bootstrap.addonApiUrl or "https://donatos.net/api/game-server/gmod/addon",
+	})
+	if response == nil then
+		return nil, err
+	end
+
+	local body = util.JSONToTable(response.body)
+	if body == nil then
+		return nil, `invalid JSON (HTTP ${response.code})`
+	end
+	return body as AddonApiResponse, nil
+end
+
+-- Downloads the release's bundle.lua and stores it for the bootstrap. Returns its source.
+local installRelease = suspend function(release: DonatosAddonRelease): (string, nil) | (nil, string)
+	local asset: { name: string; size: number; url: string } | nil = nil
+	for _, candidate in ipairs(release.assets) do
+		if candidate.name == "bundle.lua" then
+			asset = candidate
+			break
+		end
+	end
+
+	if asset == nil then
+		return nil, `Не найден файл bundle.lua в релизе ${release.name}`
+	end
+
+	log.info(`Скачиваю релиз аддона ${release.name}`)
+	local response, err = http.request({ url = asset.url })
+
+	if response == nil then
+		return nil, err
+	end
+
+	file.Write(localReleaseJson, util.TableToJSON(release))
+	file.Write(localBundlePath, response.body)
+
+	return response.body, nil
+end
+
+return {
+	fetchAddonReleases = fetchAddonReleases,
+	installRelease = installRelease,
+}

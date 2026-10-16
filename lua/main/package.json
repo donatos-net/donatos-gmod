@@ -1,11 +1,12 @@
 {
 	"name": "main",
 	"scripts": {
-		"build": "tstl",
-		"postbuild": "bun run postbuild.js",
-		"dev": "tstl --watch"
+		"build": "bun run build.ts",
+		"check": "tlua --noEmit",
+		"dev": "tlua --watch"
 	},
-	"dependencies": {
-		"api-schema": "workspace:*"
+	"devDependencies": {
+		"@tlua/cli": "^0.0.57",
+		"@tlua/gmod": "^1.0.14"
 	}
 }

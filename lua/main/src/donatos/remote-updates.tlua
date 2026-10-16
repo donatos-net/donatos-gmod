@@ -1,0 +1,113 @@
+-- Server: polls the API for new orders and changed players, and loads players the
+-- first attempt missed.
+
+local netMessage = require("donatos.net")
+local serverApi = require("donatos.server-api")
+local serverUtils = require("donatos.server-utils")
+local remoteConfig = require("donatos.utils.load-remote-config")
+local serverPlayer = require("player.server")
+local async = require("utils.async")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local updatesSince: string | nil = nil
+local serverUpdatedAt: string | nil = nil
+
+-- player.GetBySteamID64 returns false when nobody matches.
+local function playerBySteamID64(steamID64: string): Player | nil
+	local found = player.GetBySteamID64(steamID64)
+	if type(found) == "boolean" then
+		return nil
+	end
+	return found
+end
+
+local performUpdates = suspend function()
+	local playerExternalIds: string[] = {}
+	for _, p in ipairs(player.GetAll()) do
+		table.insert(playerExternalIds, p:SteamID64())
+	end
+
+	local data = serverApi.request("server:get-updates:v2", {
+		since = updatesSince,
+		playerExternalIds = playerExternalIds,
+	})
+
+	if data == nil then
+		return
+	end
+
+	if updatesSince == nil then
+		updatesSince = data.ts
+		return
+	end
+
+	updatesSince = data.ts
+
+	for _, order in ipairs(data.newOrders) do
+		local ply = playerBySteamID64(order.playerExternalId)
+
+		if not order.isAnonymous then
+			local who = ply or order.playerName
+			if who then
+				serverUtils.sendMessage({
+					args = { who, ` задонатил серверу ${order.total} р.` },
+				})
+			end
+		end
+
+		if ply ~= nil then
+			serverUtils.sendMessage({
+				receiver = ply,
+				args = { `Вы оплатили заказ #${order.id} на ${order.total} р.` },
+			})
+
+			ply:EmitSound("garrysmod/save_load4.wav", 75, 100, 0.25)
+			serverPlayer.of(ply):loadRemoteData()
+			netMessage.toClient(ply, "openUi", "inventory")
+		end
+	end
+
+	for _, updated in ipairs(data.updatedPlayers) do
+		local ply = playerBySteamID64(updated.externalId)
+		if IsValid(ply) then
+			serverPlayer.of(ply):loadRemoteData()
+		end
+	end
+
+	if serverUpdatedAt ~= data.server.updatedAt or not state.remoteConfig.value then
+		serverUpdatedAt = data.server.updatedAt
+		remoteConfig.loadRemoteConfig()
+	end
+end
+
+local performLoadPlayers = suspend function()
+	for _, ply in ipairs(player.GetAll()) do
+		if not ply:IsBot() and not ply:Donatos():IsLoaded() then
+			local dp = serverPlayer.of(ply)
+			local _, err = dp:loadRemoteData()
+			if err ~= nil then
+				break
+			end
+			dp:onPlayerJoined()
+		end
+	end
+end
+
+-- Runs `task` every `seconds` until a newer bundle loads.
+local function every(seconds: number, name: string, task: suspend () => void)
+	async.run(suspend function()
+		while true do
+			state.delay(seconds)
+			local ok, err = pcall(task)
+			if not ok then
+				log.error(`${name} failed: ${err}`)
+			end
+		end
+	end)
+end
+
+every(10, "performUpdates", performUpdates)
+every(30, "performLoadPlayers", performLoadPlayers)
+
+return {}

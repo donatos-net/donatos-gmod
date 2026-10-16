@@ -1,0 +1,51 @@
+-- The `donatos` net message. Client -> server: a nonce and `{ action, data }`; the server
+-- answers with `resultFromServer`. Server -> client: `{ action, data }`.
+
+local state = require("utils.state")
+
+local clientNonce = state.clientNonce
+
+local function toServer<K extends keyof DonatosServerActions>(
+	action: K,
+	data: DonatosServerActions[K]["input"],
+	callback?: (result: DonatosServerActions[K]["output"]) => void
+)
+	local nonce = clientNonce.value
+	clientNonce.value = nonce + 1
+	if callback ~= nil then
+		clientNonce.handlers[nonce] = function(result: unknown)
+			callback(result as DonatosServerActions[K]["output"])
+		end
+	end
+
+	net.Start("donatos")
+	net.WriteUInt(nonce, 20)
+	net.WriteString(util.TableToJSON({ action, data }))
+	net.SendToServer()
+end
+
+-- Sends to `ply`, or to everyone when `ply` is nil.
+local function toClient<K extends keyof DonatosClientMessages>(
+	ply: Player | nil,
+	action: K,
+	data: DonatosClientMessages[K]
+)
+	if ply ~= nil and not IsValid(ply) then
+		return
+	end
+
+	net.Start("donatos")
+	net.WriteString(util.TableToJSON({ action, data }))
+
+	if ply ~= nil then
+		net.Send(ply)
+	else
+		net.Broadcast()
+	end
+end
+
+return {
+	clientNonce = clientNonce,
+	toServer = toServer,
+	toClient = toClient,
+}

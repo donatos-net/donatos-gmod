@@ -28,3 +28,5 @@ yarn-error.log*
 *.tsbuildinfo
 
 .idea
+# tlua output (packed into lua/main/dist/bundle.lua)
+lua/main/out/

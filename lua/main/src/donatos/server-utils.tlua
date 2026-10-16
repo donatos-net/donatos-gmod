@@ -1,0 +1,30 @@
+local netMessage = require("donatos.net")
+
+-- Prints a chat message to `receiver`, or announces it to everyone when it is nil.
+local function sendMessage(params: { receiver?: Player; args: (string | Player | Color)[] })
+	if CLIENT then
+		return
+	end
+
+	local serialized: DonatosChatPart[] = {}
+
+	for _, arg in ipairs(params.args) do
+		if type(arg) == "string" then
+			table.insert(serialized, { 0, arg })
+		elseif IsColor(arg) then
+			table.insert(serialized, { 2, arg:ToTable() })
+		elseif isentity(arg) and arg:IsPlayer() then
+			table.insert(serialized, { 1, arg:UserID() })
+		end
+	end
+
+	if params.receiver ~= nil then
+		netMessage.toClient(params.receiver, "print", serialized)
+	else
+		netMessage.toClient(nil, "broadcast", serialized)
+	end
+end
+
+return {
+	sendMessage = sendMessage,
+}

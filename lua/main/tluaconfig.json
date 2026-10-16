@@ -1,0 +1,10 @@
+{
+	"extends": "@tlua/gmod/tluaconfig.json",
+	"compilerOptions": {
+		"strict": true,
+		"rootDir": "src",
+		"outDir": "out",
+		"types": ["@tlua/gmod"]
+	},
+	"include": ["src"]
+}

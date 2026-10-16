@@ -1,0 +1,139 @@
+local item = require("donatos.item")
+local netMessage = require("donatos.net")
+local serverApi = require("donatos.server-api")
+local serverUtils = require("donatos.server-utils")
+local shared = require("player.shared")
+local log = require("utils.log")
+local state = require("utils.state")
+
+-- Server-only methods, falling back to the shared ones.
+local SERVER_PLAYER = setmetatable({}, { __index = shared.PLAYER })
+local SERVER_PLAYER_META = { __index = SERVER_PLAYER }
+
+interface DonatosServerPlayer extends DonatosPlayer, Omit<typeof SERVER_PLAYER, "__index"> {}
+
+suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (DonatosRemoteData, nil) | (nil, string)
+	local ply = self._ply
+	log.info(`Loading data for player ${ply:SteamID()} (${ply:Nick()})`)
+
+	local data, err = serverApi.request("server:get-player", {
+		playerExternalId = ply:SteamID64(),
+		setName = ply:Nick(),
+	})
+
+	if err ~= nil then
+		log.error(`Failed to load data for player ${ply:SteamID()} (${ply:Nick()}): ${err}`)
+		return nil, err
+	end
+
+	log.info(`Loaded data for player ${ply:SteamID()} (${ply:Nick()})`)
+
+	local wasLoaded = self._remoteData.isLoaded
+	local prevData = self._remoteData.data
+	local prevBalance = prevData and prevData.player.balance
+
+	self._remoteData = { isLoaded = true, data = data }
+	netMessage.toClient(ply, "syncPlayer", data)
+
+	if prevBalance and prevBalance < self:GetBalance() then
+		self:print(`Ваш баланс пополнен на ${self:GetBalance() - prevBalance}`)
+		ply:EmitSound("garrysmod/save_load4.wav", 75, 100, 0.25)
+	end
+
+	if not wasLoaded and data then
+		if data.player.balance > 0 then
+			self:print(`Вам доступно ${data.player.balance} р.`)
+		end
+		if #data.inventoryItems > 0 then
+			local names: string[] = {}
+			for _, inventoryItem in ipairs(data.inventoryItems) do
+				local goods = inventoryItem.goods
+				table.insert(names, goods and goods.name or "???")
+			end
+			self:print(`У вас есть неактивированные предметы в инвентаре: ${table.concat(names, ", ")}`)
+		end
+	end
+
+	return data, nil
+end
+
+function SERVER_PLAYER.sync(self: DonatosServerPlayer)
+	if self._remoteData.isLoaded then
+		netMessage.toClient(self._ply, "syncPlayer", self._remoteData.data)
+	end
+end
+
+function SERVER_PLAYER.print(self: DonatosServerPlayer, ...: string | Player | Color)
+	serverUtils.sendMessage({ receiver = self._ply, args = { ... } })
+end
+
+-- Applies the player's active items: SAM ranks, then each item's join handlers.
+function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
+	if not self:IsLoaded() then
+		return
+	end
+
+	local ply = self._ply
+
+	local setRank = ply.sam_set_rank
+	if setRank ~= nil then
+		local getRank = ply.sam_getrank
+		local getNwVar = ply.sam_get_nwvar
+		local plySamRank = getRank and getRank(ply)
+		if plySamRank == nil then
+			plySamRank = getNwVar and getNwVar(ply, "rank", "user")
+		end
+		plySamRank = plySamRank or ply:GetUserGroup()
+
+		local purchasedSamRanks: Table<string, true> = {}
+		local highestRank: DonatosActiveItem | nil = nil
+
+		for _, itm in ipairs(self:GetActiveItems()) do
+			if not itm.isFrozen then
+				local donatosItem = state.items[itm.goods.key]
+				local samRank = donatosItem and donatosItem.meta.samRank
+				if samRank then
+					purchasedSamRanks[samRank] = true
+
+					if highestRank == nil or itm.activatedAt > highestRank.activatedAt then
+						highestRank = itm
+					end
+				end
+			end
+		end
+
+		if state.knownSamRanks[plySamRank] and not purchasedSamRanks[plySamRank] then
+			log.info(`Removing expired SAM rank ${plySamRank} from user ${ply:SteamID()}`)
+			setRank(ply, "user")
+		end
+
+		-- dont override currently assigned custom rank
+		if plySamRank == "user" and highestRank ~= nil then
+			local donatosItem = state.items[highestRank.goods.key]
+			local samRank = donatosItem and donatosItem.meta.samRank
+			if samRank then
+				setRank(ply, samRank)
+			end
+		end
+	end
+
+	for _, itm in ipairs(self:GetActiveItems()) do
+		if not itm.isFrozen then
+			item.invoke(itm.goods.key, "_onPlayerJoin", ply, { goods = itm.goods })
+		end
+	end
+end
+
+local function new(ply: Player): DonatosServerPlayer
+	return setmetatable({ _ply = ply, _remoteData = { isLoaded = false, data = nil } }, SERVER_PLAYER_META)
+end
+
+-- `ply:Donatos()` on the server.
+local function of(ply: Player): DonatosServerPlayer
+	return ply:Donatos() as DonatosServerPlayer
+end
+
+return {
+	new = new,
+	of = of,
+}

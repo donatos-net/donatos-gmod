@@ -1,0 +1,267 @@
+-- Globals the addon shares with config files and other addons, and the wire
+-- contracts it shares with the donatos.net API and the web UI.
+
+------------------------------------------------------------------------------
+-- donatos.net server API (mirrors api-schema/src/api-schema.ts).
+-- Payloads travel as JSON, so dates arrive as strings and JSON null as nil.
+------------------------------------------------------------------------------
+
+interface DonatosGoodsVariant {
+	id: string;
+	price: number;
+	duration?: number;
+}
+
+interface DonatosItemGoods {
+	key: string;
+	meta?: string;
+	name: string;
+}
+
+interface DonatosServerApi {
+	["server:get-config"]: {
+		input: nil;
+		output: {
+			name: string;
+			updatedAt: string;
+			payUrl: string;
+			igs: { enabled: boolean };
+			goods: {
+				id: number;
+				name: string;
+				order?: number;
+				category?: string;
+				categoryId?: number;
+				key: string;
+				description?: string;
+				variants?: DonatosGoodsVariant[];
+			}[];
+			goodsCategories: { id: number; name: string }[];
+		};
+	};
+	["server:igs-create-payment-url"]: {
+		input: { playerExternalId: string; sum: number; extra?: string };
+		output: { url: string };
+	};
+	["server:get-updates:v2"]: {
+		input: { since?: string; playerExternalIds: string[] };
+		output: {
+			ts: string;
+			server: { updatedAt: string };
+			updatedPlayers: { id: number; externalId: string; updatedAt: string }[];
+			newOrders: {
+				id: number;
+				playerId: number;
+				playerExternalId: string;
+				playerName?: string;
+				total: string;
+				status: "PENDING" | "SUCCEEDED" | "CANCELED" | "REFUNDED";
+				isAnonymous: boolean;
+			}[];
+		};
+	};
+	["server:get-player"]: {
+		input: { playerExternalId: string; setName?: string };
+		output: {
+			player: {
+				id: number;
+				externalId: string;
+				balance: number;
+				externalMeta?: {
+					name?: string;
+					avatarUrl?: string;
+					profileUrl?: string;
+				};
+			};
+			inventoryItems: {
+				id: number;
+				goodsId?: number;
+				goods?: { name: string; description?: string; key: string };
+				variantId?: string;
+				variant?: DonatosGoodsVariant;
+				amountPaid?: string;
+			}[];
+			activeItems: {
+				id: number;
+				activatedAt: number;
+				expires?: { at: number; ["in"]: string; inS: number; durationS: number };
+				isFrozen: boolean;
+				frozenAt?: number;
+				freezeCounter?: number;
+				goods: DonatosItemGoods;
+				variant?: DonatosGoodsVariant;
+			}[];
+		} | nil;
+	};
+	["player:purchase-goods"]: {
+		input: { playerId: number; goodsId: number; variantId: string; expectedPrice?: number };
+		output: {
+			item: { id: number };
+			goods: { id: number; name: string };
+		};
+	};
+	["player:activate-item"]: {
+		input: { playerId: number; itemId: number };
+		output: {
+			goods: { id: number; key: string; meta?: string; name: string };
+			variant: { id: string; duration?: number; price: number };
+			order?: { isAnonymous: boolean };
+		};
+	};
+	["player:gift-item"]: {
+		input: { playerId: number; itemId: number; gifteeExternalId: string };
+		output: {
+			gifteeExternalId: string;
+			item: { id: number; name: string; variant?: DonatosGoodsVariant };
+		};
+	};
+	["player:freeze-active-item"]: {
+		input: { playerId: number; itemId: number };
+		output: boolean;
+	};
+	["player:unfreeze-active-item"]: {
+		input: { playerId: number; itemId: number };
+		output: boolean;
+	};
+}
+
+type DonatosRemoteConfig = DonatosServerApi["server:get-config"]["output"]
+type DonatosRemoteData = DonatosServerApi["server:get-player"]["output"]
+type DonatosInventoryItem = NonNullable<DonatosRemoteData>["inventoryItems"][number]
+type DonatosActiveItem = NonNullable<DonatosRemoteData>["activeItems"][number]
+
+------------------------------------------------------------------------------
+-- UI -> Lua -> server actions (mirrors api-schema/src/server-actions.ts).
+------------------------------------------------------------------------------
+
+type DonatosActionResult<T> =
+	| { success: true; data: T }
+	| { success: false; error: string }
+
+interface DonatosOnlinePlayer {
+	externalId: string;
+	name: string;
+	avatarUrl?: string;
+}
+
+interface DonatosServerActions {
+	requestSync: { input: nil; output: DonatosActionResult<true> };
+	requestRefresh: { input: nil; output: DonatosActionResult<true> };
+	purchaseGoods: {
+		input: { goodsId: number; variantId: string };
+		output: DonatosActionResult<DonatosServerApi["player:purchase-goods"]["output"]>;
+	};
+	activateItem: { input: { id: number }; output: DonatosActionResult<true> };
+	giftItem: {
+		input: { id: number; gifteeExternalId: string };
+		output: DonatosActionResult<DonatosServerApi["player:gift-item"]["output"]>;
+	};
+	freezeActiveItem: { input: { id: number }; output: DonatosActionResult<true> };
+	unfreezeActiveItem: { input: { id: number }; output: DonatosActionResult<true> };
+	createIgsPaymentUrl: {
+		input: { sum: number };
+		output: DonatosActionResult<DonatosServerApi["server:igs-create-payment-url"]["output"]>;
+	};
+	getOnlinePlayers: { input: nil; output: DonatosActionResult<DonatosOnlinePlayer[]> };
+}
+
+------------------------------------------------------------------------------
+-- Server -> client net messages. Payloads are JSON, `{ action, data }` arrays.
+------------------------------------------------------------------------------
+
+type DonatosUiTab = "shop" | "inventory" | "activeItems" | "profile"
+
+-- One chat message part: text, a player by UserID, or a Color:ToTable() color.
+type DonatosChatPart = [0, string] | [1, number] | [2, [number, number, number, number]]
+
+interface DonatosClientMessages {
+	resultFromServer: [number, unknown];
+	updateAddon: string;
+	openUi: DonatosUiTab | nil;
+	print: DonatosChatPart[];
+	broadcast: DonatosChatPart[];
+	syncConfig: DonatosRemoteConfig;
+	syncPlayer: DonatosRemoteData;
+}
+
+------------------------------------------------------------------------------
+-- Globals.
+------------------------------------------------------------------------------
+
+interface DonatosConfig {
+	apiEndpoint?: string;
+	apiToken?: string;
+	autoUpdate?: boolean;
+	menuKeyBind?: KEY;
+	igsCompat?: boolean;
+}
+
+-- The shape of the `donatos` global, which main.tlua creates.
+interface DonatosGlobal {
+	-- server
+	Item?: (key: string) => DonatosItem;
+
+	-- client
+	OpenUI?: (tab?: DonatosUiTab) => DHTML;
+	NetMessageToServer?: <K extends keyof DonatosServerActions>(
+		action: K,
+		data: DonatosServerActions[K]["input"],
+		callback?: (result: DonatosServerActions[K]["output"]) => void
+	) => void;
+
+	GetRemoteConfig?: () => DonatosRemoteConfig | nil;
+
+	-- set by donatos/config_sv.lua and donatos/config_sh.lua
+	config?: DonatosConfig;
+	dev?: {
+		enabled?: boolean;
+		webUiUrl?: string;
+	};
+}
+
+-- Set by the bootstrap addon before it runs the bundle.
+declare donatosBootstrap: {
+	version?: number;
+	addonVersionConVar?: ConVar;
+	bundleSha256ConVar?: ConVar;
+	addonApiUrl?: string;
+} | nil
+
+-- State that survives a bundle reload (`RunString` of a newer bundle).
+interface DonatosPersistentState {
+	items?: Table<string, DonatosItem>;
+	knownSamRanks?: Table<string, true>;
+	clientNonce?: {
+		value: number;
+		handlers: Table<number, (data: unknown) => void>;
+	};
+	remoteConfig?: { value: DonatosRemoteConfig | nil };
+	webPanel?: { panel: DHTML | nil };
+}
+
+-- The shape of the `_donatos` global, which utils/state.tlua creates.
+interface DonatosRuntime {
+	_timersUuid?: string;
+	_state: DonatosPersistentState;
+}
+
+interface Player {
+	_donatos?: DonatosPlayer;
+	Donatos(self: Player): DonatosPlayer;
+	-- IGS compatibility, installed when donatos.config.igsCompat is set
+	HasPurchase(self: Player, key: string): boolean;
+
+	-- SAM admin mod, when installed
+	sam_getrank?: (self: Player) => string;
+	sam_get_nwvar?: (self: Player, key: string, fallback: string) => string;
+	sam_set_rank?: (self: Player, rank: string) => void;
+
+	-- DarkRP, when installed
+	addMoney?: (self: Player, amount: number, reason: string) => void;
+}
+
+-- Missing from @tlua/gmod 1.0.14, which emits no HTML panel hooks
+-- (https://wiki.facepunch.com/gmod/HTML:OnDocumentReady). Remove once the package has it.
+interface HTML {
+	OnDocumentReady(self: HTML, url: string): void;
+}

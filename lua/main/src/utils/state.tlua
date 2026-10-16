@@ -1,0 +1,47 @@
+local async = require("utils.async")
+
+local fresh: DonatosRuntime = { _state = {} }
+_donatos = _donatos or fresh
+_donatos._state = _donatos._state or {}
+
+local slots = _donatos._state
+slots.items = slots.items or {}
+slots.knownSamRanks = slots.knownSamRanks or {}
+slots.clientNonce = slots.clientNonce or { value = 1, handlers = {} }
+slots.remoteConfig = slots.remoteConfig or { value = nil }
+slots.webPanel = slots.webPanel or { panel = nil }
+
+local function hookId(name: string): string
+	return `donatos_${name}`
+end
+
+-- Each bundle run takes a new id; work left over from a replaced bundle checks it and stops.
+_donatos._timersUuid = tostring(CurTime())
+
+local currentUuid = _donatos._timersUuid
+
+local function hasInstanceChanged(): boolean
+	return currentUuid ~= _donatos._timersUuid
+end
+
+-- Resolves after `seconds`, unless a newer bundle has loaded since: then never.
+local delay = suspend function(seconds: number)
+	async.await(function(resolve: (value: nil) => void)
+		timer.Simple(seconds, function()
+			if not hasInstanceChanged() then
+				resolve(nil)
+			end
+		end)
+	end)
+end
+
+return {
+	items = slots.items,
+	knownSamRanks = slots.knownSamRanks,
+	clientNonce = slots.clientNonce,
+	remoteConfig = slots.remoteConfig,
+	webPanel = slots.webPanel,
+	hookId = hookId,
+	hasInstanceChanged = hasInstanceChanged,
+	delay = delay,
+}

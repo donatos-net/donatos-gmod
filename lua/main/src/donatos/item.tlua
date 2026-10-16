@@ -1,0 +1,92 @@
+local log = require("utils.log")
+local state = require("utils.state")
+
+interface DonatosItemInvokeData {
+	goods: DonatosItemGoods;
+}
+
+type DonatosItemHandler = (ply: Player, data: DonatosItemInvokeData) => void
+
+local ITEM = {}
+ITEM.__index = ITEM
+
+-- An item a config registers with `donatos.Item(key)`. The builder methods chain.
+interface DonatosItem extends Omit<typeof ITEM, "__index"> {
+	key: string;
+	_onActivate: DonatosItemHandler[];
+	_onPlayerJoin: DonatosItemHandler[];
+	meta: { samRank?: string };
+}
+
+function ITEM.OnActivate(self: DonatosItem, func: DonatosItemHandler): DonatosItem
+	table.insert(self._onActivate, func)
+	return self
+end
+
+function ITEM.OnPlayerJoin(self: DonatosItem, func: DonatosItemHandler): DonatosItem
+	table.insert(self._onPlayerJoin, func)
+	return self
+end
+
+function ITEM.SetSAMGroup(self: DonatosItem, rank: string): DonatosItem
+	self.meta.samRank = rank
+	state.knownSamRanks[rank] = true
+	return self:OnPlayerJoin(function(ply: Player)
+		local setRank = ply.sam_set_rank
+		if setRank ~= nil then
+			setRank(ply, rank)
+		end
+	end)
+end
+
+function ITEM.SetDarkRPMoney(self: DonatosItem, amount: number): DonatosItem
+	return self:OnActivate(function(ply: Player)
+		local addMoney = ply.addMoney
+		if addMoney ~= nil then
+			addMoney(ply, amount, "Donatos")
+		end
+	end)
+end
+
+local function create(key: string): DonatosItem
+	local itm: DonatosItem = setmetatable({
+		key = key,
+		_onActivate = {},
+		_onPlayerJoin = {},
+		meta = {},
+	}, ITEM)
+	state.items[key] = itm
+	return itm
+end
+
+-- Runs the item's handlers for `handlerType`. Returns false when any of them raised.
+local function invoke(
+	key: string,
+	handlerType: "_onActivate" | "_onPlayerJoin",
+	ply: Player,
+	data: DonatosItemInvokeData
+): boolean
+	local item = state.items[key]
+	if item == nil or not IsValid(ply) then
+		return true
+	end
+
+	local succeeded = true
+	for _, handler in ipairs(item[handlerType]) do
+		if isfunction(handler) then
+			local ok, err = pcall(handler, ply, data)
+			if not ok then
+				log.error(`Failed to invoke item handler (${key} ${handlerType}) for player ${ply:SteamID()}`)
+				print(err)
+				succeeded = false
+			end
+		end
+	end
+
+	return succeeded
+end
+
+return {
+	create = create,
+	invoke = invoke,
+}

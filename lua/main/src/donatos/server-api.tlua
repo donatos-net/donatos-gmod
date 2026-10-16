@@ -1,0 +1,47 @@
+local http = require("utils.http")
+local log = require("utils.log")
+
+local type ApiResponse<T> =
+	| { success: false; error: string }
+	| { success: true; data: T }
+
+local request = suspend function<K extends keyof DonatosServerApi>(
+	action: K,
+	input: DonatosServerApi[K]["input"]
+): (DonatosServerApi[K]["output"], nil) | (nil, string)
+	local config = donatos.config
+	local token = config and config.apiToken
+	if config == nil or not token then
+		return nil, "Секретный ключ не задан"
+	end
+
+	local response, err = http.request({
+		url = config.apiEndpoint or "https://donatos.net/api/game-server/gmod",
+		method = "POST",
+		headers = {
+			Authorization = `Bearer ${token}`,
+		},
+		body = util.TableToJSON({ action = action, input = input }),
+	})
+
+	if response == nil then
+		log.warn(`Server API request failed with error ${err}`)
+		return nil, err
+	end
+
+	if response.code ~= 200 and response.code ~= 400 then
+		log.warn(`Server API request "${action}" failed with code ${response.code}: ${response.body} `)
+		return nil, `HTTP error ${response.code}`
+	end
+
+	local body = util.JSONToTable(response.body) as ApiResponse<DonatosServerApi[K]["output"]>
+
+	if body.success then
+		return body.data, nil
+	end
+	return nil, body.error
+end
+
+return {
+	request = request,
+}

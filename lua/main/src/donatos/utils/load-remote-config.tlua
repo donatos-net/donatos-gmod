@@ -1,0 +1,22 @@
+local netMessage = require("donatos.net")
+local serverApi = require("donatos.server-api")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local loadRemoteConfig = suspend function()
+	log.info("Loading remote config...")
+	local data = serverApi.request("server:get-config", nil)
+
+	if data == nil then
+		return
+	end
+
+	state.remoteConfig.value = data
+	netMessage.toClient(nil, "syncConfig", data)
+
+	log.info("Received new remote config")
+end
+
+return {
+	loadRemoteConfig = loadRemoteConfig,
+}

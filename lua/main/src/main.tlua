@@ -1,0 +1,77 @@
+-- Bundle entry point, run on both realms.
+
+local item = require("donatos.item")
+local meta = require("meta")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local fresh: DonatosGlobal = {}
+donatos = donatos or fresh
+
+-- config files fill this table, or replace it
+local config: DonatosConfig = {}
+donatos.config = config
+donatos.dev = { enabled = false }
+
+donatos.Item = item.create
+donatos.GetRemoteConfig = function(): DonatosRemoteConfig | nil
+	return state.remoteConfig.value
+end
+
+if SERVER then
+	if file.Exists("donatos/config_sv.lua", "LUA") then
+		include("donatos/config_sv.lua")
+	end
+end
+
+if file.Exists("donatos/config_sh.lua", "LUA") then
+	AddCSLuaFile("donatos/config_sh.lua")
+	include("donatos/config_sh.lua")
+end
+
+local donatosPlayer = SERVER and require("player.server").new or require("player.shared").new
+
+do
+	local PLAYER_META = FindMetaTable<Player>("Player")
+
+	function PLAYER_META.Donatos(self: Player): DonatosPlayer
+		local existing = self._donatos
+		if existing ~= nil then
+			return existing
+		end
+		local created = donatosPlayer(self)
+		self._donatos = created
+		return created
+	end
+
+	local loadedConfig = donatos.config
+	if loadedConfig and loadedConfig.igsCompat then
+		-- Совместимость с IGS
+		function PLAYER_META.HasPurchase(self: Player, key: string): boolean
+			return self:Donatos():HasActiveItem(key)
+		end
+	end
+end
+
+-- re-init: a reloaded bundle rebuilds each player object around the data it already has
+for _, ply in ipairs(player.GetAll()) do
+	local old = ply._donatos
+	if old ~= nil then
+		local replacement = donatosPlayer(ply)
+		replacement._remoteData = old._remoteData
+		ply._donatos = replacement
+	end
+end
+
+if CLIENT then
+	require("donatos.net.client")
+	require("client")
+end
+
+if SERVER then
+	require("donatos.net.server")
+	require("donatos.remote-updates")
+	require("server")
+end
+
+log.debug(`Аддон запущен. Версия ${meta.VERSION}, номер сборки ${meta.BUILD_NUMBER}, коммит ${meta.COMMIT_HASH}`)

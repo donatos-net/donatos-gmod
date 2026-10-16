@@ -1,0 +1,37 @@
+local netMessage = require("donatos.net")
+local webPanel = require("ui.web-panel")
+local state = require("utils.state")
+
+local function openUi(tab?: DonatosUiTab): DHTML
+	return webPanel.open(tab)
+end
+
+donatos.OpenUI = openUi
+donatos.NetMessageToServer = netMessage.toServer
+
+netMessage.toServer("requestSync", nil)
+
+hook.Add("PlayerButtonDown", state.hookId("keybind"), function(ply: Player, key: KEY)
+	local config = donatos.config
+	if key == (config and config.menuKeyBind or KEY_F6) and IsFirstTimePredicted() then
+		openUi()
+	end
+end)
+
+hook.Add("InitPostEntity", state.hookId("postEntity"), function()
+	netMessage.toServer("requestSync", nil)
+end)
+
+list.Set("DesktopWindows", "donatos", {
+	title = "Автодонат",
+	icon = "icon16/money_add.png",
+	init = function()
+		openUi()
+	end,
+})
+
+concommand.Add("donatos", function()
+	openUi()
+end, nil, "Открыть донат-меню")
+
+return {}

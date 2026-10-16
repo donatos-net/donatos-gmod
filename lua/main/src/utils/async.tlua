@@ -1,0 +1,45 @@
+-- Coroutine-based async. A suspend function runs inside a coroutine started with
+-- `run`, and `await` parks that coroutine until a callback delivers a value.
+
+local function resume(co: thread, ...: any)
+	local ok, err = coroutine.resume(co, ...)
+	if not ok then
+		ErrorNoHalt(debug.traceback(co, `[Donatos] ${err}`) .. "\n")
+	end
+end
+
+-- Starts `task` in a new coroutine; it runs until its first await.
+local function run(task: suspend () => void)
+	resume(coroutine.create(task))
+end
+
+-- Calls `start` with a resolver and suspends until the resolver is called. Only the
+-- first call counts; one made before `start` returns resolves without suspending.
+local await = suspend function<T>(start: (resolve: (value: T) => void) => void): T
+	local co = assert(coroutine.running(), "await called outside a coroutine")
+	-- A table, not a local: the resolver writes it from inside a closure.
+	local settled: { value: T }[] = {}
+	local waiting = false
+
+	start(function(value: T)
+		if settled[1] ~= nil then
+			return
+		end
+		settled[1] = { value = value }
+		if waiting then
+			resume(co, value)
+		end
+	end)
+
+	local early = settled[1]
+	if early ~= nil then
+		return early.value
+	end
+	waiting = true
+	return coroutine.yield()
+end
+
+return {
+	run = run,
+	await = await,
+}

@@ -1,0 +1,62 @@
+-- Per-player donatos state, reached through `ply:Donatos()`. Its methods are public API.
+
+local PLAYER = {}
+PLAYER.__index = PLAYER
+
+type DonatosPlayerRemoteData =
+	| { isLoaded: true; data: DonatosRemoteData }
+	| { isLoaded: false; data: nil }
+
+interface DonatosPlayer extends Omit<typeof PLAYER, "__index"> {
+	_ply: Player;
+	_remoteData: DonatosPlayerRemoteData;
+}
+
+function PLAYER.IsLoaded(self: DonatosPlayer): boolean
+	return self._remoteData.isLoaded
+end
+
+function PLAYER.GetID(self: DonatosPlayer): number | nil
+	local data = self._remoteData.data
+	return data and data.player.id
+end
+
+function PLAYER.GetBalance(self: DonatosPlayer): number
+	local data = self._remoteData.data
+	return data and data.player.balance or 0
+end
+
+function PLAYER.GetInventoryItems(self: DonatosPlayer): DonatosInventoryItem[]
+	local data = self._remoteData.data
+	return data and data.inventoryItems or {}
+end
+
+function PLAYER._setInventoryItems(self: DonatosPlayer, items: DonatosInventoryItem[])
+	local data = self._remoteData.data
+	if data then
+		data.inventoryItems = items
+	end
+end
+
+function PLAYER.GetActiveItems(self: DonatosPlayer): DonatosActiveItem[]
+	local data = self._remoteData.data
+	return data and data.activeItems or {}
+end
+
+function PLAYER.HasActiveItem(self: DonatosPlayer, key: string): boolean
+	for _, item in ipairs(self:GetActiveItems()) do
+		if not item.isFrozen and item.goods.key == key then
+			return true
+		end
+	end
+	return false
+end
+
+local function new(ply: Player): DonatosPlayer
+	return setmetatable({ _ply = ply, _remoteData = { isLoaded = false, data = nil } }, PLAYER)
+end
+
+return {
+	PLAYER = PLAYER,
+	new = new,
+}

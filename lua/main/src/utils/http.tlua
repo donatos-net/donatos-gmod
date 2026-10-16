@@ -1,0 +1,45 @@
+local async = require("utils.async")
+
+local interface HttpRequest {
+	url: string;
+	method?: string;
+	headers?: Table<string, string>;
+	body?: string;
+}
+
+local interface HttpResponse {
+	code: number;
+	body: string;
+	headers: Table<string, string>;
+}
+
+local type HttpOutcome =
+	| { ok: true; response: HttpResponse }
+	| { ok: false; reason: string }
+
+-- TODO: timeouts
+local request = suspend function(parameters: HttpRequest): (HttpResponse, nil) | (nil, string)
+	local outcome = async.await(function(resolve: (value: HttpOutcome) => void)
+		HTTP({
+			url = parameters.url,
+			method = parameters.method or "GET",
+			headers = parameters.headers,
+			body = parameters.body,
+			success = function(code: number, body: string, headers: Table<string, string>)
+				resolve({ ok = true, response = { code = code, body = body, headers = headers } })
+			end,
+			failed = function(reason: string)
+				resolve({ ok = false, reason = reason })
+			end,
+		})
+	end)
+
+	if outcome.ok then
+		return outcome.response, nil
+	end
+	return nil, outcome.reason
+end
+
+return {
+	request = request,
+}

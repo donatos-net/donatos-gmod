@@ -1,0 +1,316 @@
+-- Server: actions the client (and the web UI through it) requests over the `donatos` net message.
+
+local item = require("donatos.item")
+local netMessage = require("donatos.net")
+local serverApi = require("donatos.server-api")
+local serverUtils = require("donatos.server-utils")
+local serverPlayer = require("player.server")
+local async = require("utils.async")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local function ok<T>(data: T): { success: true; data: T }
+	return { success = true, data = data }
+end
+
+local function err(message: string): { success: false; error: string }
+	return { success = false, error = message }
+end
+
+local NOT_LOADED = "Ошибка: данные игрока не загружены. Попробуйте позднее."
+local NOT_IN_INVENTORY = "Ошибка: предмет не найден в инвентаре."
+
+local function findInventoryItem(ply: Player, id: number): DonatosInventoryItem | nil
+	for _, inventoryItem in ipairs(ply:Donatos():GetInventoryItems()) do
+		if inventoryItem.id == id then
+			return inventoryItem
+		end
+	end
+	return nil
+end
+
+local function syncConfigToEveryone()
+	local config = state.remoteConfig.value
+	if config then
+		netMessage.toClient(nil, "syncConfig", config)
+	end
+end
+
+-- Reloads the player's data without waiting for it.
+local function refreshInBackground(ply: Player)
+	async.run(suspend function()
+		serverPlayer.of(ply):loadRemoteData()
+	end)
+end
+
+local type ServerActionHandlers = {
+	[K in keyof DonatosServerActions]: suspend (
+		ply: Player,
+		input: DonatosServerActions[K]["input"]
+	) => DonatosServerActions[K]["output"]
+}
+
+local handlers: ServerActionHandlers = {
+	requestSync = suspend function(ply)
+		serverPlayer.of(ply):sync()
+		syncConfigToEveryone()
+		return ok(true)
+	end,
+
+	requestRefresh = suspend function(ply)
+		serverPlayer.of(ply):loadRemoteData()
+		syncConfigToEveryone()
+		return ok(true)
+	end,
+
+	createIgsPaymentUrl = suspend function(ply, input)
+		local data, error = serverApi.request("server:igs-create-payment-url", {
+			playerExternalId = ply:SteamID64(),
+			sum = input.sum,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		return ok(data)
+	end,
+
+	purchaseGoods = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local data, error = serverApi.request("player:purchase-goods", {
+			playerId = playerId,
+			goodsId = input.goodsId,
+			variantId = input.variantId,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		serverPlayer.of(ply):loadRemoteData()
+
+		ply:EmitSound("garrysmod/content_downloaded.wav", 75, 100, 0.3)
+
+		return ok(data)
+	end,
+
+	activateItem = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local inventoryItem = findInventoryItem(ply, input.id)
+		if inventoryItem == nil then
+			return err(NOT_IN_INVENTORY)
+		end
+
+		local goods = inventoryItem.goods
+		local variant = inventoryItem.variant
+		if goods and (variant == nil or variant.duration == nil) then
+			if state.items[goods.key] == nil then
+				return err("Ошибка: предмет не настроен. Обратитесь к администратору сервера.")
+			end
+		end
+
+		local canActivate, message = hook.Run("donatos:preActivateItem", ply, inventoryItem)
+		if canActivate == false then
+			return err(`Вы не можете активировать этот предмет${message and `: ${message}` or ""}`)
+		end
+
+		-- TODO: handle request error
+		local data, error = serverApi.request("player:activate-item", {
+			playerId = playerId,
+			itemId = input.id,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		if not item.invoke(data.goods.key, "_onActivate", ply, data) then
+			return err("ВОЗНИКЛА ОШИБКА! Предмет настроен неверно, обратитесь к администратору сервера для возврата.")
+		end
+
+		item.invoke(data.goods.key, "_onPlayerJoin", ply, data)
+
+		if not data.order or data.order.isAnonymous == false then
+			serverUtils.sendMessage({
+				args = { ply, ` активировал предмет "${data.goods.name}"` },
+			})
+		end
+		ply:EmitSound("friends/friend_join.wav", 75, 100, 0.2)
+
+		refreshInBackground(ply)
+
+		return ok(true)
+	end,
+
+	giftItem = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local inventoryItem = findInventoryItem(ply, input.id)
+		if inventoryItem == nil then
+			return err(NOT_IN_INVENTORY)
+		end
+
+		if input.gifteeExternalId == ply:SteamID64() then
+			return err("Нельзя подарить предмет самому себе.")
+		end
+
+		local giftee: Player | nil = nil
+		for _, target in ipairs(player.GetAll()) do
+			if target:SteamID64() == input.gifteeExternalId then
+				giftee = target
+				break
+			end
+		end
+		if giftee == nil then
+			return err("Игрок не найден на сервере.")
+		end
+
+		local data, error = serverApi.request("player:gift-item", {
+			playerId = playerId,
+			itemId = input.id,
+			gifteeExternalId = input.gifteeExternalId,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		refreshInBackground(ply)
+		refreshInBackground(giftee)
+
+		local goods = inventoryItem.goods
+		local itemName = goods and goods.name or "предмет"
+
+		serverUtils.sendMessage({
+			receiver = ply,
+			args = { `Вы подарили предмет "${itemName}" игроку `, giftee, "." },
+		})
+
+		serverUtils.sendMessage({
+			receiver = giftee,
+			args = { ply, ` подарил вам предмет "${itemName}".` },
+		})
+
+		giftee:EmitSound("garrysmod/save_load4.wav", 75, 100, 0.25)
+
+		return ok(data)
+	end,
+
+	freezeActiveItem = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local data, error = serverApi.request("player:freeze-active-item", {
+			playerId = playerId,
+			itemId = input.id,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		local dp = serverPlayer.of(ply)
+		dp:loadRemoteData()
+		dp:onPlayerJoined()
+
+		return ok(true)
+	end,
+
+	unfreezeActiveItem = suspend function(ply, input)
+		local playerId = ply:Donatos():GetID()
+		if not playerId then
+			return err(NOT_LOADED)
+		end
+
+		local data, error = serverApi.request("player:unfreeze-active-item", {
+			playerId = playerId,
+			itemId = input.id,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		local dp = serverPlayer.of(ply)
+		dp:loadRemoteData()
+		dp:onPlayerJoined()
+
+		return ok(true)
+	end,
+
+	getOnlinePlayers = suspend function(ply)
+		local onlinePlayers: DonatosOnlinePlayer[] = {}
+
+		for _, target in ipairs(player.GetAll()) do
+			local externalId = target:SteamID64()
+			if target ~= ply and externalId and #externalId > 0 and externalId ~= "0" then
+				local data = target:Donatos()._remoteData.data
+				local externalMeta = data and data.player.externalMeta
+
+				table.insert(onlinePlayers, {
+					externalId = externalId,
+					name = target:Nick(),
+					avatarUrl = externalMeta and externalMeta.avatarUrl,
+				})
+			end
+		end
+
+		table.sort(onlinePlayers, function(a: DonatosOnlinePlayer, b: DonatosOnlinePlayer): boolean
+			return a.name < b.name
+		end)
+
+		return ok(onlinePlayers)
+	end,
+}
+
+util.AddNetworkString("donatos")
+
+net.Receive("donatos", function(len: number, ply: Player)
+	local nonce = net.ReadUInt(20)
+	local message = util.JSONToTable(net.ReadString())
+	if message == nil then
+		return
+	end
+	local action = message[1]
+	local data = message[2]
+
+	async.run(suspend function()
+		-- The action name comes off the wire: look it up untyped.
+		local untyped = handlers as Table<string, suspend (ply: Player, input: unknown) => unknown>
+		local handler = type(action) == "string" and untyped[action] or nil
+		if handler == nil then
+			netMessage.toClient(ply, "resultFromServer", { nonce, err("Unknown action") })
+			return
+		end
+
+		local succeeded, result = pcall(handler, ply, data)
+		if succeeded then
+			netMessage.toClient(ply, "resultFromServer", { nonce, result })
+		else
+			log.error(`Error in handleServerMessage[${action}]:`)
+			print(result)
+			netMessage.toClient(ply, "resultFromServer", {
+				nonce,
+				err("Внутренняя ошибка сервера. Повторите попытку позже."),
+			})
+		end
+	end)
+end)
+
+return {
+	handlers = handlers,
+}

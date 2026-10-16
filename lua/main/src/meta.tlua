@@ -1,0 +1,7 @@
+-- The build substitutes these placeholders, in this module only. VERSION is empty
+-- in a local build.
+return {
+	VERSION = "$VERSION$",
+	BUILD_NUMBER = "$BUILD_NUMBER$",
+	COMMIT_HASH = "$COMMIT_HASH$",
+}

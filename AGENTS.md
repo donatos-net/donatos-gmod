@@ -4,9 +4,9 @@
 
 Donatos is a Garry's Mod donation/shop addon with:
 
-1. Backend logic written in TypeScript and transpiled to Lua (`typescript-to-lua`)
+1. Backend logic written in tlua (typed Lua, `@tlua/cli`) and compiled to Lua
 2. A React web UI rendered inside a GMod `DHTML` panel
-3. Shared API contracts via Zod schemas in `api-schema`
+3. Shared API contracts: Zod schemas in `api-schema` for the UI, mirrored as tlua types in `lua/main/src/donatos.d.tlua`
 
 This repository is a Bun workspace.
 
@@ -17,19 +17,22 @@ donatos-gmod/
 ├── bootstrap/                    # Runtime bootstrap addon that downloads/runs bundle.lua
 │   └── donatos/lua/autorun/
 │       └── donatos_bootstrap.lua
-├── api-schema/                   # Shared Zod schemas and server action typings
+├── api-schema/                   # Zod schemas and server action typings (used by the UI)
 │   └── src/
 │       ├── api-schema.ts
 │       └── server-actions.ts
 ├── lua/
 │   ├── autorun/donatos-dev.lua   # Dev loader: includes lua/main/dist/bundle.lua if present
-│   └── main/                     # TypeScript -> Lua addon source
+│   └── main/                     # tlua addon source
 │       ├── src/
+│       │   ├── donatos.d.tlua    # Globals + API/net contracts (mirror of api-schema)
 │       │   ├── donatos/          # Net handlers, API calls, releases, remote updates
-│       │   ├── player/           # Player domain logic (server/client/shared)
-│       │   ├── ui/web-panel.ts   # DHTML panel + JS bridge registration
-│       │   └── index-*.ts        # Entry points
-│       └── postbuild.js          # Builds UI and inlines HTML into dist/bundle.lua
+│       │   ├── player/           # Player objects (shared + server methods)
+│       │   ├── ui/web-panel.tlua # DHTML panel + JS bridge registration
+│       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
+│       │   └── main.tlua, client.tlua, server.tlua  # Entry points
+│       ├── tluaconfig.json
+│       └── build.ts              # tlua -> out/, packs modules + inlines UI HTML into dist/bundle.lua
 ├── ui/                           # React + TanStack Router + Query UI
 │   ├── src/
 │   │   ├── components/
@@ -40,7 +43,6 @@ donatos-gmod/
 │   │   ├── routes/
 │   │   └── types/
 │   └── vite.config.ts
-├── types/                        # GMod/Lua TS typing workspace
 └── package.json                  # Workspace root
 ```
 
@@ -48,7 +50,8 @@ donatos-gmod/
 
 ### Backend
 - Runtime: Garry's Mod Lua
-- Source: TypeScript (`typescript-to-lua`)
+- Source: tlua (`@tlua/cli`), GMod typings from `@tlua/gmod`
+- Async: coroutines (`suspend` functions, `utils/async.tlua`)
 - Transport: GMod `net` messages
 
 ### Frontend
@@ -99,7 +102,7 @@ Important nuance: current bootstrap code verifies SHA256 only for pre-existing l
 
 ### 4) UI actions (UI -> Lua)
 - Typed action contracts: `api-schema/src/server-actions.ts`
-- Implemented server handlers: `lua/main/src/donatos/net/server.ts`
+- Implemented server handlers: `lua/main/src/donatos/net/server.tlua`
 - Currently wired in UI mutations (`ui/src/hooks/use-donatos-mutations.ts`):
   - `purchaseGoods`
   - `activateItem`
@@ -153,11 +156,17 @@ bun run dev
 ## Lua bundle build
 ```bash
 cd lua/main
+bun run check   # type-check only
 bun run build
-bun run postbuild
 ```
-- `build` runs `tstl` and emits `lua/main/dist/bundle.lua`
-- `postbuild` builds UI and inlines `ui/dist/index.html` into the Lua bundle
+- `build` runs `tlua` into `out/` (one `.lua` per module), builds the UI, and packs
+  everything into `lua/main/dist/bundle.lua` behind a bundle-local `require`
+  (tlua has no bundler). `$VERSION$`-style placeholders are substituted in the
+  `meta` module only, from `DONATOS_ADDON_VERSION`, `GITHUB_RUN_NUMBER`, `GITHUB_SHA`;
+  a local build has an empty version and skips update checks.
+- tlua notes: top-level types are global, `local type` is module-private; there is no
+  `local suspend function` declaration, so module-private suspend functions are written
+  `local f = suspend function(...) ... end`.
 
 ## Local GMod dev loader
 - `lua/autorun/donatos-dev.lua` includes `main/dist/bundle.lua` if it exists, which is useful for local iteration.
@@ -167,7 +176,8 @@ bun run postbuild
 1. Keep API contract updates synchronized across:
 - `api-schema/src/api-schema.ts`
 - `api-schema/src/server-actions.ts`
-- Lua net handlers (`lua/main/src/donatos/net/server.ts`)
+- `lua/main/src/donatos.d.tlua` (the tlua mirror of both)
+- Lua net handlers (`lua/main/src/donatos/net/server.tlua`)
 - UI mutations/hooks (`ui/src/hooks/*`)
 
 2. UI is designed for Chromium 86 target (see `ui/vite.config.ts`), matching GMod's embedded browser constraints.
@@ -175,5 +185,5 @@ bun run postbuild
 3. Do not assume mock-mode behavior equals in-game behavior. In-game state arrives through `requestStateSync` + push updates, not normal HTTP fetching.
 
 4. If adding new UI -> Lua action, update both:
-- TS typing in `api-schema/src/server-actions.ts`
-- Lua server action handler map in `lua/main/src/donatos/net/server.ts`
+- TS typing in `api-schema/src/server-actions.ts` and `DonatosServerActions` in `lua/main/src/donatos.d.tlua`
+- Lua server action handler map in `lua/main/src/donatos/net/server.tlua`

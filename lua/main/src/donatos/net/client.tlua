@@ -1,0 +1,122 @@
+-- Client: messages the server sends over the `donatos` net message.
+
+local netMessage = require("donatos.net")
+local releases = require("donatos.releases")
+local webPanel = require("ui.web-panel")
+local async = require("utils.async")
+local log = require("utils.log")
+local state = require("utils.state")
+
+local broadcastEnabled = CreateClientConVar(
+	"donatos_receive_announcements",
+	"1",
+	true,
+	false,
+	"Получать сообщения о донатах других игроков"
+)
+
+local function printParts(input: DonatosChatPart[])
+	local deserialized: (string | Player | Color)[] = {}
+
+	for _, part in ipairs(input) do
+		if part[1] == 0 then
+			table.insert(deserialized, part[2])
+		elseif part[1] == 1 then
+			table.insert(deserialized, Player(part[2]))
+		elseif part[1] == 2 then
+			local c = part[2]
+			table.insert(deserialized, Color(c[1], c[2], c[3], c[4]))
+		end
+	end
+
+	log.addText(unpack(deserialized))
+end
+
+local type ClientMessageHandlers = {
+	[K in keyof DonatosClientMessages]: (input: DonatosClientMessages[K]) => void
+}
+
+local handlers: ClientMessageHandlers = {
+	resultFromServer = function(input)
+		local nonce = input[1]
+		local handler = netMessage.clientNonce.handlers[nonce]
+		netMessage.clientNonce.handlers[nonce] = nil
+		if handler ~= nil then
+			handler(input[2])
+		end
+	end,
+
+	updateAddon = function(releaseName)
+		async.run(suspend function()
+			local response, err = releases.fetchAddonReleases()
+
+			if response == nil then
+				log.error(`Не удалось получить список релизов: ${err}`)
+				return
+			end
+
+			for _, release in ipairs(response.releases) do
+				if release.name == releaseName then
+					local bundle, installErr = releases.installRelease(release)
+
+					if bundle == nil then
+						log.error(`Не удалось скачать релиз ${release.name}: ${installErr}`)
+						return
+					end
+
+					log.info("Подгружаю bundle.lua")
+					RunString(bundle, "donatos/bundle.lua")
+					return
+				end
+			end
+
+			log.error(`Релиз ${releaseName} не найден.`)
+		end)
+	end,
+
+	openUi = function(tab)
+		local openUi = donatos.OpenUI
+		if openUi ~= nil then
+			openUi(tab)
+		else
+			webPanel.open(tab)
+		end
+	end,
+
+	print = function(input)
+		printParts(input)
+	end,
+
+	broadcast = function(input)
+		if broadcastEnabled:GetBool() then
+			printParts(input)
+		end
+	end,
+
+	syncConfig = function(input)
+		state.remoteConfig.value = input
+		webPanel.pushState("serverConfig", input)
+	end,
+
+	syncPlayer = function(input)
+		LocalPlayer():Donatos()._remoteData = { isLoaded = true, data = input }
+		webPanel.pushState("playerData", input)
+	end,
+}
+
+net.Receive("donatos", function()
+	local message = util.JSONToTable(net.ReadString())
+	if message == nil then
+		return
+	end
+	local action = message[1]
+
+	-- The action name comes off the wire: look it up untyped.
+	local untyped = handlers as Table<string, (input: unknown) => void>
+	local handler = type(action) == "string" and untyped[action] or nil
+	if handler ~= nil then
+		handler(message[2])
+	end
+end)
+
+return {}
