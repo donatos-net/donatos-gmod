@@ -1227,6 +1227,39 @@ function theme.shade(x: number, y: number, w: number, h: number, color: Color, s
 	end
 end
 
+-- A soft spot, full at the centre and gone at the edge, as a CSS radial-gradient. Baked like the
+-- ramps, its alpha converted for a light or a dark colour the same way.
+local spots: Table<string, DonatosMask> = {}
+
+local function spotMask(light: boolean): DonatosMask
+	local key = light and "light" or "dark"
+	local cached = spots[key]
+	if cached ~= nil then
+		return cached
+	end
+	local mask = bakeMask(`donatos_spot_v1_${key}`, RAMP_SIZE, function(x: number, y: number): number
+		local dx, dy = (x + 0.5) / RAMP_SIZE * 2 - 1, (y + 0.5) / RAMP_SIZE * 2 - 1
+		local a = math.Clamp(1 - math.sqrt(dx * dx + dy * dy), 0, 1)
+		a = a * a * (3 - 2 * a)
+		if light then
+			return a ^ 1.6 * 255
+		end
+		return (1 - (1 - a) ^ 2.2) * 255
+	end)
+	spots[key] = mask
+	return mask
+end
+
+-- Fills the ellipse in the box at (x, y) with `color` fading out from its centre, at
+-- `strength` (0-1) there.
+function theme.spot(x: number, y: number, w: number, h: number, color: Color, strength: number)
+	local mask = spotMask(math.max(color.r, color.g, color.b) > 128)
+	local e = mask.extent
+	surface.SetMaterial(mask.material)
+	surface.SetDrawColor(color.r, color.g, color.b, math.Clamp(strength, 0, 1) * 255)
+	surface.DrawTexturedRectUV(math.Round(x), math.Round(y), math.Round(w), math.Round(h), 0, 0, e, e)
+end
+
 -- A ring of dots with a rotating bright head.
 function theme.spinner(cx: number, cy: number, radius: number, color: Color)
 	local dots = 8

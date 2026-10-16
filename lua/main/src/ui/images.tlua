@@ -179,36 +179,23 @@ local function transparent(url: string): boolean
 	return string.EndsWith(url, ".png")
 end
 
--- A transparent picture's glow and soft shadow are the picture itself, drawn enlarged in a
--- ring of faint copies and offset below it (GMod has no blur for a texture with alpha). Meant
--- for small sizes, such as shop cards: large, the copies show as ghost edges.
-local GLOW_COPIES = 8
--- Only drawn on dark cards.
-local GLOW_TINT = theme.overDark(255, 255, 255, 34)
-local SHADOW_TINT = theme.translucent(0, 0, 0, 40)
+-- A transparent picture floats over a soft light behind it (on dark cards, where a dark
+-- picture would sink into the card) and casts a soft shadow on the card below it.
+local LIGHT = Color(255, 255, 255, 255)
+local SHADOW = Color(0, 0, 0, 255)
 local OPAQUE_WHITE = Color(255, 255, 255, 255)
 
--- Draws a transparent picture `iw` x `ih` centred at (cx, cy), turned `tilt` degrees, over a
--- glow of its own colours and a soft shadow; `opacity` (0-1) fades it all in.
+-- Draws a transparent picture `iw` x `ih` centred at (cx, cy), turned `tilt` degrees, over its
+-- light and shadow; `opacity` (0-1) fades it all in.
 local function floating(material: IMaterial, cx: number, cy: number, iw: number, ih: number, tilt: number, opacity: number)
-	local function faded(color: Color): Color
-		return opacity >= 1 and color or theme.fade(color, opacity)
-	end
-	local unit = math.max(iw, ih) / 100
-	surface.SetMaterial(material)
-	-- On a light card the glow of a dark picture is a grey smudge; the shadow is enough there.
+	local size = math.max(iw, ih)
 	if not theme.light then
-		surface.SetDrawColor(faded(GLOW_TINT))
-		for i = 1, GLOW_COPIES do
-			local angle = i / GLOW_COPIES * math.pi * 2
-			surface.DrawTexturedRectRotated(cx + math.cos(angle) * unit * 8, cy + math.sin(angle) * unit * 8, iw * 1.3, ih * 1.5, tilt)
-		end
+		theme.spot(cx - size * 0.6, cy - size * 0.6, size * 1.2, size * 1.2, LIGHT, 0.14 * opacity)
 	end
-	surface.SetDrawColor(faded(SHADOW_TINT))
-	for i = 1, 4 do
-		surface.DrawTexturedRectRotated(cx + (i - 2.5) * unit, cy + unit * (2 + i), iw * 1.04, ih * 1.08, tilt)
-	end
-	surface.SetDrawColor(faded(OPAQUE_WHITE))
+	local foot = cy + ih / 2
+	theme.spot(cx - iw * 0.45, foot - size * 0.08, iw * 0.9, size * 0.16, SHADOW, (theme.light and 0.18 or 0.5) * opacity)
+	surface.SetMaterial(material)
+	surface.SetDrawColor(opacity >= 1 and OPAQUE_WHITE or theme.fade(OPAQUE_WHITE, opacity))
 	surface.DrawTexturedRectRotated(cx, cy, iw, ih, tilt)
 end
 
