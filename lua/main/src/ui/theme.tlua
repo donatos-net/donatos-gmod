@@ -141,25 +141,30 @@ local GRADIENT: Color[] = {
 
 local scale = 1
 
--- Scales a design-space length (1080p-ish) to the current screen.
+-- Scales a length in the web UI's CSS pixels to the screen. Like the old DHTML menu's zoom, 1 at
+-- 1920x1080, growing with larger screens and never shrinking below 1, so text stays readable.
 function theme.px(value: number): number
 	return math.Round(value * scale)
 end
 
+-- A GMod font's size is its full cell height, about 1.17 times the CSS font-size for Roboto:
+-- 14 here matches the web UI's 12px text (text-xs), 16 its 14px (text-sm), 12 its 10px.
+-- Line heights (`leading` in widgets.text) are relative to that cell height too.
 local FONTS: { name: string; face: string; size: number; weight: number }[] = {
-	{ name = "title", face = "Roboto Medium", size = 16, weight = 500 },
-	{ name = "body", face = "Roboto Medium", size = 14, weight = 500 },
+	{ name = "title", face = "Roboto", size = 17, weight = 400 },
+	{ name = "body", face = "Roboto", size = 14, weight = 400 },
 	{ name = "bodyRegular", face = "Roboto", size = 14, weight = 400 },
-	{ name = "small", face = "Roboto", size = 13, weight = 400 },
+	{ name = "small", face = "Roboto", size = 14, weight = 400 },
 	{ name = "smallBold", face = "Roboto Medium", size = 12, weight = 500 },
-	{ name = "price", face = "Roboto", size = 15, weight = 700 },
-	{ name = "heading", face = "Roboto", size = 15, weight = 700 },
-	{ name = "dialogTitle", face = "Roboto", size = 19, weight = 700 },
+	{ name = "price", face = "Roboto", size = 17, weight = 400 },
+	{ name = "heading", face = "Roboto", size = 17, weight = 400 },
+	{ name = "dialogTitle", face = "Roboto Medium", size = 17, weight = 500 },
+	{ name = "input", face = "Roboto", size = 16, weight = 400 },
 }
 
 -- Recomputes the scale and recreates the fonts for the current resolution.
 function theme.refresh()
-	scale = math.Clamp(ScrH() / 900, 0.85, 2.4)
+	scale = math.max(1, math.min(ScrW() / 1920, ScrH() / 1080))
 	for _, font in ipairs(FONTS) do
 		surface.CreateFont(`donatos.${font.name}`, {
 			font = font.face,
@@ -180,6 +185,7 @@ local type DonatosFont =
 	| "price"
 	| "heading"
 	| "dialogTitle"
+	| "input"
 
 function theme.font(name: DonatosFont): string
 	return `donatos.${name}`
@@ -236,23 +242,20 @@ end
 -- circle (4x4 supersampled), drawn 1:1 with point sampling. "outside" masks hold the rest of the
 -- square, and "ring" masks the one-pixel band between the circle and the next smaller one.
 local CORNER_TEXTURE_FLAGS = 1 + 4 + 8 + 256 + 512 -- point sample, clamp S/T, no mips, no LOD
-local cornerMasks: Table<string, { material: IMaterial; extent: number }> = {}
+local cornerMasks: Table<string, DonatosMask> = {}
 
 local type DonatosCornerKind = "inside" | "outside" | "ring"
 
-local function cornerMask(radius: number, kind: DonatosCornerKind): { material: IMaterial; extent: number }
-	local key = `${radius}${kind}`
-	local cached = cornerMasks[key]
-	if cached ~= nil then
-		return cached
-	end
+local type DonatosMask = { material: IMaterial; extent: number }
 
-	local size = 4
-	while size < radius do
-		size = size * 2
+-- Bakes a `size` x `size` alpha mask into a render target named `name`: `alphaAt(x, y)` gives
+-- each texel's alpha (0-255). Returned with the fraction of the texture it fills.
+local function bakeMask(name: string, size: number, alphaAt: (x: number, y: number) => number): DonatosMask
+	local textureSize = 4
+	while textureSize < size do
+		textureSize = textureSize * 2
 	end
-	local name = `donatos_corner_v4_${key}`
-	local target = GetRenderTargetEx(name, size, size, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, CORNER_TEXTURE_FLAGS, 0, IMAGE_FORMAT_BGRA8888)
+	local target = GetRenderTargetEx(name, textureSize, textureSize, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, CORNER_TEXTURE_FLAGS, 0, IMAGE_FORMAT_BGRA8888)
 
 	-- render.Clear inside the pushed target leaves it opaque black; this clears to transparent.
 	render.ClearRenderTarget(target, Color(255, 255, 255, 0))
@@ -261,32 +264,12 @@ local function cornerMask(radius: number, kind: DonatosCornerKind): { material: 
 	cam.Start2D()
 	render.OverrideBlend(true, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD)
 	draw.NoTexture()
-	local samples = 4
-	for y = 0, radius - 1 do
-		for x = 0, radius - 1 do
-			local inside, innerInside = 0, 0
-			for sy = 0, samples - 1 do
-				for sx = 0, samples - 1 do
-					local dx = radius - (x + (sx + 0.5) / samples)
-					local dy = radius - (y + (sy + 0.5) / samples)
-					local distance = dx * dx + dy * dy
-					if distance <= radius * radius then
-						inside = inside + 1
-					end
-					if distance <= (radius - 1) * (radius - 1) then
-						innerInside = innerInside + 1
-					end
-				end
-			end
-			local coverage = inside / (samples * samples)
-			if kind == "outside" then
-				coverage = 1 - coverage
-			elseif kind == "ring" then
-				coverage = coverage - innerInside / (samples * samples)
-			end
+	for y = 0, size - 1 do
+		for x = 0, size - 1 do
+			local alpha = math.Round(alphaAt(x, y))
 			-- surface skips fully transparent draws; those texels keep the clear.
-			if coverage > 0 then
-				surface.SetDrawColor(255, 255, 255, math.Round(coverage * 255))
+			if alpha > 0 then
+				surface.SetDrawColor(255, 255, 255, alpha)
 				surface.DrawRect(x, y, 1, 1)
 			end
 		end
@@ -302,12 +285,50 @@ local function cornerMask(radius: number, kind: DonatosCornerKind): { material: 
 		["$vertexalpha"] = 1,
 		["$vertexcolor"] = 1,
 	})
-	local mask = { material = material, extent = radius / size }
+	return { material = material, extent = size / textureSize }
+end
+
+local SAMPLES = 4
+
+-- The fraction of the pixel at (x, y) for which `inside(sampleX, sampleY)` holds.
+local function coverage(x: number, y: number, inside: (sx: number, sy: number) => boolean): number
+	local hits = 0
+	for sy = 0, SAMPLES - 1 do
+		for sx = 0, SAMPLES - 1 do
+			if inside(x + (sx + 0.5) / SAMPLES, y + (sy + 0.5) / SAMPLES) then
+				hits = hits + 1
+			end
+		end
+	end
+	return hits / (SAMPLES * SAMPLES)
+end
+
+local function cornerMask(radius: number, kind: DonatosCornerKind): DonatosMask
+	local key = `${radius}${kind}`
+	local cached = cornerMasks[key]
+	if cached ~= nil then
+		return cached
+	end
+
+	local function within(r: number): (sx: number, sy: number) => boolean
+		return function(sx: number, sy: number): boolean
+			return (radius - sx) ^ 2 + (radius - sy) ^ 2 <= r * r
+		end
+	end
+	local mask = bakeMask(`donatos_corner_v4_${key}`, radius, function(x: number, y: number): number
+		local covered = coverage(x, y, within(radius))
+		if kind == "outside" then
+			covered = 1 - covered
+		elseif kind == "ring" then
+			covered = covered - coverage(x, y, within(radius - 1))
+		end
+		return covered * 255
+	end)
 	cornerMasks[key] = mask
 	return mask
 end
 
-local function drawCorner(mask: { material: IMaterial; extent: number }, x: number, y: number, radius: number, flipX: boolean, flipY: boolean)
+local function drawCorner(mask: DonatosMask, x: number, y: number, radius: number, flipX: boolean, flipY: boolean)
 	local e = mask.extent
 	surface.SetMaterial(mask.material)
 	surface.DrawTexturedRectUV(x, y, radius, radius, flipX and e or 0, flipY and e or 0, flipX and 0 or e, flipY and 0 or e)
@@ -475,40 +496,113 @@ function theme.spinner(cx: number, cy: number, radius: number, color: Color)
 	end
 end
 
-local function line(x1: number, y1: number, x2: number, y2: number, thickness: number)
-	local length = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
-	local angle = math.deg(math.atan2(y1 - y2, x2 - x1))
-	draw.NoTexture()
-	surface.DrawTexturedRectRotated((x1 + x2) / 2, (y1 + y2) / 2, length, thickness, angle)
+local type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown" | "bag" | "cube" | "calendar"
+
+-- Icons are shapes on a 24-unit grid, like the web UI's Hugeicons, with 2-unit strokes.
+local HALF_STROKE = 1
+
+local function segmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number
+	local dx, dy = bx - ax, by - ay
+	local t = math.Clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+	return math.sqrt((px - ax - dx * t) ^ 2 + (py - ay - dy * t) ^ 2)
 end
 
-local type DonatosIcon = "more" | "moreHorizontal" | "close" | "chevronDown"
-
--- Small glyphs drawn centred in a `size` box at (x, y).
-function theme.icon(icon: DonatosIcon, x: number, y: number, size: number, color: Color)
-	local cx = x + size / 2
-	local cy = y + size / 2
-	local dot = math.max(theme.px(3), 2)
-	local spacing = math.max(theme.px(4.5), 3)
-	if icon == "more" or icon == "moreHorizontal" then
-		for i = -1, 1 do
-			local dx = icon == "moreHorizontal" and i * spacing or 0
-			local dy = icon == "more" and i * spacing or 0
-			theme.box(dot / 2, cx + dx - dot / 2, cy + dy - dot / 2, dot, dot, color)
-		end
-	elseif icon == "close" then
-		local half = size * 0.22
-		surface.SetDrawColor(color)
-		local thickness = math.max(theme.px(1.6), 1)
-		line(cx - half, cy - half, cx + half, cy + half, thickness)
-		line(cx - half, cy + half, cx + half, cy - half, thickness)
-	elseif icon == "chevronDown" then
-		local half = size * 0.25
-		surface.SetDrawColor(color)
-		local thickness = math.max(theme.px(1.5), 1)
-		line(cx - half, cy - half / 2, cx, cy + half / 2, thickness)
-		line(cx, cy + half / 2, cx + half, cy - half / 2, thickness)
+local function pathDistance(px: number, py: number, points: [number, number][], closed?: boolean): number
+	local best = math.huge
+	local count = #points
+	for i = 1, closed and count or count - 1 do
+		local a = assert(points[i])
+		local b = assert(points[i % count + 1])
+		best = math.min(best, segmentDistance(px, py, a[1], a[2], b[1], b[2]))
 	end
+	return best
+end
+
+-- Distance to the outline of a rounded rectangle.
+local function roundRectDistance(px: number, py: number, x: number, y: number, w: number, h: number, r: number): number
+	local qx = math.abs(px - x - w / 2) - (w / 2 - r)
+	local qy = math.abs(py - y - h / 2) - (h / 2 - r)
+	local outside = math.sqrt(math.max(qx, 0) ^ 2 + math.max(qy, 0) ^ 2)
+	return math.abs(outside + math.min(math.max(qx, qy), 0) - r)
+end
+
+local function dotsDistance(px: number, py: number, dots: [number, number][], radius: number): number
+	local best = math.huge
+	for _, dot in ipairs(dots) do
+		best = math.min(best, math.sqrt((px - dot[1]) ^ 2 + (py - dot[2]) ^ 2) - radius)
+	end
+	return best
+end
+
+local CUBE_OUTLINE: [number, number][] = { { 12, 2.5 }, { 20.5, 7 }, { 20.5, 17 }, { 12, 21.5 }, { 3.5, 17 }, { 3.5, 7 } }
+
+-- How far a grid point lies outside each icon's ink (<= 0 is inked).
+local ICON_SHAPES: { [K in DonatosIcon]: (px: number, py: number) => number } = {
+	more = function(px: number, py: number): number
+		return dotsDistance(px, py, { { 12, 5 }, { 12, 12 }, { 12, 19 } }, 1.75)
+	end,
+	moreHorizontal = function(px: number, py: number): number
+		return dotsDistance(px, py, { { 5, 12 }, { 12, 12 }, { 19, 12 } }, 1.75)
+	end,
+	close = function(px: number, py: number): number
+		return math.min(segmentDistance(px, py, 5, 5, 19, 19), segmentDistance(px, py, 19, 5, 5, 19)) - HALF_STROKE
+	end,
+	chevronDown = function(px: number, py: number): number
+		return pathDistance(px, py, { { 6, 9 }, { 12, 15 }, { 18, 9 } }) - HALF_STROKE
+	end,
+	bag = function(px: number, py: number): number
+		-- A rounded bag with its handle curving down inside the top.
+		local body = roundRectDistance(px, py, 3.5, 3, 17, 18.5, 4.5)
+		local handle = py >= 7 and math.abs(math.sqrt((px - 12) ^ 2 + (py - 7) ^ 2) - 3.5) or math.huge
+		return math.min(body, handle) - HALF_STROKE
+	end,
+	cube = function(px: number, py: number): number
+		local edges = pathDistance(px, py, CUBE_OUTLINE, true)
+		local inner = pathDistance(px, py, { { 3.5, 7 }, { 12, 11.5 }, { 20.5, 7 } })
+		inner = math.min(inner, segmentDistance(px, py, 12, 11.5, 12, 21.5))
+		return math.min(edges, inner) - HALF_STROKE
+	end,
+	calendar = function(px: number, py: number): number
+		local d = roundRectDistance(px, py, 2.5, 3.5, 19, 18.5, 4)
+		d = math.min(d, segmentDistance(px, py, 3, 9, 21, 9))
+		d = math.min(d, segmentDistance(px, py, 7.5, 2, 7.5, 5), segmentDistance(px, py, 16.5, 2, 16.5, 5))
+		d = d - HALF_STROKE
+		return math.min(d, dotsDistance(px, py, { { 8, 13.5 }, { 12, 13.5 }, { 16, 13.5 }, { 8, 17.5 }, { 12, 17.5 } }, 1))
+	end,
+}
+
+local WHITE = Color(255, 255, 255)
+local iconMasks: Table<string, DonatosMask> = {}
+
+-- Bakes `icon` at `size` pixels: each texel's ink coverage, with the alpha converted for
+-- GMod's linear blending (see blendAlpha) so edges look as they would in a browser.
+local function iconMask(icon: DonatosIcon, size: number): DonatosMask
+	local key = `${icon}${size}`
+	local cached = iconMasks[key]
+	if cached ~= nil then
+		return cached
+	end
+	local shape = ICON_SHAPES[icon]
+	local unit = 24 / size
+	local mask = bakeMask(`donatos_icon_v1_${key}`, size, function(x: number, y: number): number
+		local covered = coverage(x, y, function(sx: number, sy: number): boolean
+			return shape(sx * unit, sy * unit) <= 0
+		end)
+		return covered > 0 and blendAlpha(WHITE, covered * 255) or 0
+	end)
+	iconMasks[key] = mask
+	return mask
+end
+
+-- Draws `icon` in `color`, centred in a `size` box at (x, y).
+function theme.icon(icon: DonatosIcon, x: number, y: number, size: number, color: Color)
+	local pixels = math.max(math.Round(size), 4)
+	local mask = iconMask(icon, pixels)
+	local left = math.Round(x + (size - pixels) / 2)
+	local top = math.Round(y + (size - pixels) / 2)
+	surface.SetMaterial(mask.material)
+	surface.SetDrawColor(color)
+	surface.DrawTexturedRectUV(left, top, pixels, pixels, 0, 0, mask.extent, mask.extent)
 end
 
 theme.refresh()

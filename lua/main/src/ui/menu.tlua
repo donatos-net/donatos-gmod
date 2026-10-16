@@ -82,7 +82,7 @@ local render: () => void = function() end
 local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
 	local header = vgui.Create("DPanel", frame)
 	header:Dock(TOP)
-	header:SetTall(px(46))
+	header:SetTall(px(36))
 	header.Paint = function(self: Panel, w: number, h: number): boolean
 		theme.paintGradient(w, h, px(10))
 		return true
@@ -90,15 +90,16 @@ local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
 
 	local data = remoteData()
 	local config = state.remoteConfig.value
-	local tabs: { tab: DonatosMenuTab; label: string; badge?: number }[] = {
-		{ tab = "shop", label = "Магазин" },
-		{ tab = "inventory", label = "Инвентарь", badge = data and #data.inventoryItems or 0 },
-		{ tab = "activeItems", label = "Активные предметы", badge = data and #data.activeItems or 0 },
+	local tabs: { tab: DonatosMenuTab; label: string; icon: "bag" | "cube" | "calendar"; badge?: number }[] = {
+		{ tab = "shop", label = "Магазин", icon = "bag" },
+		{ tab = "inventory", label = "Инвентарь", icon = "cube", badge = data and #data.inventoryItems or 0 },
+		{ tab = "activeItems", label = "Активные предметы", icon = "calendar", badge = data and #data.activeItems or 0 },
 	}
 	local left: DButton[] = {}
 	for _, entry in ipairs(tabs) do
 		table.insert(left, widgets.button(header, {
 			label = entry.label,
+			icon = entry.icon,
 			size = "sm",
 			variant = "tab",
 			active = current.tab == entry.tab,
@@ -150,7 +151,7 @@ local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
 	more:SetWide(px(28))
 
 	local ply = LocalPlayer()
-	local avatarSize = px(30)
+	local avatarSize = px(24)
 	local avatar: Panel | nil = nil
 	if IsValid(ply) then
 		local holder = widgets.avatar(header, avatarSize, ply, function(): Color[]
@@ -171,7 +172,7 @@ local function buildHeader(frame: Panel, ctx: DonatosMenuContext): Panel
 		right = right - close:GetWide()
 		close:SetPos(right, (h - close:GetTall()) / 2)
 		if avatar ~= nil then
-			right = right - px(8) - avatar:GetWide()
+			right = right - px(10) - avatar:GetWide()
 			avatar:SetPos(right, (h - avatar:GetTall()) / 2)
 		end
 		right = right - px(10) - more:GetWide()
@@ -189,7 +190,11 @@ local function create(): Panel
 
 	local frame = vgui.Create("EditablePanel")
 	menuState.frame = frame
-	frame:SetSize(math.min(px(1100), ScrW() - px(40)), math.min(px(680), ScrH() - px(40)))
+	-- Half the screen, as the old DHTML menu was (its 960x540 CSS layout at 1080p and up), but
+	-- never smaller than that layout on small screens.
+	local width = math.min(math.max(math.min(ScrW() / 2, 2000), px(960)), ScrW() - 20)
+	local height = math.min(math.max(ScrH() / 2, px(540)), ScrH() - 20)
+	frame:SetSize(math.Round(width), math.Round(height))
 	frame:Center()
 	frame.Paint = function(self: Panel, w: number, h: number): boolean
 		theme.box(px(10), 0, 0, w, h, colors.background)

@@ -75,7 +75,8 @@ local function loading(parent: Panel): Panel
 end
 
 local function mutedText(parent: Panel, text: string): DonatosUiBlock
-	return widgets.text(parent, { text = text, font = theme.font("small"), color = colors.muted, leading = 1.5 })
+	-- text-xs/relaxed: a 1.625 line height in CSS, relative to the font's cell height here.
+	return widgets.text(parent, { text = text, font = theme.font("small"), color = colors.muted, leading = 1.39 })
 end
 
 ------------------------------------------------------------------------------ shop
@@ -199,8 +200,8 @@ local function shopCard(parent: Panel, ctx: DonatosMenuContext, item: Good): Don
 end
 
 local function sectionHeading(parent: Panel, name: string): DonatosUiBlock
-	return widgets.painted(parent, px(18), function(w: number, h: number)
-		theme.box(0, 0, 0, px(2), h, colors.text)
+	return widgets.painted(parent, px(20), function(w: number, h: number)
+		theme.box(px(1), 0, (h - px(16)) / 2, px(2), px(16), colors.text)
 		draw.SimpleText(name, theme.font("heading"), px(10), h / 2, colors.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end)
 end
@@ -208,7 +209,7 @@ end
 local function categoryBar(parent: Panel, ctx: DonatosMenuContext, config: DonatosRemoteConfig)
 	local bar = vgui.Create("DPanel", parent)
 	bar:Dock(TOP)
-	bar:SetTall(px(46))
+	bar:SetTall(px(40))
 	bar.Paint = function(self: Panel, w: number, h: number): boolean
 		surface.SetDrawColor(colors.filterBar)
 		surface.DrawRect(0, 0, w, h)
@@ -424,8 +425,8 @@ local function giftDialog(ctx: DonatosMenuContext, item: DonatosInventoryItem)
 					picker:SetVisible(ready)
 					if ready then
 						picker:SetPos(0, 0)
-						picker:SetSize(width, px(34))
-						return px(34)
+						picker:SetSize(width, px(28))
+						return px(28)
 					end
 					return px(20)
 				end,
@@ -468,7 +469,7 @@ local function inventoryCard(parent: Panel, ctx: DonatosMenuContext, item: Donat
 
 		local activateButton = widgets.button(panel, activate)
 		local moreButton = widgets.button(panel, more)
-		moreButton:SetWide(px(26))
+		moreButton:SetWide(px(22))
 		local divider = widgets.blankPanel(moreButton)
 		divider:SetMouseInputEnabled(false)
 		divider.Paint = function(self: Panel, w: number, h: number): boolean
@@ -716,8 +717,8 @@ local function igsDeposit(ctx: DonatosMenuContext)
 					end
 					local y = px(32) + px(12)
 					field:SetPos(0, y)
-					field:SetSize(width, px(34))
-					y = y + px(34)
+					field:SetSize(width, px(28))
+					y = y + px(28)
 					local message = errorText
 					errorBlock.panel:SetVisible(message ~= nil)
 					if message ~= nil then

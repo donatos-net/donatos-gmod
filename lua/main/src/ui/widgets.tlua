@@ -208,7 +208,7 @@ type DonatosUiButtonVariant = "default" | "outline" | "secondary" | "ghost" | "t
 
 interface DonatosUiButton {
 	label?: string;
-	icon?: "more" | "moreHorizontal" | "close";
+	icon?: "more" | "moreHorizontal" | "close" | "bag" | "cube" | "calendar";
 	variant?: DonatosUiButtonVariant;
 	size?: "sm" | "xs" | "icon";
 	active?: boolean;
@@ -230,20 +230,30 @@ local function buttonFont(options: DonatosUiButton): string
 	return options.size == "xs" and theme.font("smallBold") or theme.font("body")
 end
 
+-- Sizes follow the web UI's buttons in CSS pixels: sm 24 high (h-6), xs 20 (h-5), icon 24
+-- square (icon-sm), 8 of padding each side (px-2).
+local function buttonHeight(options: DonatosUiButton): number
+	return options.size == "xs" and px(20) or px(24)
+end
+
+local function badgeSpace(badgeText: string): number
+	return math.max(theme.textSize(badgeText, theme.font("smallBold")) + px(8), px(16)) + px(4)
+end
+
 local function buttonMetrics(options: DonatosUiButton): (number, number)
-	local height = options.size == "xs" and px(24) or px(30)
+	local height = buttonHeight(options)
 	if options.size == "icon" or (options.label == nil and options.icon ~= nil) then
 		return height, height
 	end
-	local padX = options.size == "xs" and px(9) or px(11)
+	local padX = px(8)
 	local textWidth = theme.textSize(options.label or "", buttonFont(options))
 	local width = textWidth + padX * 2
 	if options.badge ~= nil and options.badge > 0 then
-		local badgeWidth = theme.textSize(tostring(options.badge), theme.font("smallBold"))
-		width = width + math.max(badgeWidth + px(8), px(18)) + px(6)
+		width = width + badgeSpace(tostring(options.badge))
 	end
 	if options.icon ~= nil then
-		width = width + height - padX
+		-- A 12 icon and a 4 gap before the label (size-3, gap-1).
+		width = width + px(12) + px(4)
 	end
 	return width, height
 end
@@ -285,7 +295,7 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 		local hovered = self:IsHovered() and not inactive
 		local fill, textColor, border = buttonColors(options, hovered)
 		local alpha = options.disabled and 0.5 or 1
-		local radius = options.size == "xs" and px(5) or px(6)
+		local radius = options.size == "xs" and px(6) or px(8)
 		if fill ~= nil then
 			paintBox(options, radius, w, h, theme.fade(fill, alpha), border)
 		end
@@ -298,8 +308,8 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 
 		if options.select then
 			local font = theme.font("bodyRegular")
-			local padX = px(12)
-			local chevron = px(16)
+			local padX = px(8)
+			local chevron = px(14)
 			local label = options.label or ""
 			local _, textHeight = theme.textSize(label, font)
 			surface.SetFont(font)
@@ -318,15 +328,16 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 		local badgeWidth = 0
 		local badgeText = options.badge ~= nil and options.badge > 0 and tostring(options.badge) or nil
 		if badgeText ~= nil then
-			badgeWidth = math.max(theme.textSize(badgeText, theme.font("smallBold")) + px(8), px(18)) + px(6)
+			badgeWidth = badgeSpace(badgeText)
 		end
-		local iconSize = options.icon ~= nil and (options.label ~= nil and h - px(8) or h) or 0
-		local contentWidth = labelWidth + badgeWidth + iconSize
+		local iconSize = options.icon ~= nil and px(12) or 0
+		local iconGap = options.icon ~= nil and options.label ~= nil and px(4) or 0
+		local contentWidth = labelWidth + badgeWidth + iconSize + iconGap
 		local x = options.fill and (w - contentWidth) / 2 or math.max((w - contentWidth) / 2, 0)
 
 		if options.icon ~= nil then
 			theme.icon(options.icon, x, (h - iconSize) / 2, iconSize, ink)
-			x = x + iconSize
+			x = x + iconSize + iconGap
 		end
 		if options.label ~= nil then
 			local _, textHeight = theme.textSize(options.label, font)
@@ -337,9 +348,9 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 			x = x + labelWidth
 		end
 		if badgeText ~= nil then
-			local bw = badgeWidth - px(6)
-			local bh = px(18)
-			local bx, by = x + px(6), (h - bh) / 2
+			local bw = badgeWidth - px(4)
+			local bh = px(16)
+			local bx, by = x + px(4), (h - bh) / 2
 			theme.box(px(4), bx, by, bw, bh, colors.badge)
 			draw.SimpleText(badgeText, theme.font("smallBold"), bx + bw / 2, by + bh / 2, colors.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
@@ -404,21 +415,21 @@ interface DonatosUiMenuItem {
 -- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
 local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
 	local menu = DermaMenu(false, nil)
-	local font = theme.font("body")
-	local itemHeight = px(32)
-	local avatarSize = px(22)
+	local font = theme.font("bodyRegular")
+	local itemHeight = px(28)
+	local avatarSize = px(20)
 	local hasAvatars = false
-	local width = math.max(minWidth or 0, px(160))
+	local width = math.max(minWidth or 0, px(128))
 	for _, item in ipairs(items) do
 		local textWidth = theme.textSize(item.label, font)
 		hasAvatars = hasAvatars or item.steamID64 ~= nil
-		width = math.max(width, textWidth + px(28) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
+		width = math.max(width, textWidth + px(24) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
 	end
 
 	menu:SetMinimumWidth(width)
 	menu:SetMaxHeight(px(260))
 	menu.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.outlined(px(6), 0, 0, w, h, colors.popover, colors.border)
+		theme.outlined(px(10), 0, 0, w, h, colors.popover, colors.border)
 		return true
 	end
 
@@ -436,14 +447,14 @@ local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: nu
 		if item.steamID64 ~= nil then
 			local avatar = vgui.Create("AvatarImage", option)
 			avatar:SetSize(avatarSize, avatarSize)
-			avatar:SetPos(px(10), (itemHeight - avatarSize) / 2)
+			avatar:SetPos(px(12), (itemHeight - avatarSize) / 2)
 			avatar:SetSteamID(item.steamID64, 32)
 			avatar:SetMouseInputEnabled(false)
-			textX = px(10) + avatarSize + px(8)
+			textX = px(12) + avatarSize + px(8)
 		end
 		option.Paint = function(self: Panel, w: number, h: number): boolean
 			if self:IsHovered() and not item.disabled then
-				theme.box(px(4), px(3), px(2), w - px(6), h - px(4), colors.secondaryHover)
+				theme.box(px(8), px(4), 0, w - px(8), h, colors.secondaryHover)
 			end
 			local color = item.disabled and colors.muted or colors.text
 			draw.SimpleText(item.label, font, textX, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -479,10 +490,11 @@ local function card(parent: Panel, build: (panel: Panel) => DonatosUiCardSpec): 
 	end
 
 	local spec = build(panel)
-	local pad = px(14)
+	-- The web UI's small card: 12 of padding (p-3), 12 from the header to the content (gap-3).
+	local pad = px(12)
 	local gap = px(8)
-	local actionGap = px(6)
-	local title = text(panel, { text = spec.title, font = theme.font("title"), color = colors.text, leading = 1.25 })
+	local actionGap = px(8)
+	local title = text(panel, { text = spec.title, font = theme.font("title"), color = colors.text, leading = 1.22 })
 	local actions = spec.actions or {}
 	local body = spec.body or {}
 	local footer = spec.footer or {}
@@ -540,9 +552,9 @@ local function card(parent: Panel, build: (panel: Panel) => DonatosUiCardSpec): 
 			end
 
 			local y = pad + headerHeight
-			for _, child in ipairs(body) do
+			for i, child in ipairs(body) do
 				local h = child.layout(innerWidth)
-				y = y + px(5)
+				y = y + (i == 1 and px(12) or px(4))
 				child.panel:SetPos(pad, y)
 				child.panel:SetSize(innerWidth, h)
 				y = y + h
@@ -562,7 +574,7 @@ local function card(parent: Panel, build: (panel: Panel) => DonatosUiCardSpec): 
 				footerHeight = math.max(footerHeight, child:GetTall())
 			end
 			if footerHeight > 0 then
-				y = y + (spec.footerGap or px(12)) + footerHeight
+				y = y + (#body > 0 and spec.footerGap or px(12)) + footerHeight
 			end
 			return y + pad
 		end,
@@ -571,7 +583,7 @@ end
 
 -- A thin progress bar; `fraction` is read every frame.
 local function progress(parent: Panel, fraction: () => number): DonatosUiBlock
-	return painted(parent, px(6), function(w: number, h: number)
+	return painted(parent, px(4), function(w: number, h: number)
 		theme.box(h / 2, 0, 0, w, h, colors.track)
 		local fill = math.Clamp(fraction(), 0, 1) * w
 		if fill > 0 then
@@ -587,25 +599,25 @@ end
 local function textEntry(parent: Panel, placeholder: string, numeric: boolean): (Panel, DTextEntry)
 	local field = vgui.Create("DPanel", parent)
 	field:SetCursor("beam")
-	field:SetTall(px(34))
+	field:SetTall(px(28))
 	local entry = vgui.Create("DTextEntry", field) as DTextEntry
-	entry:SetFont(theme.font("bodyRegular"))
+	entry:SetFont(theme.font("input"))
 	entry:SetNumeric(numeric)
 	entry:SetPaintBackground(false)
 	entry.Paint = function(self: DTextEntry, w: number, h: number): boolean
 		if self:GetValue() == "" and not self:HasFocus() then
-			draw.SimpleText(placeholder, theme.font("bodyRegular"), 2, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(placeholder, theme.font("input"), 2, h / 2, colors.muted, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 		self:DrawTextEntryText(colors.text, colors.selection, colors.text)
 		return true
 	end
 	field.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.outlined(px(6), 0, 0, w, h, colors.outlineFill, entry:HasFocus() and colors.muted or colors.input)
+		theme.outlined(px(8), 0, 0, w, h, colors.outlineFill, entry:HasFocus() and colors.muted or colors.input)
 		return true
 	end
 	field.PerformLayout = function(self: Panel, w: number, h: number)
-		entry:SetPos(px(10), 0)
-		entry:SetSize(w - px(20), h)
+		entry:SetPos(px(8), 0)
+		entry:SetSize(w - px(16), h)
 	end
 	field.OnMousePressed = function(self: Panel, keyCode: number): boolean
 		entry:RequestFocus()
@@ -637,10 +649,10 @@ end
 -- A message in a bordered box, centred in whatever space the parent gives.
 local function emptyState(parent: Panel, message: string): Panel
 	local panel = blankPanel(parent)
-	local font = theme.font("bodyRegular")
+	local font = theme.font("input")
 	panel.Paint = function(self: Panel, w: number, h: number): boolean
 		local tw, th = theme.textSize(message, font)
-		local bw, bh = tw + px(40), th + px(30)
+		local bw, bh = tw + px(40), th + px(32)
 		local bx, by = (w - bw) / 2, (h - bh) / 2
 		theme.outlined(px(8), bx, by, bw, bh, theme.fade(colors.card, 180 / 255), colors.border)
 		draw.SimpleText(message, font, w / 2, h / 2, colors.muted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
@@ -695,15 +707,16 @@ local function dialogHost(frame: Panel): DonatosUiDialogHost
 		local box = vgui.Create("DPanel", overlay)
 		current = box
 		box.Paint = function(self: Panel, w: number, h: number): boolean
-			theme.outlined(px(10), 0, 0, w, h, colors.background, colors.border)
+			theme.outlined(px(14), 0, 0, w, h, colors.background, colors.border)
 			return true
 		end
 
-		local content, add = stack(box, px(16), px(22))
-		local header, addHeader = stack(content.panel, px(8))
+		-- The web UI's dialog: 16 of padding and gaps (p-4, gap-4), at most 384 wide (max-w-sm).
+		local content, add = stack(box, px(16), px(16))
+		local header, addHeader = stack(content.panel, px(4))
 		addHeader(text(header.panel, { text = dialog.title, font = theme.font("dialogTitle"), color = colors.text }))
 		if dialog.description ~= nil then
-			addHeader(text(header.panel, { text = dialog.description, font = theme.font("bodyRegular"), color = colors.muted, leading = 1.45 }))
+			addHeader(text(header.panel, { text = dialog.description, font = theme.font("bodyRegular"), color = colors.muted, leading = 1.39 }))
 		end
 		add(header)
 		local makeBody = dialog.body
@@ -724,7 +737,7 @@ local function dialogHost(frame: Panel): DonatosUiDialogHost
 
 		local function place()
 			local fw, fh = overlay:GetSize()
-			local w = math.min(px(460), fw - px(32))
+			local w = math.min(px(384), fw - px(32))
 			local h = content.layout(w)
 			box:SetSize(w, h)
 			box:SetPos((fw - w) / 2, math.max((fh - h) / 2, px(16)))
