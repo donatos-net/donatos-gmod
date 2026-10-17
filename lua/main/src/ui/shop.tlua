@@ -24,15 +24,16 @@ local SHORT_DESCRIPTION = 80
 
 local PURCHASE_ERROR = "Не удалось выполнить покупку. Попробуйте еще раз."
 
--- A card with a cover shows it on its right ("showcase"); the text keeps this share of the
+-- A card with a cover shows it on its right ("showcase") and no description: the picture says
+-- what the good is, and the item dialog has the whole text. The name keeps this share of the
 -- card's width beside it.
 local SHOWCASE_TEXT = 0.58
 -- A photo-like cover fills the card's right part and fades into the card over its left half.
 local SHOWCASE_PHOTO = 0.62
 -- A transparent cover floats in this box (shares of the card), centred at SHOWCASE_CENTER,
 -- tilted when it is wide (a weapon, a vehicle), over a glow of its own colours.
-local SHOWCASE_BOX_W, SHOWCASE_BOX_H = 0.68, 0.7
-local SHOWCASE_CENTER_X, SHOWCASE_CENTER_Y = 0.71, 0.56
+local SHOWCASE_BOX_W, SHOWCASE_BOX_H = 0.62, 0.86
+local SHOWCASE_CENTER_X, SHOWCASE_CENTER_Y = 0.69, 0.52
 local SHOWCASE_TILT, SHOWCASE_TILT_ASPECT = 12, 1.6
 local OPAQUE_WHITE = Color(255, 255, 255, 255)
 -- Over a photo: the term chip goes dark and the name gets a shadow.
@@ -510,7 +511,6 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local duration = first and first.duration
 	local chipText = (#variants == 1 and duration ~= nil and duration > 0) and views.formatDays(duration) or nil
 	local chipBackground, chipForeground = views.durationColors(duration)
-	local description = shortDescription(good.description)
 	local status, statusColor = goodStatus(ctx, good)
 	local nameLines: string[] = {}
 	local descriptionLines: string[] = {}
@@ -529,6 +529,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local cover = gallery and gallery[1]
 	-- A photo runs under the name; a transparent picture stays beside the text.
 	local photo = cover ~= nil and not images.transparent(cover.card)
+	local description = cover == nil and shortDescription(good.description) or ""
 
 	-- The cover on the card's right, inside its rounded corners: a photo fading into the card,
 	-- or a transparent picture floating over its glow and soft shadow.
@@ -586,7 +587,11 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 			draw.SimpleText(line, nameFont, padX, y, colors.text)
 		end
 		if chipText ~= nil then
+			-- Under the name beside a cover, which would hide the card's top-right corner.
 			local x, y = w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
+			if cover ~= nil then
+				x, y = padX, padY + #nameLines * lineHeight + px(8)
+			end
 			if photo then
 				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.barText)
 			else
@@ -652,15 +657,19 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		panel = card,
 		layout = function(width: number): number
 			local inner = width - padX * 2
-			-- Beside a cover the text keeps the card's left part; a photo's runs under the name.
-			local textWidth = cover ~= nil and width * SHOWCASE_TEXT - padX or inner
+			if cover ~= nil then
+				-- Beside a transparent picture the name keeps the card's left part; a photo runs
+				-- under it. The term chip goes under the name.
+				nameLines = theme.clamp(good.name, nameFont, photo and inner or width * SHOWCASE_TEXT - padX, 3)
+				descriptionLines = {}
+				local chipHeight = chipText ~= nil and px(8) + px(20) or 0
+				return math.max(padY + #nameLines * px(22) + chipHeight + px(10) + px(28) + padY, px(150))
+			end
 			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText) + px(8) or 0
-			nameLines = theme.clamp(good.name, nameFont, (photo or cover == nil) and inner - chipSpace or textWidth, 2)
-			local descriptionMax = cover ~= nil and 3 or 2
-			descriptionLines = description ~= "" and theme.clamp(description, smallFont, textWidth, descriptionMax) or {}
-			local descriptionHeight = #descriptionLines > 0 and descriptionMax * px(19) + px(10) or 0
-			local height = padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY
-			return cover ~= nil and math.max(height, px(150)) or height
+			nameLines = theme.clamp(good.name, nameFont, inner - chipSpace, 2)
+			descriptionLines = description ~= "" and theme.clamp(description, smallFont, inner, 2) or {}
+			local descriptionHeight = #descriptionLines > 0 and 2 * px(19) + px(10) or 0
+			return padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY
 		end,
 	}
 end
