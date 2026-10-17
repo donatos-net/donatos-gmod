@@ -372,10 +372,10 @@ local function emptyHistory(parent: Panel): Panel
 	})
 end
 
-local function page(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+local function page(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScroll | nil
 	local body = widgets.blankPanel(parent)
 	body:Dock(FILL)
-	local area: DScrollPanel | nil = nil
+	local area: DonatosUiScroll | nil = nil
 	livePage = body
 
 	local data = ctx.data()
@@ -410,12 +410,12 @@ local function page(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 				add(widgets.painted(content.panel, px(4), function() end))
 				return content
 			end)
-			scrollArea:Dock(FILL)
+			scrollArea.panel:Dock(FILL)
 			area = scrollArea
 		end
 	end
 
-	return function(): DScrollPanel | nil
+	return function(): DonatosUiScroll | nil
 		return area
 	end
 end

@@ -193,73 +193,157 @@ local function flow(parent: Panel, gap: number, padding: number, panels: Panel[]
 	}
 end
 
--- A scroll area whose content is one block, laid out to the area's width.
-local function scroll(parent: Panel, content: (canvas: Panel) => DonatosUiBlock): DScrollPanel
-	local area = vgui.Create("DScrollPanel", parent) as DScrollPanel
-	area.Paint = function(self: Panel, w: number, h: number): boolean
-		return true
-	end
+interface DonatosUiScroll {
+	panel: Panel;
+	-- Holds the content; moved up by the scroll offset.
+	canvas: Panel;
+	-- The offset now, from 0 to `maxScroll()`.
+	scroll: () => number;
+	maxScroll: () => number;
+	-- Jumps to `offset`, stopping a glide.
+	setScroll: (offset: number) => void;
+	-- Glides to `offset` over `duration` seconds.
+	scrollTo: (offset: number, duration: number) => void;
+}
 
-	local bar = area:GetVBar()
-	bar:SetWide(px(8))
-	bar:SetHideButtons(true)
-	bar.Paint = function(self: Panel, w: number, h: number): boolean
-		return true
-	end
-	bar.btnGrip.Paint = function(self: Panel, w: number, h: number): boolean
+-- A scroll area whose content is one block, laid out to the area's width. It is a plain panel
+-- with its own offset and grip, not DScrollPanel: servers run addons that make DVScrollBar
+-- smooth for every panel, and their easing fought ours.
+local function scroll(parent: Panel, content: (canvas: Panel) => DonatosUiBlock): DonatosUiScroll
+	local area = vgui.Create("Panel", parent)
+	local canvas = vgui.Create("Panel", area)
+	local bar = vgui.Create("Panel", area)
+	bar:SetVisible(false)
+	local grip = vgui.Create("Panel", bar)
+	grip.Paint = function(self: Panel, w: number, h: number): boolean
 		theme.box(px(3), px(2), 0, w - px(4), h, colors.scrollGrip)
 		return true
 	end
 
-	-- The wheel glides: each step eases 100px over 300ms (ease-out-quart), steps in a row add
-	-- up, and dragging the grip or another scroll (a category jump) takes over at once.
+	local offset = 0
+	local function maxScroll(): number
+		return math.max(canvas:GetTall() - area:GetTall(), 0)
+	end
+	local function place()
+		local w, h = bar:GetWide(), area:GetTall()
+		local total = canvas:GetTall()
+		if total <= h or h <= 0 then
+			return
+		end
+		local gripHeight = math.max(math.Round(h * h / total), px(32))
+		grip:SetSize(w, gripHeight)
+		grip:SetPos(0, math.Round((h - gripHeight) * offset / (total - h)))
+	end
+	local function apply(value: number)
+		offset = math.Clamp(value, 0, maxScroll())
+		canvas:SetPos(0, -math.Round(offset))
+		place()
+	end
+
+	-- The wheel glides: each step eases 100px over 300ms (ease-out-quart), and steps in a row
+	-- add up. Dragging the grip or a jump takes over at once.
 	local glide = theme.tween(0)
 	local glideTarget: number | nil = nil
-	local glideLast = 0
-	area.OnMouseWheeled = function(self: DScrollPanel, delta: number): boolean
-		local maxScroll = self:GetCanvas():GetTall() - self:GetTall()
-		if maxScroll <= 0 then
+	local function scrollTo(target: number, duration: number)
+		glideTarget = math.Clamp(target, 0, maxScroll())
+		glide.set(offset)
+		glide.to(glideTarget, duration, "outQuart")
+	end
+	local function setScroll(value: number)
+		glideTarget = nil
+		apply(value)
+	end
+	area.OnMouseWheeled = function(self: Panel, delta: number): boolean
+		if maxScroll() <= 0 then
 			return false
 		end
-		local current = bar:GetScroll()
-		local from = glideTarget or current
-		glideTarget = math.Clamp(from - delta * px(100), 0, maxScroll)
-		glide.set(current)
-		glide.to(glideTarget, 0.3, "outQuart")
-		glideLast = current
+		scrollTo((glideTarget or offset) - delta * px(100), 0.3)
 		return true
 	end
+
+	-- Dragging the grip moves the content with it; a click on the track pages towards the click.
+	local dragFrom: number | nil = nil
+	grip.OnMousePressed = function(self: Panel, key: number): boolean
+		if key == MOUSE_LEFT then
+			local _, y = self:CursorPos()
+			dragFrom = y
+			glideTarget = nil
+			self:MouseCapture(true)
+		end
+		return true
+	end
+	grip.OnMouseReleased = function(self: Panel, key: number): boolean
+		dragFrom = nil
+		self:MouseCapture(false)
+		return true
+	end
+	bar.OnMousePressed = function(self: Panel, key: number)
+		if key == MOUSE_LEFT then
+			local _, y = self:CursorPos()
+			local page = area:GetTall() * 0.9
+			scrollTo((glideTarget or offset) + (y < grip:GetY() and -page or page), 0.3)
+		end
+		return true
+	end
+
 	local driver = vgui.Create("Panel", area)
 	driver:SetSize(0, 0)
 	driver:SetMouseInputEnabled(false)
 	driver.Think = function(self: Panel)
+		local from = dragFrom
+		if from ~= nil then
+			if not input.IsMouseDown(MOUSE_LEFT) then
+				dragFrom = nil
+				grip:MouseCapture(false)
+				return
+			end
+			local _, y = bar:CursorPos()
+			local track = area:GetTall() - grip:GetTall()
+			if track > 0 then
+				apply((y - from) / track * maxScroll())
+			end
+			return
+		end
 		local target = glideTarget
 		if target == nil then
 			return
 		end
-		if bar.Dragging or math.abs(bar:GetScroll() - glideLast) > 1 then
-			glideTarget = nil
-			return
-		end
-		glideLast = glide.done() and target or glide.value()
-		bar:SetScroll(glideLast)
+		apply(glide.done() and target or glide.value())
 		if glide.done() then
 			glideTarget = nil
 		end
 	end
 
-	local block = content(area:GetCanvas())
-	local canvasPerformLayout = area.PerformLayout
-	area.PerformLayout = function(self: DScrollPanel, w: number, h: number)
-		local width = self:GetCanvas():GetWide()
-		if width <= 0 then
+	-- Laid out narrower by the bar while the content is taller than the area.
+	local block = content(canvas)
+	area.PerformLayout = function(self: Panel, w: number, h: number)
+		local barWidth = px(8)
+		local height = block.layout(w - barWidth)
+		local scrolls = height > h
+		local width = w - barWidth
+		if not scrolls then
 			width = w
+			height = block.layout(w)
 		end
 		block.panel:SetPos(0, 0)
-		block.panel:SetSize(width, block.layout(width))
-		canvasPerformLayout(self, w, h)
+		block.panel:SetSize(width, height)
+		canvas:SetSize(width, height)
+		bar:SetVisible(scrolls)
+		bar:SetPos(w - barWidth, 0)
+		bar:SetSize(barWidth, h)
+		apply(offset)
 	end
-	return area
+
+	return {
+		panel = area,
+		canvas = canvas,
+		scroll = function()
+			return offset
+		end,
+		maxScroll = maxScroll,
+		setScroll = setScroll,
+		scrollTo = scrollTo,
+	}
 end
 
 ------------------------------------------------------------------------------ buttons

@@ -51,8 +51,10 @@ donatos-gmod/
 - Transport: GMod `net` messages
 
 ### Menu
-- GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DScrollPanel` / `DMenu` / `DTextEntry`,
+- GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DMenu` / `DTextEntry`,
   all painted by `ui/theme.tlua` helpers (HeroUI v3's look, in the player's colour scheme)
+  (scroll areas are our own panel in `widgets.scroll`, not `DScrollPanel`: servers patch
+  `DVScrollBar` for smooth scrolling, and that fought our wheel glide)
 - Bun package manager for the tooling
 
 ## Key Runtime Flows

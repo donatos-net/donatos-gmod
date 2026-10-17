@@ -373,7 +373,7 @@ local function create(): Panel
 	frameDialogs = dialogs
 	local header: Panel | nil = nil
 	local body: Panel | nil = nil
-	local area: () => DScrollPanel | nil = function()
+	local area: () => DonatosUiScroll | nil = function()
 		return nil
 	end
 
@@ -423,8 +423,8 @@ local function create(): Panel
 	-- search field's focus.
 	local function renderFrame()
 		local previous = area()
-		if renderedTab ~= nil and previous ~= nil and IsValid(previous) then
-			current.scroll[renderedTab] = previous:GetVBar():GetScroll()
+		if renderedTab ~= nil and previous ~= nil and IsValid(previous.panel) then
+			current.scroll[renderedTab] = previous.scroll()
 		end
 		local search = current.searchEntry
 		local searching = search ~= nil and IsValid(search) and search:HasFocus()
@@ -453,8 +453,8 @@ local function create(): Panel
 		local scrollArea = area()
 		local saved = current.scroll[current.tab]
 		if scrollArea ~= nil and saved ~= nil then
-			scrollArea:InvalidateLayout(true)
-			scrollArea:GetVBar():SetScroll(saved)
+			scrollArea.panel:InvalidateLayout(true)
+			scrollArea.setScroll(saved)
 		end
 		-- The page just set it; read it back without the narrowing from the reset above.
 		local entry = current.searchEntry as DTextEntry | nil

@@ -394,9 +394,9 @@ end
 
 ------------------------------------------------------------------------------ page
 
-local function items(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+local function items(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScroll | nil
 	local body = widgets.blankPanel(parent)
-	local area: DScrollPanel | nil = nil
+	local area: DonatosUiScroll | nil = nil
 
 	parent.PerformLayout = function(self: Panel, w: number, h: number)
 		local y = px(20)
@@ -461,11 +461,11 @@ local function items(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel
 			add(widgets.painted(content.panel, px(4), function() end))
 			return content
 		end)
-		scrollArea:Dock(FILL)
+		scrollArea.panel:Dock(FILL)
 		area = scrollArea
 	end
 
-	return function(): DScrollPanel | nil
+	return function(): DonatosUiScroll | nil
 		return area
 	end
 end

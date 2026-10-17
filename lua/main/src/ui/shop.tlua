@@ -211,8 +211,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		local fade = widgets.blankPanel(box)
 		fade:SetMouseInputEnabled(false)
 		fade.Paint = function(self: Panel, w: number, h: number): boolean
-			local canvas = descriptionArea:GetCanvas()
-			local hidden = canvas:GetTall() - descriptionArea:GetTall() - descriptionArea:GetVBar():GetScroll()
+			local hidden = descriptionArea.maxScroll() - descriptionArea.scroll()
 			if hidden <= 1 then
 				return true
 			end
@@ -483,9 +482,9 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 				name.panel:SetSize(leftInner, nameHeight)
 				local top = y + header + px(16)
 				local areaHeightLeft = math.max(h - pad - px(18) - top, px(40))
-				descriptionArea:SetPos(x, top)
-				descriptionArea:SetSize(leftInner + px(8), areaHeightLeft)
-				descriptionArea:InvalidateLayout(true)
+				descriptionArea.panel:SetPos(x, top)
+				descriptionArea.panel:SetSize(leftInner + px(8), areaHeightLeft)
+				descriptionArea.panel:InvalidateLayout(true)
 				fade:SetPos(x, top + areaHeightLeft - px(28))
 				fade:SetSize(leftInner, px(28))
 
@@ -790,7 +789,7 @@ end
 
 -- Builds the shop into `parent`; returns a getter for its current scroll area (search
 -- rebuilds it).
-local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel | nil
+local function shop(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScroll | nil
 	local config = ctx.config()
 	if config == nil then
 		local spinner = views.loading(parent)
@@ -801,7 +800,7 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 	end
 
 	local sections = goodSections(config)
-	local area: DScrollPanel | nil = nil
+	local area: DonatosUiScroll | nil = nil
 
 	local build: () => void = function() end
 	local field, entry = widgets.searchField(parent, "Поиск по всем товарам", function(value: string)
@@ -824,13 +823,12 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 		ctx.state.section = section.id
 		local scrollArea = area
 		local target = sectionPanels[section.id]
-		if scrollArea == nil or not IsValid(scrollArea) or target == nil then
+		if scrollArea == nil or not IsValid(scrollArea.panel) or target == nil then
 			return
 		end
-		local maxScroll = math.max(scrollArea:GetCanvas():GetTall() - scrollArea:GetTall(), 0)
-		local scrollTo = math.Clamp(target:GetY() - px(16), 0, maxScroll)
+		local scrollTo = math.Clamp(target:GetY() - px(16), 0, scrollArea.maxScroll())
 		pinned = { id = section.id, scroll = scrollTo, till = RealTime() + 0.4 }
-		scrollArea:GetVBar():AnimateTo(scrollTo, 0.3, 0, -1)
+		scrollArea.scrollTo(scrollTo, 0.3)
 	end
 
 	build = function()
@@ -917,13 +915,13 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 				end
 				return content
 			end)
-			scrollArea:Dock(FILL)
+			scrollArea.panel:Dock(FILL)
 			area = scrollArea
 
 			-- Follows the scroll: the current section is the last one whose top has passed
 			-- near the top of the area, or the last one at the very bottom.
-			scrollArea.Think = function(self: DScrollPanel)
-				local scroll = self:GetVBar():GetScroll()
+			scrollArea.panel.Think = function(self: Panel)
+				local scroll = scrollArea.scroll()
 				local pin = pinned
 				if pin ~= nil then
 					if RealTime() < pin.till or math.abs(scroll - pin.scroll) < 2 then
@@ -939,7 +937,7 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 						current = section.id
 					end
 				end
-				local maxScroll = self:GetCanvas():GetTall() - self:GetTall()
+				local maxScroll = scrollArea.maxScroll()
 				local last = visible[#visible]
 				if maxScroll > 0 and scroll >= maxScroll - 1 and last ~= nil then
 					current = last.id
@@ -965,7 +963,7 @@ local function shop(parent: Panel, ctx: DonatosMenuContext): () => DScrollPanel 
 	end
 
 	build()
-	return function(): DScrollPanel | nil
+	return function(): DonatosUiScroll | nil
 		return area
 	end
 end
