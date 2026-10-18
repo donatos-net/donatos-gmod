@@ -1192,6 +1192,67 @@ function theme.popRoundClip()
 	render.SetStencilEnable(false)
 end
 
+------------------------------------------------------------------------------ bands
+
+-- A label on a strip of colour, baked once into a render target with a transparent margin so
+-- that, drawn rotated, the strip's edges come out smooth from texture filtering. (Rotating
+-- with a model matrix would need the screen position of what is being painted, which a
+-- dialog's morph moves elsewhere.)
+local BAND_TEXTURE_FLAGS = 4 + 8 + 256 + 512 -- clamp S/T, no mips, no LOD; filtered
+local BAND_MARGIN = 2
+local bands: Table<string, { material: IMaterial; width: number; height: number }> = {}
+
+-- Draws the `w` x `h` strip in `background` with `text` in `font` centred on it, in
+-- `foreground`, centred at (cx, cy) and turned `angle` degrees counter-clockwise.
+function theme.band(text: string, font: string, cx: number, cy: number, w: number, h: number, angle: number, background: Color, foreground: Color)
+	w, h = math.Round(w), math.Round(h)
+	local key = `${text}|${font}|${w}x${h}|${background.r},${background.g},${background.b},${background.a}|${foreground.r},${foreground.g},${foreground.b},${foreground.a}`
+	local band = bands[key]
+	if band == nil then
+		local tw, th = 4, 4
+		while tw < w + BAND_MARGIN * 2 do
+			tw = tw * 2
+		end
+		while th < h + BAND_MARGIN * 2 do
+			th = th * 2
+		end
+		local name = `donatos_band_${util.CRC(key)}`
+		local target = GetRenderTargetEx(name, tw, th, RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, BAND_TEXTURE_FLAGS, 0, IMAGE_FORMAT_BGRA8888)
+		render.ClearRenderTarget(target, Color(background.r, background.g, background.b, 0))
+		render.PushRenderTarget(target)
+		render.OverrideAlphaWriteEnable(true, true)
+		cam.Start2D()
+		-- Baked on first use, maybe mid-paint inside a scaled or fading panel.
+		cam.PushModelMatrix(Matrix(), false)
+		local alphaMultiplier = surface.GetAlphaMultiplier()
+		surface.SetAlphaMultiplier(1)
+		-- The strip in the middle of the texture, so the texture's centre is the strip's.
+		local x, y = (tw - w) / 2, (th - h) / 2
+		render.OverrideBlend(true, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD)
+		surface.SetDrawColor(background.r, background.g, background.b, 255)
+		draw.NoTexture()
+		surface.DrawRect(x, y, w, h)
+		render.OverrideBlend(false)
+		draw.SimpleText(text, font, tw / 2, th / 2, Color(foreground.r, foreground.g, foreground.b, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		surface.SetAlphaMultiplier(alphaMultiplier)
+		cam.PopModelMatrix()
+		cam.End2D()
+		render.OverrideAlphaWriteEnable(false)
+		render.PopRenderTarget()
+		local material = CreateMaterial(name, "UnlitGeneric", {
+			["$basetexture"] = target:GetName(),
+			["$translucent"] = 1,
+			["$vertexalpha"] = 1,
+			["$vertexcolor"] = 1,
+		})
+		band = { material = material, width = tw, height = th }
+		bands[key] = band
+	end
+	surface.SetMaterial(band.material)
+	surface.SetDrawColor(255, 255, 255, background.a)
+	surface.DrawTexturedRectRotated(cx, cy, band.width, band.height, angle)
+end
+
 ------------------------------------------------------------------------------ shades
 
 -- A linear fade from full to none along one axis (128 steps), baked like the corner masks.

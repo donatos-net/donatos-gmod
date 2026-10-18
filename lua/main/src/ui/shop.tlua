@@ -41,6 +41,20 @@ local OPAQUE_WHITE = Color(255, 255, 255, 255)
 local CHIP_OVER_PHOTO = theme.translucent(10, 10, 12, 184)
 local TEXT_SHADOW = Color(0, 0, 0, 150)
 
+-- Goods added this recently show a "NEW" ribbon across their card's top-right corner, and a
+-- chip in their dialog.
+local NEW_FOR = 7 * 86400
+local NEW_LABEL = "NEW"
+-- The ribbon's middle line meets the card's edges this far (design px) from the corner; the
+-- ribbon is this thick. The name and the term chip keep RIBBON_SPACE from the card's right.
+local RIBBON_OFFSET, RIBBON_THICKNESS = 34, 18
+local RIBBON_SPACE = 38
+
+local function isNew(good: Good): boolean
+	local createdAt = good.createdAt
+	return createdAt ~= nil and os.time() - createdAt < NEW_FOR
+end
+
 local function goodSections(config: DonatosRemoteConfig): ShopSection[]
 	local sections: ShopSection[] = {}
 	local byId: Table<number, ShopSection> = {}
@@ -188,6 +202,9 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 
 		local chips = widgets.painted(box, px(20), function(w: number, h: number)
 			local x = widgets.chip(sectionName, 0, 0, colors.default, colors.text) + px(6)
+			if isNew(good) then
+				x = x + widgets.chip(NEW_LABEL, x, 0, colors.accent, colors.accentInk) + px(6)
+			end
 			if selected ~= nil then
 				local background, foreground = views.durationColors(selected.duration)
 				widgets.chip(views.formatDaysLong(selected.duration), x, 0, background, foreground)
@@ -507,6 +524,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local duration = first and first.duration
 	local chipText = (#variants == 1 and duration ~= nil and duration > 0) and views.formatDays(duration) or nil
 	local chipBackground, chipForeground = views.durationColors(duration)
+	local fresh = isNew(good)
 	local status, statusColor = goodStatus(ctx, good)
 	local nameLines: string[] = {}
 	local descriptionLines: string[] = {}
@@ -514,6 +532,10 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local padX, padY = px(18), px(16)
 	local nameFont = theme.font("cardTitle")
 	local smallFont = theme.font("small")
+	-- Text at the top right stops short of the ribbon.
+	local function rightSpace(): number
+		return fresh and px(RIBBON_SPACE) or padX
+	end
 
 	-- Background 150ms ease and ring 150ms ease-out on hover; pressed, the card scales to 0.97
 	-- over 250ms, as HeroUI's pressable surfaces do.
@@ -567,6 +589,13 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		local fill = theme.mix(colors.surface, colors.surfaceHover, hover.value()) or colors.surface
 		theme.box(px(20), 0, 0, w, h, fill)
 		paintCover(w, h, fill)
+		if fresh then
+			-- Down from the top edge to the right one, clipped to the card.
+			local offset = px(RIBBON_OFFSET)
+			theme.pushRoundClip(0, 0, w, h, px(20))
+			theme.band(NEW_LABEL, theme.font("chip"), w - offset / 2, offset / 2, offset * 2 + px(4), px(RIBBON_THICKNESS), -45, colors.accent, colors.accentInk)
+			theme.popRoundClip()
+		end
 		local ringColor = theme.mix(nil, colors.surfaceRing, ring.value())
 		if ringColor ~= nil then
 			theme.ring(px(20), 0, 0, w, h, ringColor)
@@ -584,7 +613,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		end
 		if chipText ~= nil then
 			-- Under the name beside a cover, which would hide the card's top-right corner.
-			local x, y = w - padX - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
+			local x, y = w - rightSpace() - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
 			if cover ~= nil then
 				x, y = padX, padY + #nameLines * lineHeight + px(8)
 			end
@@ -656,13 +685,13 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 			if cover ~= nil then
 				-- Beside a transparent picture the name keeps the card's left part; a photo runs
 				-- under it. The term chip goes under the name.
-				nameLines = theme.clamp(good.name, nameFont, photo and inner or width * SHOWCASE_TEXT - padX, 3)
+				nameLines = theme.clamp(good.name, nameFont, photo and width - padX - rightSpace() or width * SHOWCASE_TEXT - padX, 3)
 				descriptionLines = {}
 				local chipHeight = chipText ~= nil and px(8) + px(20) or 0
 				return math.max(padY + #nameLines * px(22) + chipHeight + px(10) + px(28) + padY, px(150))
 			end
 			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText) + px(8) or 0
-			nameLines = theme.clamp(good.name, nameFont, inner - chipSpace, 2)
+			nameLines = theme.clamp(good.name, nameFont, width - padX - rightSpace() - chipSpace, 2)
 			descriptionLines = description ~= "" and theme.clamp(description, smallFont, inner, 2) or {}
 			local descriptionHeight = #descriptionLines > 0 and 2 * px(19) + px(10) or 0
 			return padY + #nameLines * px(22) + descriptionHeight + px(10) + px(28) + padY

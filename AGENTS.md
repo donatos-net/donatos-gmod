@@ -95,6 +95,8 @@ that reinstall the addon.
   quotes, rules, code, bold / italic, links, and `[text](lua:code)` links that run
   client Lua; cards and search use its plain text), purchase on the right, with the
   "Активировать сразу" switch (purchase, then `activateItem`).
+- Goods added in the last 7 days (`createdAt` from `server:get-config`) show a "NEW" ribbon across
+  their card's top-right corner and a chip in their dialog.
 - Layout uses blocks (`{ panel, layout(width) -> height }`) from `widgets.tlua` rather than
   docking, so cards and wrapped text size to the available width.
 - Dialogs (`widgets.dialogHost`) sit over the frame; actions answer through net callbacks.

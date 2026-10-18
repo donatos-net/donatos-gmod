@@ -48,6 +48,8 @@ interface DonatosServerApi {
 				variants?: DonatosGoodsVariant[];
 				-- By position, the first is the cover; absent when there are none.
 				images?: DonatosGoodsImage[];
+				-- Unix seconds; absent for goods added before the date was kept.
+				createdAt?: number;
 			}[];
 			goodsCategories: { id: number; name: string }[];
 		};
