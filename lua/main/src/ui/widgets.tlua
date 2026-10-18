@@ -86,18 +86,29 @@ local function painted(parent: Panel, height: number, paint: (w: number, h: numb
 	}
 end
 
--- A rounded pill label (the design's Chip), drawn at (x, y); returns its width.
-local function chip(label: string, x: number, y: number, background: Color, foreground: Color): number
-	local font = theme.font("chip")
-	local w = theme.textSize(label, font) + px(16)
-	local h = px(20)
-	theme.box(h / 2, x, y, w, h, background)
-	draw.SimpleText(label, font, x + w / 2, y + h / 2, foreground, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	return w
+local CHIP_ICON, CHIP_ICON_GAP = 12, 4
+
+local function chipWidth(label: string, icon?: DonatosIcon): number
+	local w = theme.textSize(label, theme.font("chip")) + px(16)
+	return icon ~= nil and w + px(CHIP_ICON) + px(CHIP_ICON_GAP) - px(2) or w
 end
 
-local function chipWidth(label: string): number
-	return theme.textSize(label, theme.font("chip")) + px(16)
+-- A rounded pill label (the design's Chip), with `icon` before the text, drawn at (x, y);
+-- returns its width.
+local function chip(label: string, x: number, y: number, background: Color, foreground: Color, icon?: DonatosIcon): number
+	local font = theme.font("chip")
+	local w = chipWidth(label, icon)
+	local h = px(20)
+	theme.box(h / 2, x, y, w, h, background)
+	if icon ~= nil then
+		-- A little less padding before an icon than before text, as HeroUI's chips have.
+		local size = px(CHIP_ICON)
+		theme.icon(icon, x + px(6), y + (h - size) / 2, size, foreground)
+		draw.SimpleText(label, font, x + px(6) + size + px(CHIP_ICON_GAP), y + h / 2, foreground, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+	else
+		draw.SimpleText(label, font, x + w / 2, y + h / 2, foreground, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+	return w
 end
 
 ------------------------------------------------------------------------------ containers

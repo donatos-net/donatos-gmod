@@ -207,7 +207,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			end
 			if selected ~= nil then
 				local background, foreground = views.durationColors(selected.duration)
-				widgets.chip(views.formatDaysLong(selected.duration), x, 0, background, foreground)
+				widgets.chip(views.formatTerm(selected.duration, true), x, 0, background, foreground, views.durationIcon(selected.duration))
 			end
 		end)
 		local name = widgets.text(box, { text = good.name, font = theme.font("dialogTitle"), color = colors.text, lineHeight = 32 })
@@ -522,8 +522,9 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 	local priceUnit = first ~= nil and (#variants > 1 and views.bonusesGenitive(first.price) or views.bonuses(first.price)) or ""
 	-- A lone variant's term shows as a chip; permanent and one-time goods need none.
 	local duration = first and first.duration
-	local chipText = (#variants == 1 and duration ~= nil and duration > 0) and views.formatDays(duration) or nil
+	local chipText = (#variants == 1 and duration ~= nil and duration > 0) and views.formatTerm(duration) or nil
 	local chipBackground, chipForeground = views.durationColors(duration)
+	local chipIcon = views.durationIcon(duration)
 	local fresh = isNew(good)
 	local status, statusColor = goodStatus(ctx, good)
 	local nameLines: string[] = {}
@@ -613,14 +614,14 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		end
 		if chipText ~= nil then
 			-- Under the name beside a cover, which would hide the card's top-right corner.
-			local x, y = w - rightSpace() - widgets.chipWidth(chipText), padY + (lineHeight - px(20)) / 2
+			local x, y = w - rightSpace() - widgets.chipWidth(chipText, chipIcon), padY + (lineHeight - px(20)) / 2
 			if cover ~= nil then
 				x, y = padX, padY + #nameLines * lineHeight + px(8)
 			end
 			if photo then
-				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.barText)
+				widgets.chip(chipText, x, y, CHIP_OVER_PHOTO, colors.barText, chipIcon)
 			else
-				widgets.chip(chipText, x, y, chipBackground, chipForeground)
+				widgets.chip(chipText, x, y, chipBackground, chipForeground, chipIcon)
 			end
 		end
 
@@ -690,7 +691,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 				local chipHeight = chipText ~= nil and px(8) + px(20) or 0
 				return math.max(padY + #nameLines * px(22) + chipHeight + px(10) + px(28) + padY, px(150))
 			end
-			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText) + px(8) or 0
+			local chipSpace = chipText ~= nil and widgets.chipWidth(chipText, chipIcon) + px(8) or 0
 			nameLines = theme.clamp(good.name, nameFont, width - padX - rightSpace() - chipSpace, 2)
 			descriptionLines = description ~= "" and theme.clamp(description, smallFont, inner, 2) or {}
 			local descriptionHeight = #descriptionLines > 0 and 2 * px(19) + px(10) or 0

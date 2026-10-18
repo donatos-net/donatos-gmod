@@ -95,6 +95,17 @@ local function formatDaysLong(duration?: number): string
 	return `${duration} ${plural(duration, "день", "дня", "дней")}`
 end
 
+-- A duration on its chip: "на 30 дн." ("на 30 дней" when `long`), "Навсегда", "Разовый".
+local function formatTerm(duration?: number, long?: boolean): string
+	local text = long and formatDaysLong(duration) or formatDays(duration)
+	return (duration ~= nil and duration > 0) and `на ${text}` or text
+end
+
+-- The icon on a duration's chip: a clock for a term, none for a permanent or one-time good.
+local function durationIcon(duration?: number): DonatosIcon | nil
+	return (duration ~= nil and duration > 0) and "clock" or nil
+end
+
 -- The chip colours for a variant's duration (background, text): green when permanent, blue
 -- for a term, neutral for a one-time good.
 local function durationColors(duration?: number): (Color, Color)
@@ -580,8 +591,10 @@ end
 return {
 	formatNumber = formatNumber,
 	formatDays = formatDays,
+	formatTerm = formatTerm,
 	formatDaysLong = formatDaysLong,
 	durationColors = durationColors,
+	durationIcon = durationIcon,
 	plural = plural,
 	bonuses = bonuses,
 	bonusesGenitive = bonusesGenitive,

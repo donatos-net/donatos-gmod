@@ -149,14 +149,14 @@ end
 
 ------------------------------------------------------------------------------ rows
 
--- Draws a name with a chip after it (when `chipText` is set), and a muted line below, from
--- (x, y).
-local function paintTitle(x: number, y: number, name: string, chipText: string | nil, chipBackground: Color, chipForeground: Color, subtitle: string)
+-- Draws a name with a chip after it (when `chipText` is set, with `chipIcon`), and a muted
+-- line below, from (x, y).
+local function paintTitle(x: number, y: number, name: string, chipText: string | nil, chipBackground: Color, chipForeground: Color, subtitle: string, chipIcon?: DonatosIcon)
 	local nameFont = theme.font("medium")
 	local lineHeight = px(20)
 	draw.SimpleText(name, nameFont, x, y + (lineHeight - theme.fontHeight(nameFont)) / 2, colors.text)
 	if chipText ~= nil then
-		widgets.chip(chipText, x + theme.textSize(name, nameFont) + px(8), y, chipBackground, chipForeground)
+		widgets.chip(chipText, x + theme.textSize(name, nameFont) + px(8), y, chipBackground, chipForeground, chipIcon)
 	end
 	local smallFont = theme.font("small")
 	draw.SimpleText(subtitle, smallFont, x, y + lineHeight + (px(18) - theme.fontHeight(smallFont)) / 2, colors.muted)
@@ -287,7 +287,7 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 	local goods = item.goods
 	local variant = item.variant
 	-- No variant (the good was removed): its term is unknown, so no chip.
-	local chipText = variant ~= nil and views.formatDays(variant.duration) or nil
+	local chipText = variant ~= nil and views.formatTerm(variant.duration) or nil
 	local chipBackground, chipForeground = views.durationColors(variant and variant.duration)
 	local name = goods and goods.name or "Удалённый товар"
 	local paid = item.amountPaid
@@ -320,7 +320,8 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 			chipText,
 			chipBackground,
 			chipForeground,
-			subtitle
+			subtitle,
+			views.durationIcon(variant and variant.duration)
 		)
 		return true
 	end
