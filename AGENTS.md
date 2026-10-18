@@ -112,6 +112,12 @@ that reinstall the addon.
   - `syncPlayer` -> `LocalPlayer():Donatos()._remoteData`
   - both call `menu.refresh()`, which re-renders if the menu is open
   - a `syncPlayer` whose balance went up (not the first one) shows a toast
+- Both are the API's data as `donatos/client-view.tlua` sends it: copies on which the server marks
+  what only it knows. Goods variants it can't sell and inventory items it can't activate carry
+  `unavailable` (a reason, from `item.availability`: one-time goods whose item the server's config
+  doesn't register). The server alone decides: `purchaseGoods` and `activateItem` check the same
+  rule, and the menu only shows the flags. Items registered later (autorefresh, other addons)
+  sync every client again.
 - The client sends `requestSync` on load and on `InitPostEntity`.
 
 ### 4) Menu actions (client -> server)
@@ -177,11 +183,14 @@ bun run build
 - Lua net handlers (`lua/main/src/donatos/net/server.tlua`, `net/client.tlua`)
 - The menu pages that call them (`lua/main/src/ui/shop.tlua`, `items.tlua`)
 
-2. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
+2. A client can run an older bundle while it fetches a new one, so `DonatosClientMessages` only
+gain optional fields; a message's shape never changes.
+
+3. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
 map in `lua/main/src/donatos/net/server.tlua`.
 
-3. The menu is client-only; anything it shows must arrive through `syncConfig` / `syncPlayer`
+4. The menu is client-only; anything it shows must arrive through `syncConfig` / `syncPlayer`
 or a net callback.
 
-4. Size things with `theme.px(...)` (scaled from a 900px-high reference) and fonts with
+5. Size things with `theme.px(...)` (scaled from a 900px-high reference) and fonts with
 `theme.font(...)`; both are rebuilt on `OnScreenSizeChanged`.

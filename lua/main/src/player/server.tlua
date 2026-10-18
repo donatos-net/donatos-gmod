@@ -1,3 +1,4 @@
+local clientView = require("donatos.client-view")
 local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
@@ -46,7 +47,7 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 	local prevBalance = prevData and prevData.player.balance
 
 	self._remoteData = { isLoaded = true, data = data }
-	netMessage.toClient(ply, "syncPlayer", data)
+	netMessage.toClient(ply, "syncPlayer", clientView.player(data))
 
 	if prevBalance and prevBalance < self:GetBalance() then
 		self:print(`Ваш баланс пополнен на ${self:GetBalance() - prevBalance}`)
@@ -72,7 +73,7 @@ end
 
 function SERVER_PLAYER.sync(self: DonatosServerPlayer)
 	if self._remoteData.isLoaded then
-		netMessage.toClient(self._ply, "syncPlayer", self._remoteData.data)
+		netMessage.toClient(self._ply, "syncPlayer", clientView.player(self._remoteData.data))
 	end
 end
 

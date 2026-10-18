@@ -292,6 +292,11 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 	local name = goods and goods.name or "Удалённый товар"
 	local paid = item.amountPaid
 	local subtitle = paid ~= nil and `Куплено за ${views.formatNumber(paid)} ${views.bonuses(tonumber(paid) or 0)}` or "Получено в подарок"
+	-- The server can't activate it (see `unavailable`): it says why, in place of how it came.
+	local reason = item.unavailable
+	if reason ~= nil then
+		subtitle = views.unavailableText(reason)
+	end
 
 	local gift = widgets.button(panel, {
 		label = "Подарить",
@@ -300,7 +305,7 @@ local function inventoryRow(parent: Panel, ctx: DonatosMenuContext, item: Donato
 			giftDialog(ctx, item)
 		end,
 	})
-	local activate: DonatosUiButton = { label = "Активировать" }
+	local activate: DonatosUiButton = { label = "Активировать", disabled = reason ~= nil }
 	activate.onClick = function()
 		activate.pending = true
 		netMessage.toServer("activateItem", { id = item.id }, function(result)

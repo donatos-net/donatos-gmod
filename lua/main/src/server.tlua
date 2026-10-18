@@ -1,3 +1,5 @@
+local clientView = require("donatos.client-view")
+local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local serverNet = require("donatos.net.server")
 local releases = require("donatos.releases")
@@ -43,6 +45,18 @@ setBootstrapConVars(meta.VERSION)
 
 async.run(suspend function()
 	remoteConfig.loadRemoteConfig()
+end)
+
+-- Items registered later (autorefresh, another addon) change what can be bought and
+-- activated: clients get it again.
+item.onItemsChanged(function()
+	local config = state.remoteConfig.value
+	if config ~= nil then
+		netMessage.toClient(nil, "syncConfig", clientView.config(config))
+	end
+	for _, ply in ipairs(player.GetHumans()) do
+		serverPlayer.of(ply):sync()
+	end
 end)
 
 hook.Add("PlayerInitialSpawn", state.hookId("player_initial_spawn"), function(ply: Player)

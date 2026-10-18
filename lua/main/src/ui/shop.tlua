@@ -2,7 +2,6 @@
 -- category chips jumps between sections and follows the scroll, and search filters as you
 -- type. A card opens the item dialog, where the purchase happens.
 
-local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local gallery = require("ui.gallery")
 local images = require("ui.images")
@@ -25,6 +24,8 @@ local OTHER_SECTION = -1
 local SHORT_DESCRIPTION = 80
 
 local PURCHASE_ERROR = "Не удалось выполнить покупку. Попробуйте еще раз."
+-- In the item dialog, once a resync no longer has its goods or variant.
+local REMOVED = "Товар снят с продажи"
 
 -- A card with a cover shows it on its right ("showcase") and no description: the picture says
 -- what the good is, and the item dialog has the whole text. The name keeps this share of the
@@ -105,19 +106,18 @@ local function shortDescription(raw?: string): string
 	return `${(string.gsub(cut, "[,.;:]$", ""))}…`
 end
 
--- Whether any variant of `good` can be bought here (see `item.purchasable`).
-local function goodPurchasable(good: Good): boolean
-	local variants = good.variants or {}
-	for _, variant in ipairs(variants) do
-		if item.purchasable(good.key, variant) then
-			return true
+-- The first variant of `good` the server can sell (see `unavailable`), or nil.
+local function firstAvailable(good: Good): DonatosGoodsVariant | nil
+	for _, variant in ipairs(good.variants or {}) do
+		if variant.unavailable == nil then
+			return variant
 		end
 	end
-	return #variants == 0
+	return nil
 end
 
 -- What the player already has of `good`: an active item (matched by key) or one waiting in
--- the inventory; otherwise whether it can't be bought here.
+-- the inventory.
 local function goodStatus(ctx: DonatosMenuContext, good: Good): (string | nil, Color)
 	local data = ctx.data()
 	if data ~= nil then
@@ -138,9 +138,6 @@ local function goodStatus(ctx: DonatosMenuContext, good: Good): (string | nil, C
 				return "В инвентаре", colors.muted
 			end
 		end
-	end
-	if not goodPurchasable(good) then
-		return "Недоступно", colors.muted
 	end
 	return nil, colors.muted
 end
@@ -182,7 +179,7 @@ end
 local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: string, origin?: DonatosUiOrigin)
 	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
 		local variants = good.variants or {}
-		local selected: DonatosGoodsVariant | nil = variants[1]
+		local selected: DonatosGoodsVariant | nil = firstAvailable(good) or variants[1]
 		local errorText: string | nil = nil
 
 		local function balance(): number | nil
@@ -277,25 +274,59 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			return `${views.formatDays(variant.duration)} · ${views.formatNumber(variant.price)}`
 		end
 
+		-- Why `variant` can't be bought, for the player, or nil: from the latest config, as a resync
+		-- (an item registered meanwhile, the goods taken off sale) can change it while the dialog
+		-- is open. The good's variants by id, rebuilt when the config changes.
+		local lookupConfig: DonatosRemoteConfig | nil = nil
+		local lookup: Table<string, DonatosGoodsVariant> = {}
+		local function unavailableText(variant: DonatosGoodsVariant): string | nil
+			local config = ctx.config()
+			if config == nil then
+				local reason = variant.unavailable
+				return reason and views.unavailableText(reason)
+			end
+			if config ~= lookupConfig then
+				lookupConfig = config
+				lookup = {}
+				for _, fresh in ipairs(config.goods) do
+					for _, freshVariant in ipairs(fresh.id == good.id and fresh.variants or {}) do
+						lookup[freshVariant.id] = freshVariant
+					end
+				end
+			end
+			local fresh = lookup[variant.id]
+			if fresh == nil then
+				return REMOVED
+			end
+			local reason = fresh.unavailable
+			return reason and views.unavailableText(reason)
+		end
+
 		local variantPicker: DonatosUiBlock | nil = nil
 		-- Relabels and resizes the picker's options after the prices change.
 		local syncVariantLabels = function() end
+		-- Disables the options that can't be bought, each frame.
+		local syncVariantStates = function() end
 		if #variants > 1 then
 			local options: DonatosUiButton[] = {}
 			local buttons: Panel[] = {}
+			local function choose(variant: DonatosGoodsVariant)
+				selected = variant
+				errorText = nil
+				for i, other in ipairs(options) do
+					other.variant = variants[i] == variant and "soft" or "secondary"
+				end
+				relayout()
+			end
 			for _, variant in ipairs(variants) do
 				local option: DonatosUiButton = {
 					label = variantLabel(variant),
 					size = "sm",
 					variant = variant == selected and "soft" or "secondary",
+					disabled = unavailableText(variant) ~= nil,
 				}
 				option.onClick = function()
-					selected = variant
-					errorText = nil
-					for i, other in ipairs(options) do
-						other.variant = variants[i] == variant and "soft" or "secondary"
-					end
-					relayout()
+					choose(variant)
 				end
 				table.insert(options, option)
 				table.insert(buttons, widgets.button(aside, option))
@@ -308,6 +339,24 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 						option.label = variantLabel(variant)
 						btn:SetSize(widgets.buttonMetrics(option))
 					end
+				end
+			end
+			syncVariantStates = function()
+				local fallback: DonatosGoodsVariant | nil = nil
+				local selectedLost = false
+				for i, variant in ipairs(variants) do
+					local option = options[i]
+					if option ~= nil then
+						option.disabled = unavailableText(variant) ~= nil
+						if not option.disabled and fallback == nil then
+							fallback = variant
+						end
+						selectedLost = selectedLost or (variant == selected and option.disabled == true)
+					end
+				end
+				-- The selected option can no longer be bought: the first that can takes its place.
+				if selectedLost and fallback ~= nil then
+					choose(fallback)
 				end
 			end
 		end
@@ -323,9 +372,8 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			end
 		end)
 
-		-- Whether the selected variant can be bought here (see `item.purchasable`).
 		local function selectedPurchasable(): boolean
-			return selected ~= nil and item.purchasable(good.key, selected)
+			return selected ~= nil and unavailableText(selected) == nil
 		end
 
 		-- One line under the price: what the balance comes to, or how much is missing. The
@@ -333,8 +381,9 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		local summary = widgets.painted(aside, px(20), function(w: number, h: number)
 			local font = theme.font("body")
 			local y = (h - theme.fontHeight(font)) / 2
-			if selected ~= nil and not selectedPurchasable() then
-				draw.SimpleText("Товар ещё не настроен на сервере", font, 0, y, colors.muted)
+			local reason = selected and unavailableText(selected)
+			if reason ~= nil then
+				draw.SimpleText(reason, font, 0, y, colors.muted)
 				return
 			end
 			local current = balance()
@@ -360,6 +409,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		local actions = widgets.column(aside, px(8), { buyButton, widgets.button(aside, cancel) })
 
 		local function syncBuy()
+			syncVariantStates()
 			local short = missing()
 			if selected == nil or not selectedPurchasable() then
 				buy.label = "Недоступно для покупки"

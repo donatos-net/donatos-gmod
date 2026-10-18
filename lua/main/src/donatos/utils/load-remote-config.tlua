@@ -1,18 +1,9 @@
+local clientView = require("donatos.client-view")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
 local async = require("utils.async")
 local log = require("utils.log")
 local state = require("utils.state")
-
--- The `syncConfig` message for `config`: with the keys of the registered items, so the menu
--- can tell which goods are not set up here.
-local function configMessage(config: DonatosRemoteConfig): DonatosClientMessages["syncConfig"]
-	local itemKeys: string[] = {}
-	for key in pairs(state.items) do
-		table.insert(itemKeys, key)
-	end
-	return { config = config, itemKeys = itemKeys }
-end
 
 -- Callers waiting on the load in flight, or nil when none is.
 local waiting: ((loaded: boolean) => void)[] | nil = nil
@@ -42,7 +33,7 @@ local loadRemoteConfig = suspend function(): boolean
 
 	if data ~= nil then
 		state.remoteConfig.value = data
-		netMessage.toClient(nil, "syncConfig", configMessage(data))
+		netMessage.toClient(nil, "syncConfig", clientView.config(data))
 		log.info("Received new remote config")
 	end
 
@@ -56,7 +47,6 @@ local loadRemoteConfig = suspend function(): boolean
 end
 
 return {
-	configMessage = configMessage,
 	isLoading = isLoading,
 	loadRemoteConfig = loadRemoteConfig,
 }

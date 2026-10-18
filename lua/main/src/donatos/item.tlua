@@ -48,6 +48,15 @@ function ITEM.SetDarkRPMoney(self: DonatosItem, amount: number): DonatosItem
 	end)
 end
 
+-- Called a moment after the last of a run of items registered once the server listens (by
+-- autorefresh or another addon): the config at load registers its items before that, and the
+-- config sent after it loads already counts them.
+local itemsChanged: (() => void) | nil = nil
+
+local function onItemsChanged(callback: () => void)
+	itemsChanged = callback
+end
+
 local function create(key: string): DonatosItem
 	local itm: DonatosItem = setmetatable({
 		key = key,
@@ -55,7 +64,17 @@ local function create(key: string): DonatosItem
 		_onPlayerJoin = {},
 		meta = {},
 	}, ITEM)
+	-- Registering a key again (autorefresh of a config) changes nothing that is sold.
+	local added = state.items[key] == nil
 	state.items[key] = itm
+	if SERVER and added and itemsChanged ~= nil then
+		timer.Create(state.hookId("items_changed"), 0.5, 1, function()
+			local callback = itemsChanged
+			if callback ~= nil then
+				callback()
+			end
+		end)
+	end
 	return itm
 end
 
@@ -86,23 +105,24 @@ local function invoke(
 	return succeeded
 end
 
--- Whether `variant` of the goods with `key` can be bought here. A one-time variant does its
--- work through its item's activation handlers, so it needs the item registered by the server's
--- config (`donatos.Item(key)`), as activation does; timed and permanent ones can also work
--- through hooks. The client knows the registered keys from `syncConfig`.
-local function purchasable(key: string, variant: DonatosGoodsVariant): boolean
-	if variant.duration ~= nil then
-		return true
+-- nil when goods with `key` can be bought as `variant` and activated on this server, otherwise
+-- why not. A one-time variant (no duration; an item whose variant is gone counts as one) does
+-- its work in its item's activation handlers, so it needs the item registered by the server's
+-- config (`donatos.Item(key)`); timed and permanent ones can also work through hooks. Server
+-- only: clients get the answer in what the server syncs (`unavailable`).
+local function availability(key: string, variant?: DonatosGoodsVariant): DonatosUnavailableReason | nil
+	if variant ~= nil and variant.duration ~= nil then
+		return nil
 	end
-	if SERVER then
-		return state.items[key] ~= nil
+	if state.items[key] == nil then
+		return "notSetUp"
 	end
-	local keys = state.remoteConfig.itemKeys
-	return keys == nil or keys[key] == true
+	return nil
 end
 
 return {
 	create = create,
 	invoke = invoke,
-	purchasable = purchasable,
+	availability = availability,
+	onItemsChanged = onItemsChanged,
 }

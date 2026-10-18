@@ -1,5 +1,6 @@
 -- Server: actions the client (and the menu through it) requests over the `donatos` net message.
 
+local clientView = require("donatos.client-view")
 local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
@@ -20,7 +21,12 @@ end
 
 local NOT_LOADED = "Ошибка: данные игрока не загружены. Попробуйте позднее."
 local NOT_IN_INVENTORY = "Ошибка: предмет не найден в инвентаре."
-local NOT_SET_UP = "Ошибка: предмет не настроен. Обратитесь к администратору сервера."
+local NOT_FOUND = "Ошибка: товар не найден. Откройте меню заново."
+-- Why `item.availability` refused, for the player. The menu shows the reason before that in
+-- its own words (`views.unavailableText`).
+local UNAVAILABLE: { [K in DonatosUnavailableReason]: string } = {
+	notSetUp = "Ошибка: предмет не настроен. Обратитесь к администратору сервера.",
+}
 local HISTORY_PAGE_SIZE = 20
 -- The start of the API's error when `expectedPrice` no longer matches the variant's price.
 local PRICE_CHANGED = "Цена товара изменилась"
@@ -39,20 +45,22 @@ end
 local function syncConfigTo(ply: Player)
 	local config = state.remoteConfig.value
 	if config then
-		netMessage.toClient(ply, "syncConfig", remoteConfig.configMessage(config))
+		netMessage.toClient(ply, "syncConfig", clientView.config(config))
 	end
 end
 
--- The goods and variant in the cached config, or nil when it has none such.
-local function cachedVariant(goodsId: number, variantId: string): (DonatosRemoteConfig["goods"][number] | nil, DonatosGoodsVariant | nil)
+-- The goods and variant the ids name in the cached config, or nil when it has none such. The
+-- ids come from a client, so a number sent as a string (or the other way) still matches.
+local function cachedVariant(goodsId: unknown, variantId: unknown): (DonatosRemoteConfig["goods"][number] | nil, DonatosGoodsVariant | nil)
 	local config = state.remoteConfig.value
-	if config == nil then
+	local wantedGoods, wantedVariant = tonumber(goodsId), tostring(variantId)
+	if config == nil or wantedGoods == nil then
 		return nil, nil
 	end
 	for _, goods in ipairs(config.goods) do
-		if goods.id == goodsId then
+		if goods.id == wantedGoods then
 			for _, variant in ipairs(goods.variants or {}) do
-				if variant.id == variantId then
+				if variant.id == wantedVariant then
 					return goods, variant
 				end
 			end
@@ -61,25 +69,13 @@ local function cachedVariant(goodsId: number, variantId: string): (DonatosRemote
 	return nil, nil
 end
 
-local function cachedPrice(goodsId: number, variantId: string): number | nil
-	local _, variant = cachedVariant(goodsId, variantId)
-	return variant and variant.price
-end
-
 -- A reload syncs every client, so a client cannot trigger them more often than this.
 local CONFIG_RELOAD_INTERVAL = 10
 local lastConfigReloadAt = -math.huge
 
--- Gets the player the current prices after the API rejected `input.expectedPrice`;
--- returns whether it did.
-local refreshPrices = suspend function(ply: Player, input: DonatosServerActions["purchaseGoods"]["input"]): boolean
-	-- The cache already disagrees with the client: only that client is behind (or made the
-	-- price up), so it alone gets the cached config.
-	if cachedPrice(input.goodsId, input.variantId) ~= input.expectedPrice then
-		syncConfigTo(ply)
-		return true
-	end
-	-- The cache is stale too. A reload in flight is joined rather than throttled.
+-- Reloads the config on a client's behalf, joining a reload in flight; returns whether it
+-- loaded, false when one ran too recently.
+local reloadConfig = suspend function(): boolean
 	if not remoteConfig.isLoading() then
 		if RealTime() - lastConfigReloadAt < CONFIG_RELOAD_INTERVAL then
 			return false
@@ -87,6 +83,20 @@ local refreshPrices = suspend function(ply: Player, input: DonatosServerActions[
 		lastConfigReloadAt = RealTime()
 	end
 	return remoteConfig.loadRemoteConfig()
+end
+
+-- Gets the player the current prices after the API rejected `input.expectedPrice`;
+-- returns whether it did.
+local refreshPrices = suspend function(ply: Player, input: DonatosServerActions["purchaseGoods"]["input"]): boolean
+	-- The cache already disagrees with the client: only that client is behind (or made the
+	-- price up), so it alone gets the cached config.
+	local _, variant = cachedVariant(input.goodsId, input.variantId)
+	if (variant and variant.price) ~= input.expectedPrice then
+		syncConfigTo(ply)
+		return true
+	end
+	-- The cache is stale too.
+	return reloadConfig()
 end
 
 -- Each player gets a bucket of REQUEST_BURST requests, refilled at REQUEST_RATE per second:
@@ -158,16 +168,22 @@ local handlers: ServerActionHandlers = {
 			return err(NOT_LOADED)
 		end
 
-		-- Bought, it could not be activated (unknown goods are left to the API).
+		-- Only goods this server can judge are sold. Clients get their goods from this cache, so
+		-- one it lacks was removed or made up: no reload (a client could force them).
 		local goods, variant = cachedVariant(input.goodsId, input.variantId)
-		if goods ~= nil and variant ~= nil and not item.purchasable(goods.key, variant) then
-			return err(NOT_SET_UP)
+		if goods == nil or variant == nil then
+			return err(NOT_FOUND)
+		end
+		-- Bought, it could not be activated.
+		local reason = item.availability(goods.key, variant)
+		if reason ~= nil then
+			return err(UNAVAILABLE[reason])
 		end
 
 		local data, error = serverApi.request("player:purchase-goods", {
 			playerId = playerId,
-			goodsId = input.goodsId,
-			variantId = input.variantId,
+			goodsId = goods.id,
+			variantId = variant.id,
 			expectedPrice = input.expectedPrice,
 		})
 
@@ -198,11 +214,9 @@ local handlers: ServerActionHandlers = {
 		end
 
 		local goods = inventoryItem.goods
-		local variant = inventoryItem.variant
-		if goods and (variant == nil or variant.duration == nil) then
-			if state.items[goods.key] == nil then
-				return err(NOT_SET_UP)
-			end
+		local reason = goods and item.availability(goods.key, inventoryItem.variant)
+		if reason ~= nil then
+			return err(UNAVAILABLE[reason])
 		end
 
 		local canActivate, message = hook.Run("donatos:preActivateItem", ply, inventoryItem)

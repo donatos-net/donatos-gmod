@@ -117,6 +117,16 @@ local function durationColors(duration?: number): (Color, Color)
 	return colors.accentSoft, colors.accentText
 end
 
+-- Why goods can't be bought or activated here (`unavailable`, from the server), for the player.
+-- The server's refusals have their own texts (`UNAVAILABLE` in `donatos/net/server.tlua`).
+local UNAVAILABLE: { [K in DonatosUnavailableReason]: string } = {
+	notSetUp = "Товар ещё не настроен на сервере",
+}
+
+local function unavailableText(reason: DonatosUnavailableReason): string
+	return UNAVAILABLE[reason]
+end
+
 -- Time left from seconds: "12 дн.", "5 ч.", "40 мин.".
 local function formatRemaining(seconds: number): string
 	if seconds >= 86400 then
@@ -599,6 +609,7 @@ return {
 	bonuses = bonuses,
 	bonusesGenitive = bonusesGenitive,
 	formatRemaining = formatRemaining,
+	unavailableText = unavailableText,
 	lower = lower,
 	showError = showError,
 	cancelAction = cancelAction,

@@ -6,10 +6,16 @@
 -- Payloads travel as JSON, so dates arrive as strings and JSON null as nil.
 ------------------------------------------------------------------------------
 
+-- Why goods can't be bought or activated on this server: "notSetUp", one-time goods whose item
+-- the server's config doesn't register (`item.availability`).
+type DonatosUnavailableReason = "notSetUp"
+
 interface DonatosGoodsVariant {
 	id: string;
 	price: number;
 	duration?: number;
+	-- Set by the game server in what it syncs to clients, never by the API.
+	unavailable?: DonatosUnavailableReason;
 }
 
 -- A goods image: absolute URLs named by their content hash, so a URL's content never
@@ -95,6 +101,8 @@ interface DonatosServerApi {
 				variantId?: string;
 				variant?: DonatosGoodsVariant;
 				amountPaid?: string;
+				-- Set by the game server in what it syncs to clients, never by the API.
+				unavailable?: DonatosUnavailableReason;
 			}[];
 			activeItems: {
 				id: number;
@@ -214,14 +222,15 @@ type DonatosUiTab = "shop" | "inventory" | "activeItems" | "profile"
 -- One chat message part: text, a player by UserID, or a Color:ToTable() color.
 type DonatosChatPart = [0, string] | [1, number] | [2, [number, number, number, number]]
 
+-- A client can still run an older bundle while it fetches a new one, so these messages only
+-- ever gain optional fields; their shape never changes.
 interface DonatosClientMessages {
 	resultFromServer: [number, unknown];
 	updateAddon: string;
 	openUi: DonatosUiTab | nil;
 	print: DonatosChatPart[];
 	broadcast: DonatosChatPart[];
-	-- With the keys of the items the server's config registers (`donatos.Item(key)`).
-	syncConfig: { config: DonatosRemoteConfig; itemKeys: string[] };
+	syncConfig: DonatosRemoteConfig;
 	syncPlayer: DonatosRemoteData;
 }
 
@@ -279,8 +288,7 @@ interface DonatosPersistentState {
 		value: number;
 		handlers: Table<number, (data: unknown) => void>;
 	};
-	-- `itemKeys`, on the client: the keys of the items the server's config registers.
-	remoteConfig?: { value: DonatosRemoteConfig | nil; itemKeys?: Table<string, true> };
+	remoteConfig?: { value: DonatosRemoteConfig | nil };
 	menu?: { frame: Panel | nil };
 }
 

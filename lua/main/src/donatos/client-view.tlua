@@ -1,0 +1,52 @@
+-- Server: what clients are sent of the API's data, with what only this server knows marked on
+-- it (`unavailable`, from `item.availability`). Copies: the cached data stays as the API sent it.
+
+local item = require("donatos.item")
+
+local function shallowCopy<T>(source: T): T
+	local copy: Table<string, unknown> = {}
+	for key, value in pairs(source as Table<string, unknown>) do
+		copy[key] = value
+	end
+	return copy as T
+end
+
+-- The config, its variants marked where this server can't sell them.
+local function config(source: DonatosRemoteConfig): DonatosRemoteConfig
+	local view = shallowCopy(source)
+	view.goods = {}
+	for i, goods in ipairs(source.goods) do
+		local copy = shallowCopy(goods)
+		if goods.variants ~= nil then
+			copy.variants = {}
+			for j, variant in ipairs(goods.variants) do
+				local marked = shallowCopy(variant)
+				marked.unavailable = item.availability(goods.key, variant)
+				copy.variants[j] = marked
+			end
+		end
+		view.goods[i] = copy
+	end
+	return view
+end
+
+-- The player's data, its inventory items marked where this server can't activate them.
+local function player(source: DonatosRemoteData): DonatosRemoteData
+	if source == nil then
+		return nil
+	end
+	local view = shallowCopy(source)
+	view.inventoryItems = {}
+	for i, inventoryItem in ipairs(source.inventoryItems) do
+		local marked = shallowCopy(inventoryItem)
+		local goods = inventoryItem.goods
+		marked.unavailable = goods and item.availability(goods.key, inventoryItem.variant)
+		view.inventoryItems[i] = marked
+	end
+	return view
+end
+
+return {
+	config = config,
+	player = player,
+}
