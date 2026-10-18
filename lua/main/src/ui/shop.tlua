@@ -2,6 +2,7 @@
 -- category chips jumps between sections and follows the scroll, and search filters as you
 -- type. A card opens the item dialog, where the purchase happens.
 
+local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local gallery = require("ui.gallery")
 local images = require("ui.images")
@@ -104,29 +105,42 @@ local function shortDescription(raw?: string): string
 	return `${(string.gsub(cut, "[,.;:]$", ""))}…`
 end
 
+-- Whether any variant of `good` can be bought here (see `item.purchasable`).
+local function goodPurchasable(good: Good): boolean
+	local variants = good.variants or {}
+	for _, variant in ipairs(variants) do
+		if item.purchasable(good.key, variant) then
+			return true
+		end
+	end
+	return #variants == 0
+end
+
 -- What the player already has of `good`: an active item (matched by key) or one waiting in
--- the inventory.
+-- the inventory; otherwise whether it can't be bought here.
 local function goodStatus(ctx: DonatosMenuContext, good: Good): (string | nil, Color)
 	local data = ctx.data()
-	if data == nil then
-		return nil, colors.muted
-	end
-	for _, item in ipairs(data.activeItems) do
-		if item.goods.key == good.key then
-			if item.isFrozen then
-				return "Заморожено", colors.muted
+	if data ~= nil then
+		for _, active in ipairs(data.activeItems) do
+			if active.goods.key == good.key then
+				if active.isFrozen then
+					return "Заморожено", colors.muted
+				end
+				local expires = active.expires
+				if expires ~= nil then
+					return `Активно · ${views.formatRemaining(expires.inS)}`, colors.success
+				end
+				return "Активно", colors.success
 			end
-			local expires = item.expires
-			if expires ~= nil then
-				return `Активно · ${views.formatRemaining(expires.inS)}`, colors.success
+		end
+		for _, owned in ipairs(data.inventoryItems) do
+			if owned.goodsId == good.id then
+				return "В инвентаре", colors.muted
 			end
-			return "Активно", colors.success
 		end
 	end
-	for _, item in ipairs(data.inventoryItems) do
-		if item.goodsId == good.id then
-			return "В инвентаре", colors.muted
-		end
+	if not goodPurchasable(good) then
+		return "Недоступно", colors.muted
 	end
 	return nil, colors.muted
 end
@@ -309,15 +323,24 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 			end
 		end)
 
+		-- Whether the selected variant can be bought here (see `item.purchasable`).
+		local function selectedPurchasable(): boolean
+			return selected ~= nil and item.purchasable(good.key, selected)
+		end
+
 		-- One line under the price: what the balance comes to, or how much is missing. The
 		-- balance itself is in the top bar.
 		local summary = widgets.painted(aside, px(20), function(w: number, h: number)
+			local font = theme.font("body")
+			local y = (h - theme.fontHeight(font)) / 2
+			if selected ~= nil and not selectedPurchasable() then
+				draw.SimpleText("Товар ещё не настроен на сервере", font, 0, y, colors.muted)
+				return
+			end
 			local current = balance()
 			if current == nil or selected == nil then
 				return
 			end
-			local font = theme.font("body")
-			local y = (h - theme.fontHeight(font)) / 2
 			local short = missing()
 			if short > 0 then
 				draw.SimpleText(`Не хватает ${views.formatNumber(short)} ${views.bonusesGenitive(short)}`, font, 0, y, colors.danger)
@@ -338,7 +361,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 
 		local function syncBuy()
 			local short = missing()
-			if selected == nil then
+			if selected == nil or not selectedPurchasable() then
 				buy.label = "Недоступно для покупки"
 				buy.disabled = true
 			elseif short > 0 then
@@ -363,7 +386,7 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 
 		buy.onClick = function()
 			local variant = selected
-			if variant == nil then
+			if variant == nil or not selectedPurchasable() then
 				return
 			end
 			-- Short of the price: top up over this dialog, which comes back as it was.

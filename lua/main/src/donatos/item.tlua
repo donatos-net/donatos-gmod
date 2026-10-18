@@ -86,7 +86,23 @@ local function invoke(
 	return succeeded
 end
 
+-- Whether `variant` of the goods with `key` can be bought here. A one-time variant does its
+-- work through its item's activation handlers, so it needs the item registered by the server's
+-- config (`donatos.Item(key)`), as activation does; timed and permanent ones can also work
+-- through hooks. The client knows the registered keys from `syncConfig`.
+local function purchasable(key: string, variant: DonatosGoodsVariant): boolean
+	if variant.duration ~= nil then
+		return true
+	end
+	if SERVER then
+		return state.items[key] ~= nil
+	end
+	local keys = state.remoteConfig.itemKeys
+	return keys == nil or keys[key] == true
+end
+
 return {
 	create = create,
 	invoke = invoke,
+	purchasable = purchasable,
 }

@@ -220,7 +220,8 @@ interface DonatosClientMessages {
 	openUi: DonatosUiTab | nil;
 	print: DonatosChatPart[];
 	broadcast: DonatosChatPart[];
-	syncConfig: DonatosRemoteConfig;
+	-- With the keys of the items the server's config registers (`donatos.Item(key)`).
+	syncConfig: { config: DonatosRemoteConfig; itemKeys: string[] };
 	syncPlayer: DonatosRemoteData;
 }
 
@@ -278,7 +279,8 @@ interface DonatosPersistentState {
 		value: number;
 		handlers: Table<number, (data: unknown) => void>;
 	};
-	remoteConfig?: { value: DonatosRemoteConfig | nil };
+	-- `itemKeys`, on the client: the keys of the items the server's config registers.
+	remoteConfig?: { value: DonatosRemoteConfig | nil; itemKeys?: Table<string, true> };
 	menu?: { frame: Panel | nil };
 }
 

@@ -96,7 +96,12 @@ local handlers: ClientMessageHandlers = {
 	end,
 
 	syncConfig = function(input)
-		state.remoteConfig.value = input
+		local itemKeys: Table<string, true> = {}
+		for _, key in ipairs(input.itemKeys) do
+			itemKeys[key] = true
+		end
+		state.remoteConfig.itemKeys = itemKeys
+		state.remoteConfig.value = input.config
 		menu.refresh()
 	end,
 
