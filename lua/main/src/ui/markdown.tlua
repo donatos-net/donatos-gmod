@@ -1,0 +1,693 @@
+-- Client: goods descriptions in a small Markdown subset, drawn with the theme's fonts.
+-- Blocks: paragraphs (a single line break is kept, as most descriptions were written as plain
+-- text), `#` headings, `-` / `*` / `•` and `1.` lists (nested by two spaces), `>` quotes,
+-- `---` rules and ``` code blocks.
+-- Inline: **bold**, *italic* / _italic_, `code`, [links](https://...), bare https:// links and
+-- [Lua links](lua:code), which run `code` on the client when clicked (parentheses in it must
+-- balance or be escaped as `\(` / `\)`; code with spaces is wrapped: [text](<lua:code>)).
+-- Anything else (tables, images, HTML) shows as typed.
+
+local log = require("utils.log")
+
+local theme = require("ui.theme")
+
+local colors = theme.colors
+local px = theme.px
+
+local type Run = {
+	text: string;
+	bold: boolean;
+	italic: boolean;
+	code: boolean;
+	link: string | nil;
+}
+
+-- One source line of a block.
+local type Line = Run[]
+
+local type BlockKind = "paragraph" | "heading" | "item" | "quote" | "rule" | "code"
+
+local type Block = {
+	kind: BlockKind;
+	-- A heading's level, or a list item's nesting depth (0 at the top).
+	level: number;
+	-- A list item's marker: "•" or "3.".
+	marker: string;
+	lines: Line[];
+}
+
+------------------------------------------------------------------------------ parsing
+
+-- Web links open through gui.OpenURL, which asks first; `lua:` links run their code.
+local function linkTarget(target: string): boolean
+	return string.match(target, "^https?://[%w%-][^%s]*$") ~= nil or string.match(target, "^lua:") ~= nil
+end
+
+-- CommonMark's backslash escapes: `\(` is `(`.
+local function unescape(text: string): string
+	return (string.gsub(text, "\\(%p)", "%1"))
+end
+
+-- `[label](target)` at `i`. The target is either `<...>` (any text but `<`, `>` and line
+-- breaks, unless escaped; the dashboard's editor writes this form when it has spaces) or runs
+-- to the bracket that balances the opening one.
+local function bracketLink(source: string, i: number): (string | nil, string, number)
+	local labelEnd = string.find(source, "](", i + 1, true)
+	if labelEnd == nil or labelEnd == i + 1 then
+		return nil, "", i
+	end
+	local label = string.sub(source, i + 1, labelEnd - 1)
+	local start = labelEnd + 2
+	if string.sub(source, start, start) == "<" then
+		local j = start + 1
+		while j <= #source do
+			local c = string.sub(source, j, j)
+			if c == "\\" then
+				j = j + 1
+			elseif c == "<" then
+				return nil, "", i
+			elseif c == ">" then
+				break
+			end
+			j = j + 1
+		end
+		local close = string.match(source, "^%s*%)()", j + 1)
+		if j > #source or close == nil then
+			return nil, "", i
+		end
+		return label, unescape(string.sub(source, start + 1, j - 1)), close
+	end
+	local depth, j = 1, start
+	while j <= #source do
+		local c = string.sub(source, j, j)
+		if c == "\\" then
+			j = j + 1
+		elseif c == "(" then
+			depth = depth + 1
+		elseif c == ")" then
+			depth = depth - 1
+			if depth == 0 then
+				break
+			end
+		end
+		j = j + 1
+	end
+	if depth ~= 0 then
+		return nil, "", i
+	end
+	return label, string.Trim(unescape(string.sub(source, start, j - 1))), j + 1
+end
+
+-- The HTML entities read in descriptions (the dashboard's preview reads the same ones).
+local ENTITIES: { [name: string]: string } = { lt = "<", gt = ">", amp = "&", quot = "\"", apos = "'", nbsp = " " }
+
+local function run(text: string, bold: boolean, italic: boolean, code: boolean, link?: string): Run
+	return { text = text, bold = bold, italic = italic, code = code, link = link }
+end
+
+-- Splits one line into styled runs.
+local function inline(source: string): Line
+	local runs: Line = {}
+	local bold, italic = false, false
+	local pending: string[] = {}
+
+	local function flush()
+		if #pending > 0 then
+			table.insert(runs, run(table.concat(pending), bold, italic, false))
+			pending = {}
+		end
+	end
+	local function push(text: string, code: boolean, link?: string)
+		flush()
+		table.insert(runs, run(text, bold, italic, code, link))
+	end
+
+	local i, n = 1, #source
+	while i <= n do
+		local c = string.sub(source, i, i)
+		local before = i > 1 and string.sub(source, i - 1, i - 1) or ""
+		local handled = false
+		if c == "\\" and string.match(string.sub(source, i + 1, i + 1), "%p") ~= nil then
+			table.insert(pending, string.sub(source, i + 1, i + 1))
+			i = i + 2
+			handled = true
+		elseif c == "&" then
+			local name, nameEnd = string.match(source, "^&(%a+);()", i)
+			local number, numberEnd = string.match(source, "^&#(%d+);()", i)
+			local entity = name ~= nil and ENTITIES[name] or nil
+			if entity ~= nil and nameEnd ~= nil then
+				table.insert(pending, entity)
+				i = nameEnd
+				handled = true
+			elseif number ~= nil and numberEnd ~= nil and (tonumber(number) or 0x110000) < 0x110000 then
+				table.insert(pending, utf8.char(tonumber(number) or 32))
+				i = numberEnd
+				handled = true
+			end
+		elseif c == "`" then
+			local close = string.find(source, "`", i + 1, true)
+			if close ~= nil and close > i + 1 then
+				push(string.sub(source, i + 1, close - 1), true)
+				i = close + 1
+				handled = true
+			end
+		elseif c == "[" then
+			local label, target, finish = bracketLink(source, i)
+			if label ~= nil and linkTarget(target) then
+				push(label, false, target)
+				i = finish
+				handled = true
+			end
+		elseif c == "h" and (before == "" or string.match(before, "[%s%(]") ~= nil) then
+			local url = string.match(source, "^https?://[^%s<>]+", i)
+			if url ~= nil then
+				-- Punctuation after a link isn't part of it.
+				url = (string.gsub(url, "[%.,;:!%?%)]+$", ""))
+				push(url, false, url)
+				i = i + #url
+				handled = true
+			end
+		elseif c == "*" or c == "_" then
+			local marker = string.sub(source, i + 1, i + 1) == c and c .. c or c
+			local strong = #marker == 2
+			local after = string.sub(source, i + #marker, i + #marker)
+			local open = strong and bold or not strong and italic
+			local toggles = false
+			if open then
+				toggles = before ~= "" and string.match(before, "%s") == nil
+			else
+				-- Opens before a word, when it closes later on the line; `_` only at a word's start,
+				-- so snake_case stays as it is.
+				toggles = after ~= ""
+					and string.match(after, "%s") == nil
+					and string.find(source, marker, i + #marker + 1, true) ~= nil
+					and (c == "*" or before == "" or string.match(before, "%w") == nil)
+			end
+			if toggles then
+				flush()
+				if strong then
+					bold = not bold
+				else
+					italic = not italic
+				end
+			else
+				table.insert(pending, marker)
+			end
+			i = i + #marker
+			handled = true
+		end
+		if not handled then
+			table.insert(pending, c)
+			i = i + 1
+		end
+	end
+	flush()
+	return runs
+end
+
+local function block(kind: BlockKind, level: number, marker: string, first?: Line): Block
+	return { kind = kind, level = level, marker = marker, lines = first ~= nil and { first } or {} }
+end
+
+local function isRule(trimmed: string): boolean
+	local squashed = string.gsub(trimmed, "%s", "")
+	return string.match(squashed, "^%-%-%-+$") ~= nil
+		or string.match(squashed, "^%*%*%*+$") ~= nil
+		or string.match(squashed, "^___+$") ~= nil
+end
+
+local function parse(text: string): Block[]
+	local blocks: Block[] = {}
+	-- The paragraph, list item or quote that following lines join.
+	local current: Block | nil = nil
+	local fence: Block | nil = nil
+
+	for raw in string.gmatch(`${text}\n`, "(.-)\r?\n") do
+		local line = string.TrimRight((string.gsub(raw, "\t", "  ")))
+		local trimmed = string.Trim(line)
+		-- A line ending in `\` is Markdown's hard line break (the dashboard's editor writes them);
+		-- lines break here anyway.
+		if string.match(trimmed, "[^\\]\\$") ~= nil then
+			trimmed = string.TrimRight(string.sub(trimmed, 1, -2))
+		end
+		local indent = #(string.match(line, "^ *") or "")
+		local openFence = fence
+		if openFence ~= nil then
+			if string.match(trimmed, "^```") ~= nil then
+				fence = nil
+			else
+				table.insert(openFence.lines, { run(line, false, false, true) })
+			end
+		elseif trimmed == "" then
+			current = nil
+		elseif string.match(trimmed, "^```") ~= nil then
+			fence = block("code", 0, "")
+			table.insert(blocks, fence)
+			current = nil
+		elseif isRule(trimmed) then
+			table.insert(blocks, block("rule", 0, ""))
+			current = nil
+		else
+			local hashes, title = string.match(trimmed, "^(#+)%s+(.-)%s*#*$")
+			local bullet = string.match(trimmed, "^[%-%*%+]%s+(.*)$") or string.match(trimmed, "^•%s*(.*)$")
+			local number, numbered = string.match(trimmed, "^(%d+)[%.%)]%s+(.*)$")
+			local quoted = string.match(trimmed, "^>%s?(.*)$")
+			local depth = math.min(math.floor(indent / 2), 3)
+			if hashes ~= nil and title ~= nil and #hashes <= 6 then
+				table.insert(blocks, block("heading", #hashes, "", inline(title)))
+				current = nil
+			elseif bullet ~= nil then
+				current = block("item", depth, "•", inline(bullet))
+				table.insert(blocks, current)
+			elseif number ~= nil and numbered ~= nil then
+				current = block("item", depth, `${number}.`, inline(numbered))
+				table.insert(blocks, current)
+			elseif quoted ~= nil then
+				local quote: Block | nil = current
+				if quote == nil or quote.kind ~= "quote" then
+					quote = block("quote", 0, "")
+					table.insert(blocks, quote)
+					current = quote
+				end
+				table.insert(quote.lines, inline(quoted))
+			else
+				local joined = current
+				-- A plain line right after a list item continues it (CommonMark's lazy continuation;
+				-- the editor writes a line break in an item so).
+				if joined ~= nil and (joined.kind == "paragraph" or joined.kind == "item") then
+					table.insert(joined.lines, inline(trimmed))
+				else
+					current = block("paragraph", 0, "", inline(trimmed))
+					table.insert(blocks, current)
+				end
+			end
+		end
+	end
+	return blocks
+end
+
+local plainCache: { [text: string]: string } = {}
+
+-- The text without its Markdown, on one line: for cards and search.
+local function plain(text: string): string
+	local cached = plainCache[text]
+	if cached ~= nil then
+		return cached
+	end
+	local parts: string[] = {}
+	for _, b in ipairs(parse(text)) do
+		for _, line in ipairs(b.lines) do
+			local pieces: string[] = {}
+			for _, r in ipairs(line) do
+				table.insert(pieces, r.text)
+			end
+			table.insert(parts, table.concat(pieces))
+		end
+	end
+	local result = string.Trim((string.gsub(table.concat(parts, " "), "%s+", " ")))
+	plainCache[text] = result
+	return result
+end
+
+------------------------------------------------------------------------------ layout
+
+-- Text colours by role, looked up when painting: theme.colors is refilled on a scheme change.
+local type Role = "text" | "textSoft" | "muted" | "accentText"
+
+local type Piece = {
+	x: number;
+	y: number;
+	w: number;
+	text: string;
+	font: string;
+	role: Role;
+	code: boolean;
+	link: string | nil;
+}
+
+local type Mark = {
+	kind: "bar" | "rule" | "box";
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+-- How a block draws its runs.
+local type Look = {
+	-- The font lines are measured in.
+	font: string;
+	lineHeight: number;
+	role: Role;
+	heading: boolean;
+}
+
+local CODE_PAD = 4
+
+local function fontFor(r: Run, look: Look): string
+	if r.code then
+		return theme.font("body")
+	elseif look.heading then
+		return look.font
+	elseif r.bold and r.italic then
+		return theme.font("readingMediumItalic")
+	elseif r.bold then
+		return theme.font("readingMedium")
+	elseif r.italic then
+		return theme.font("readingItalic")
+	end
+	return look.font
+end
+
+local function roleFor(r: Run, look: Look): Role
+	if r.link ~= nil then
+		return "accentText"
+	elseif r.code or r.bold and look.role == "textSoft" then
+		return "text"
+	end
+	return look.role
+end
+
+local type Segment = { text: string; run: Run }
+-- Segments with no space between them; `spaced` when a space comes before.
+local type Word = { segments: Segment[]; spaced: boolean }
+
+local function words(line: Line): Word[]
+	local result: Word[] = {}
+	local current: Word | nil = nil
+	local spaced = false
+	local function add(text: string, r: Run)
+		local word = current
+		if word == nil then
+			word = { segments = {}, spaced = spaced }
+			table.insert(result, word)
+			current = word
+			spaced = false
+		end
+		table.insert(word.segments, { text = text, run = r })
+	end
+	for _, r in ipairs(line) do
+		if r.code then
+			-- Inline code doesn't break at its spaces.
+			add(r.text, r)
+		else
+			for space, chunk in string.gmatch(r.text, "(%s*)(%S*)") do
+				if space ~= nil and space ~= "" then
+					current = nil
+					spaced = true
+				end
+				if chunk ~= nil and chunk ~= "" then
+					add(chunk, r)
+				end
+			end
+		end
+	end
+	return result
+end
+
+local function segmentWidth(text: string, r: Run, font: string): number
+	local w = theme.textSize(text, font)
+	return r.code and w + px(CODE_PAD) * 2 or w
+end
+
+-- Lays `lines` out between `left` and `right` from `y`; returns the y under the last line.
+local function flow(
+	pieces: Piece[],
+	lines: Line[],
+	look: Look,
+	left: number,
+	right: number,
+	y: number
+): number
+	local inset = (look.lineHeight - theme.fontHeight(look.font)) / 2
+	for _, line in ipairs(lines) do
+		local x = left
+		local empty = true
+		local function place(text: string, r: Run, font: string, w: number)
+			table.insert(pieces, {
+				x = x,
+				y = theme.baseline(y + inset, look.font, font),
+				w = w,
+				text = text,
+				font = font,
+				role = roleFor(r, look),
+				code = r.code,
+				link = r.link,
+			})
+			x = x + w
+			empty = false
+		end
+		local function newLine()
+			y = y + look.lineHeight
+			x = left
+			empty = true
+		end
+
+		for _, word in ipairs(words(line)) do
+			local width = 0
+			for _, segment in ipairs(word.segments) do
+				width = width + segmentWidth(segment.text, segment.run, fontFor(segment.run, look))
+			end
+			local first = word.segments[1]
+			local space = 0
+			if word.spaced and not empty and first ~= nil then
+				space = theme.textSize(" ", fontFor(first.run, look))
+			end
+			if not empty and x + space + width > right then
+				newLine()
+				space = 0
+			end
+			-- A link's underline runs on under the spaces between its words.
+			local last = pieces[#pieces]
+			if space > 0 and first ~= nil and first.run.link ~= nil and last ~= nil and last.link == first.run.link then
+				last.w = last.w + space
+			end
+			x = x + space
+			for _, segment in ipairs(word.segments) do
+				local r = segment.run
+				local font = fontFor(r, look)
+				local w = segmentWidth(segment.text, r, font)
+				if x + w <= right or w <= right - left and not empty then
+					if x + w > right then
+						newLine()
+					end
+					place(segment.text, r, font, w)
+				else
+					-- Wider than a line: broken between characters.
+					local chunk = ""
+					for char in string.gmatch(segment.text, utf8.charpattern) do
+						local extended = chunk .. char
+						if chunk ~= "" and x + segmentWidth(extended, r, font) > right then
+							place(chunk, r, font, segmentWidth(chunk, r, font))
+							newLine()
+							chunk = char
+						else
+							chunk = extended
+						end
+					end
+					if chunk ~= "" then
+						place(chunk, r, font, segmentWidth(chunk, r, font))
+					end
+				end
+			end
+		end
+		y = y + look.lineHeight
+	end
+	return y
+end
+
+local function reading(role: Role): Look
+	return { font = theme.font("reading"), lineHeight = px(23), role = role, heading = false }
+end
+
+-- Places every block for `width`; returns the height.
+local function layout(blocks: Block[], width: number, pieces: Piece[], marks: Mark[]): number
+	local y = 0
+	local previous: Block | nil = nil
+	for _, b in ipairs(blocks) do
+		if previous ~= nil then
+			if b.kind == "heading" then
+				y = y + px(16)
+			elseif b.kind == "item" and previous.kind == "item" then
+				y = y + px(4)
+			else
+				y = y + px(10)
+			end
+		end
+		if b.kind == "paragraph" then
+			y = flow(pieces, b.lines, reading("textSoft"), 0, width, y)
+		elseif b.kind == "heading" then
+			local look: Look = b.level == 1
+					and { font = theme.font("readingTitle"), lineHeight = px(28), role = "text", heading = true }
+				or { font = theme.font("readingMedium"), lineHeight = px(23), role = "text", heading = true }
+			y = flow(pieces, b.lines, look, 0, width, y)
+		elseif b.kind == "item" then
+			local look = reading("textSoft")
+			local left = b.level * px(20)
+			local markerWidth = math.max(theme.textSize(b.marker, look.font) + px(8), px(20))
+			table.insert(pieces, {
+				x = left + (b.marker == "•" and px(4) or 0),
+				y = y + (look.lineHeight - theme.fontHeight(look.font)) / 2,
+				w = markerWidth,
+				text = b.marker,
+				font = look.font,
+				role = "muted",
+				code = false,
+				link = nil,
+			})
+			y = flow(pieces, b.lines, look, left + markerWidth, width, y)
+		elseif b.kind == "quote" then
+			local top = y
+			y = flow(pieces, b.lines, reading("muted"), px(14), width, y)
+			table.insert(marks, { kind = "bar", x = 0, y = top, w = px(3), h = y - top })
+		elseif b.kind == "rule" then
+			table.insert(marks, { kind = "rule", x = 0, y = y + px(8), w = width, h = math.max(px(1), 1) })
+			y = y + px(17)
+		elseif b.kind == "code" then
+			local top = y
+			local look: Look = { font = theme.font("body"), lineHeight = px(20), role = "text", heading = false }
+			-- Code blocks keep their spaces; long lines break between characters.
+			local plainLines: Line[] = {}
+			for _, line in ipairs(b.lines) do
+				local text = line[1] ~= nil and line[1].text or ""
+				table.insert(plainLines, { run(text, false, false, false) })
+			end
+			local inner = top + px(10)
+			for _, line in ipairs(plainLines) do
+				local text = assert(line[1]).text
+				local x, chunk = px(12), ""
+				local function emit()
+					table.insert(pieces, {
+						x = px(12),
+						y = inner + (look.lineHeight - theme.fontHeight(look.font)) / 2,
+						w = theme.textSize(chunk, look.font),
+						text = chunk,
+						font = look.font,
+						role = "text",
+						code = false,
+						link = nil,
+					})
+					inner = inner + look.lineHeight
+				end
+				for char in string.gmatch(text, utf8.charpattern) do
+					local extended = chunk .. char
+					if chunk ~= "" and x + theme.textSize(extended, look.font) > width - px(12) then
+						emit()
+						chunk = char
+					else
+						chunk = extended
+					end
+				end
+				emit()
+			end
+			y = inner + px(10)
+			table.insert(marks, { kind = "box", x = 0, y = top, w = width, h = y - top })
+		end
+		previous = b
+	end
+	return y
+end
+
+------------------------------------------------------------------------------ the block
+
+-- A block that draws `text` as Markdown; links open (or run) on a click.
+local function view(parent: Panel, text: string): DonatosUiBlock
+	local blocks = parse(text)
+	local pieces: Piece[] = {}
+	local marks: Mark[] = {}
+	local hasLinks = false
+	local function scan(lines: Line[])
+		for _, line in ipairs(lines) do
+			for _, r in ipairs(line) do
+				hasLinks = hasLinks or r.link ~= nil
+			end
+		end
+	end
+	for _, b in ipairs(blocks) do
+		scan(b.lines)
+	end
+
+	local panel = vgui.Create("DPanel", parent)
+	panel:SetMouseInputEnabled(hasLinks)
+
+	local function linkAt(mx: number, my: number): string | nil
+		for _, piece in ipairs(pieces) do
+			local link = piece.link
+			if link ~= nil and mx >= piece.x and mx < piece.x + piece.w and my >= piece.y
+				and my < piece.y + theme.fontHeight(piece.font) then
+				return link
+			end
+		end
+		return nil
+	end
+
+	panel.Paint = function(self: Panel, w: number, h: number): boolean
+		for _, mark in ipairs(marks) do
+			if mark.kind == "box" then
+				theme.box(px(10), mark.x, mark.y, mark.w, mark.h, colors.default)
+			else
+				surface.SetDrawColor(mark.kind == "bar" and colors.surfaceRing or colors.separator)
+				surface.DrawRect(mark.x, mark.y, mark.w, mark.h)
+			end
+		end
+		local hovered = self:IsHovered() and linkAt(self:CursorPos()) or nil
+		for _, piece in ipairs(pieces) do
+			local color = colors[piece.role]
+			local x = piece.x
+			if piece.code then
+				local fontHeight = theme.fontHeight(piece.font)
+				theme.box(px(5), x, piece.y - px(1), piece.w, fontHeight + px(2), colors.default)
+				x = x + px(CODE_PAD)
+			end
+			surface.SetFont(piece.font)
+			surface.SetTextColor(color)
+			surface.SetTextPos(x, piece.y)
+			surface.DrawText(piece.text)
+			if piece.link ~= nil then
+				local fontHeight = theme.fontHeight(piece.font)
+				surface.SetDrawColor(piece.link == hovered and color or theme.fade(color, 0.5))
+				surface.DrawRect(x, piece.y + math.Round(fontHeight * 0.86), piece.w, math.max(px(1), 1))
+			end
+		end
+		return true
+	end
+	panel.Think = function(self: Panel)
+		if hasLinks then
+			self:SetCursor(self:IsHovered() and linkAt(self:CursorPos()) ~= nil and "hand" or "arrow")
+		end
+	end
+	panel.OnMousePressed = function(self: Panel, button: number): boolean
+		local link = linkAt(self:CursorPos())
+		if button == MOUSE_LEFT and link ~= nil then
+			local lua = string.match(link, "^lua:(.*)$")
+			if lua ~= nil then
+				-- (RunString would swallow a runtime error's message.)
+				local compiled: any = CompileString(lua, "donatos description link", false)
+				if isfunction(compiled) then
+					xpcall(compiled, ErrorNoHaltWithStack)
+				else
+					log.error(`A description link's Lua doesn't compile: ${tostring(compiled)}`)
+				end
+			else
+				gui.OpenURL(link)
+			end
+			return true
+		end
+		return false
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			pieces = {}
+			marks = {}
+			return layout(blocks, width, pieces, marks)
+		end,
+	}
+end
+
+return {
+	parse = parse,
+	plain = plain,
+	view = view,
+}

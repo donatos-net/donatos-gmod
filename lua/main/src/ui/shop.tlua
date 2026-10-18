@@ -5,6 +5,7 @@
 local netMessage = require("donatos.net")
 local gallery = require("ui.gallery")
 local images = require("ui.images")
+local markdown = require("ui.markdown")
 local theme = require("ui.theme")
 local views = require("ui.views")
 local widgets = require("ui.widgets")
@@ -68,16 +69,16 @@ local function matches(good: Good, query: string): boolean
 	if query == "" then
 		return true
 	end
-	local haystack = views.lower(`${good.name} ${good.description or ""}`)
+	local haystack = views.lower(`${good.name} ${good.description ~= nil and markdown.plain(good.description) or ""}`)
 	return string.find(haystack, query, 1, true) ~= nil
 end
 
--- One line of plain text, at most SHORT_DESCRIPTION characters, cut on a word boundary.
+-- One line of plain text (the Markdown dropped), at most SHORT_DESCRIPTION characters, cut on a word boundary.
 local function shortDescription(raw?: string): string
 	if raw == nil then
 		return ""
 	end
-	local flat = string.Trim((string.gsub((string.gsub(raw, "•%s*", "")), "%s+", " ")))
+	local flat = markdown.plain(raw)
 	if (utf8.len(flat) or #flat) <= SHORT_DESCRIPTION then
 		return flat
 	end
@@ -198,12 +199,8 @@ local function itemDialog(ctx: DonatosMenuContext, good: Good, sectionName: stri
 		local hasDescription = description ~= nil and string.Trim(description) ~= ""
 		local descriptionBlock: DonatosUiBlock | nil = nil
 		local descriptionArea = widgets.scroll(box, function(canvas: Panel): DonatosUiBlock
-			local block = widgets.text(canvas, {
-				text = hasDescription and string.Trim(description or "") or "Описание не задано.",
-				font = theme.font("reading"),
-				color = hasDescription and colors.textSoft or colors.muted,
-				lineHeight = 23,
-			})
+			local block = hasDescription and markdown.view(canvas, string.Trim(description or ""))
+				or widgets.text(canvas, { text = "Описание не задано.", font = theme.font("reading"), color = colors.muted, lineHeight = 23 })
 			descriptionBlock = block
 			return block
 		end)

@@ -475,7 +475,7 @@ end
 -- A GMod font's size is its full cell height, about 1.17 times the CSS font-size for Roboto:
 -- 16 here matches the design's 14px text. The design's weight 600 is drawn as Roboto Medium.
 -- (The design uses Inter, which GMod doesn't ship.)
-local FONTS: { name: string; face: string; size: number; weight: number }[] = {
+local FONTS: { name: string; face: string; size: number; weight: number; italic?: boolean }[] = {
 	{ name = "chip", face = "Roboto Medium", size = 14, weight = 500 },
 	{ name = "small", face = "Roboto", size = 15, weight = 400 },
 	{ name = "smallMedium", face = "Roboto Medium", size = 15, weight = 500 },
@@ -483,6 +483,11 @@ local FONTS: { name: string; face: string; size: number; weight: number }[] = {
 	{ name = "medium", face = "Roboto Medium", size = 16, weight = 500 },
 	{ name = "cardTitle", face = "Roboto Medium", size = 18, weight = 500 },
 	{ name = "reading", face = "Roboto", size = 18, weight = 400 },
+	-- Goods descriptions' Markdown: bold, italic and headings at the reading size.
+	{ name = "readingMedium", face = "Roboto Medium", size = 18, weight = 500 },
+	{ name = "readingItalic", face = "Roboto", size = 18, weight = 400, italic = true },
+	{ name = "readingMediumItalic", face = "Roboto Medium", size = 18, weight = 500, italic = true },
+	{ name = "readingTitle", face = "Roboto Medium", size = 22, weight = 500 },
 	{ name = "section", face = "Roboto Medium", size = 20, weight = 500 },
 	{ name = "price", face = "Roboto Medium", size = 23, weight = 500 },
 	{ name = "title", face = "Roboto Medium", size = 26, weight = 500 },
@@ -499,6 +504,7 @@ function theme.refresh()
 			font = font.face,
 			size = theme.px(font.size),
 			weight = font.weight,
+			italic = font.italic == true,
 			extended = true,
 			antialias = true,
 		})
@@ -513,6 +519,10 @@ local type DonatosFont =
 	| "medium"
 	| "cardTitle"
 	| "reading"
+	| "readingMedium"
+	| "readingItalic"
+	| "readingMediumItalic"
+	| "readingTitle"
 	| "section"
 	| "price"
 	| "title"

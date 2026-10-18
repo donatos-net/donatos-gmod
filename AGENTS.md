@@ -29,6 +29,7 @@ donatos-gmod/
 │       │   │   ├── widgets.tlua  # Layout blocks, pill buttons, chips, switch, search, dialogs
 │       │   │   ├── views.tlua    # Page context, formatting, empty states, top-up
 │       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog with its image carousel
+│       │   │   ├── markdown.tlua # Goods descriptions in a Markdown subset: parse, plain text, painted block
 │       │   │   ├── images.tlua   # Goods images: downloaded once into data/donatos/img/, loaded as materials
 │       │   │   ├── gallery.tlua  # Goods pictures: item dialog carousel and full-screen viewer, with swipe
 │       │   │   ├── items.tlua    # «Мои предметы»: active + inventory items, gift / freeze
@@ -90,7 +91,9 @@ that reinstall the addon.
 - Three pages: the shop (every good in its category's section, 4 card columns, a chip bar that
   jumps between sections and follows the scroll, search), «Мои предметы» (active and
   inventory items) and «История» (balance changes from `getHistory`, paged). The old `inventory` / `activeItems` tab names open «Мои предметы».
-- A card opens the item dialog: description on the left, purchase on the right, with the
+- A card opens the item dialog: description on the left (a Markdown subset: headings, lists,
+  quotes, rules, code, bold / italic, links, and `[text](lua:code)` links that run
+  client Lua; cards and search use its plain text), purchase on the right, with the
   "Активировать сразу" switch (purchase, then `activateItem`).
 - Layout uses blocks (`{ panel, layout(width) -> height }`) from `widgets.tlua` rather than
   docking, so cards and wrapped text size to the available width.
