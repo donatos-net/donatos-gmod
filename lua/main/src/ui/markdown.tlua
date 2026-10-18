@@ -2,10 +2,9 @@
 -- Blocks: paragraphs (a single line break is kept, as most descriptions were written as plain
 -- text), `#` headings, `-` / `*` / `•` and `1.` lists (nested by two spaces), `>` quotes,
 -- `---` rules and ``` code blocks.
--- Inline: **bold**, *italic* / _italic_, `code`, [links](https://...), bare https:// links and
--- [Lua links](lua:code), which run `code` on the client when clicked (parentheses in it must
+-- Inline: **bold**, *italic* / _italic_, `code`, [links](https://...) and [Lua links](lua:code), which run `code` on the client when clicked (parentheses in it must
 -- balance or be escaped as `\(` / `\)`; code with spaces is wrapped: [text](<lua:code>)).
--- Anything else (tables, images, HTML) shows as typed.
+-- Anything else (tables, images, HTML, entities, bare addresses) shows as typed.
 
 local log = require("utils.log")
 
@@ -98,9 +97,6 @@ local function bracketLink(source: string, i: number): (string | nil, string, nu
 	return label, string.Trim(unescape(string.sub(source, start, j - 1))), j + 1
 end
 
--- The HTML entities read in descriptions (the dashboard's preview reads the same ones).
-local ENTITIES: { [name: string]: string } = { lt = "<", gt = ">", amp = "&", quot = "\"", apos = "'", nbsp = " " }
-
 local function run(text: string, bold: boolean, italic: boolean, code: boolean, link?: string): Run
 	return { text = text, bold = bold, italic = italic, code = code, link = link }
 end
@@ -131,19 +127,6 @@ local function inline(source: string): Line
 			table.insert(pending, string.sub(source, i + 1, i + 1))
 			i = i + 2
 			handled = true
-		elseif c == "&" then
-			local name, nameEnd = string.match(source, "^&(%a+);()", i)
-			local number, numberEnd = string.match(source, "^&#(%d+);()", i)
-			local entity = name ~= nil and ENTITIES[name] or nil
-			if entity ~= nil and nameEnd ~= nil then
-				table.insert(pending, entity)
-				i = nameEnd
-				handled = true
-			elseif number ~= nil and numberEnd ~= nil and (tonumber(number) or 0x110000) < 0x110000 then
-				table.insert(pending, utf8.char(tonumber(number) or 32))
-				i = numberEnd
-				handled = true
-			end
 		elseif c == "`" then
 			local close = string.find(source, "`", i + 1, true)
 			if close ~= nil and close > i + 1 then
@@ -156,15 +139,6 @@ local function inline(source: string): Line
 			if label ~= nil and linkTarget(target) then
 				push(label, false, target)
 				i = finish
-				handled = true
-			end
-		elseif c == "h" and (before == "" or string.match(before, "[%s%(]") ~= nil) then
-			local url = string.match(source, "^https?://[^%s<>]+", i)
-			if url ~= nil then
-				-- Punctuation after a link isn't part of it.
-				url = (string.gsub(url, "[%.,;:!%?%)]+$", ""))
-				push(url, false, url)
-				i = i + #url
 				handled = true
 			end
 		elseif c == "*" or c == "_" then
@@ -405,6 +379,24 @@ local function words(line: Line): Word[]
 	return result
 end
 
+-- `text` broken between characters into chunks that each `fits` (the first one on the line it
+-- starts, the rest on lines of their own).
+local function splitChars(text: string, fits: (chunk: string, first: boolean) => boolean): string[]
+	local result: string[] = {}
+	local chunk = ""
+	for char in string.gmatch(text, utf8.charpattern) do
+		local extended = chunk .. char
+		if chunk ~= "" and not fits(extended, #result == 0) then
+			table.insert(result, chunk)
+			chunk = char
+		else
+			chunk = extended
+		end
+	end
+	table.insert(result, chunk)
+	return result
+end
+
 local function segmentWidth(text: string, r: Run, font: string): number
 	local w = theme.textSize(text, font)
 	return r.code and w + px(CODE_PAD) * 2 or w
@@ -474,18 +466,14 @@ local function flow(
 					place(segment.text, r, font, w)
 				else
 					-- Wider than a line: broken between characters.
-					local chunk = ""
-					for char in string.gmatch(segment.text, utf8.charpattern) do
-						local extended = chunk .. char
-						if chunk ~= "" and x + segmentWidth(extended, r, font) > right then
-							place(chunk, r, font, segmentWidth(chunk, r, font))
+					local start = x
+					local chunks = splitChars(segment.text, function(chunk: string, first: boolean): boolean
+						return (first and start or left) + segmentWidth(chunk, r, font) <= right
+					end)
+					for k, chunk in ipairs(chunks) do
+						if k > 1 then
 							newLine()
-							chunk = char
-						else
-							chunk = extended
 						end
-					end
-					if chunk ~= "" then
 						place(chunk, r, font, segmentWidth(chunk, r, font))
 					end
 				end
@@ -545,42 +533,30 @@ local function layout(blocks: Block[], width: number, pieces: Piece[], marks: Ma
 			y = y + px(17)
 		elseif b.kind == "code" then
 			local top = y
-			local look: Look = { font = theme.font("body"), lineHeight = px(20), role = "text", heading = false }
+			local font = theme.font("body")
+			local lineHeight = px(20)
+			local inset = (lineHeight - theme.fontHeight(font)) / 2
+			y = y + px(10)
 			-- Code blocks keep their spaces; long lines break between characters.
-			local plainLines: Line[] = {}
 			for _, line in ipairs(b.lines) do
-				local text = line[1] ~= nil and line[1].text or ""
-				table.insert(plainLines, { run(text, false, false, false) })
-			end
-			local inner = top + px(10)
-			for _, line in ipairs(plainLines) do
-				local text = assert(line[1]).text
-				local x, chunk = px(12), ""
-				local function emit()
+				local chunks = splitChars(line[1] ~= nil and line[1].text or "", function(chunk: string): boolean
+					return theme.textSize(chunk, font) <= width - px(24)
+				end)
+				for _, chunk in ipairs(chunks) do
 					table.insert(pieces, {
 						x = px(12),
-						y = inner + (look.lineHeight - theme.fontHeight(look.font)) / 2,
-						w = theme.textSize(chunk, look.font),
+						y = y + inset,
+						w = theme.textSize(chunk, font),
 						text = chunk,
-						font = look.font,
+						font = font,
 						role = "text",
 						code = false,
 						link = nil,
 					})
-					inner = inner + look.lineHeight
+					y = y + lineHeight
 				end
-				for char in string.gmatch(text, utf8.charpattern) do
-					local extended = chunk .. char
-					if chunk ~= "" and x + theme.textSize(extended, look.font) > width - px(12) then
-						emit()
-						chunk = char
-					else
-						chunk = extended
-					end
-				end
-				emit()
 			end
-			y = inner + px(10)
+			y = y + px(10)
 			table.insert(marks, { kind = "box", x = 0, y = top, w = width, h = y - top })
 		end
 		previous = b
