@@ -25,6 +25,8 @@ interface DonatosGoodsVariant {
 interface DonatosGoodsImage {
 	full: string;
 	card: string;
+	-- The files' ids, for `server:get-image`.
+	ids: { full: string; card: string };
 	width: number;
 	height: number;
 }
@@ -33,6 +35,34 @@ interface DonatosItemGoods {
 	key: string;
 	meta?: string;
 	name: string;
+}
+
+-- A PNG from the API to download and draw; `width` and `height` give its aspect.
+interface DonatosLogo {
+	-- For `server:get-image`.
+	id: string;
+	url: string;
+	width: number;
+	height: number;
+}
+
+-- A way to pay our order besides SBP's QR code, as the API describes its button.
+interface DonatosPaymentMethod {
+	-- For `server:payment-method-link`, unless `url` is set.
+	id: string;
+	name: string;
+	-- Text before the logo; the name is shown when there is neither.
+	label?: string;
+	-- A PNG in the brand's colours, for buttons of `colors.fill`.
+	logo?: DonatosLogo;
+	-- One of our icons ("card"), before the label.
+	icon?: string;
+	-- "#RRGGBB"; our own button colours when absent.
+	colors?: { fill: string; hover: string; ink: string };
+	-- Opened as is, without asking for a link.
+	url?: string;
+	-- Under the QR code when the link comes with one.
+	qrHint?: string;
 }
 
 interface DonatosServerApi {
@@ -64,6 +94,31 @@ interface DonatosServerApi {
 		input: { playerExternalId: string; sum: number; extra?: string };
 		output: { url: string };
 	};
+	["server:create-order"]: {
+		-- `email` is for the receipt; without it the one the player asked to remember is used.
+		input: { playerExternalId: string; amount: number; email?: string; rememberEmail?: boolean };
+		output: {
+			orderId: number;
+			-- T-Kassa's pay page (card, SBP, T-Pay and the rest).
+			payUrl: string;
+			-- `modules` is `size` rows of `size` modules, "1" dark; absent when there is no QR.
+			-- `logo` goes beside the title.
+			sbp?: { payload: string; size: number; modules: string; logo?: DonatosLogo };
+			-- The other ways to pay it, in order.
+			methods: DonatosPaymentMethod[];
+		};
+	};
+	["server:payment-method-link"]: {
+		input: { playerExternalId: string; orderId: number; method: string };
+		-- `qr`: T-Pay's link as a QR code, laid out like `sbp`'s.
+		output: { url: string; qr?: { size: number; modules: string } };
+	};
+	["server:get-image"]: {
+		-- An image's id from the API (goods images, payment logos).
+		input: { id: string };
+		-- `data`: the file's bytes in base64.
+		output: { data: string };
+	};
 	["server:get-updates:v2"]: {
 		input: { since?: string; playerExternalIds: string[] };
 		output: {
@@ -88,6 +143,8 @@ interface DonatosServerApi {
 				id: number;
 				externalId: string;
 				balance: number;
+				-- The remembered receipt email, masked ("p***@example.com"); missing from older APIs.
+				receiptEmail?: string;
 				externalMeta?: {
 					name?: string;
 					avatarUrl?: string;
@@ -208,6 +265,14 @@ interface DonatosServerActions {
 	createIgsPaymentUrl: {
 		input: { sum: number };
 		output: DonatosActionResult<DonatosServerApi["server:igs-create-payment-url"]["output"]>;
+	};
+	createOrder: {
+		input: { amount: number; email?: string; rememberEmail?: boolean };
+		output: DonatosActionResult<DonatosServerApi["server:create-order"]["output"]>;
+	};
+	paymentMethodLink: {
+		input: { orderId: number; method: string };
+		output: DonatosActionResult<DonatosServerApi["server:payment-method-link"]["output"]>;
 	};
 	getOnlinePlayers: { input: nil; output: DonatosActionResult<DonatosOnlinePlayer[]> };
 	getHistory: { input: { cursor?: number }; output: DonatosActionResult<DonatosHistoryPage> };

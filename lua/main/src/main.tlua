@@ -69,6 +69,7 @@ if CLIENT then
 end
 
 if SERVER then
+	require("donatos.image-relay")
 	require("donatos.net.server")
 	require("donatos.remote-updates")
 	require("server")

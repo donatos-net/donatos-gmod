@@ -1,0 +1,259 @@
+-- Images for clients that can't reach the API's site (some networks block it): the server gets
+-- them from the API (`server:get-image`, which only hands out its own images) and passes them on
+-- over the `donatos_image` net message in chunks, each one asked for by the client, like the
+-- bootstrap's bundle transfer.
+--
+-- Client -> server: request id (16 bits), the image's id, chunk index (8 bits).
+-- Server -> client: request id, chunk count (8 bits; 0 when the image can't be had), chunk index,
+-- length (16 bits) and the chunk's bytes.
+
+local serverApi = require("donatos.server-api")
+local async = require("utils.async")
+
+local NET = "donatos_image"
+local CHUNK_SIZE = 32000
+-- Larger images are refused (goods images are well under it).
+local MAX_SIZE = 2 * 1024 * 1024
+local MAX_ID_LENGTH = 128
+
+-- Whether `body` starts like a JPEG or a PNG, the formats the API serves.
+local function isImage(body: string): boolean
+	return string.sub(body, 1, 3) == "\xFF\xD8\xFF" or string.sub(body, 1, 8) == "\x89PNG\r\n\x1A\n"
+end
+
+------------------------------------------------------------------------------ server
+
+-- Bodies the server keeps for the clients asking: dropped least recently used past this.
+local CACHE_LIMIT = 16 * 1024 * 1024
+-- Each player's chunk requests come out of a bucket of CHUNK_BURST, refilled at CHUNK_RATE per
+-- second. One with none left waits its turn instead of failing, so a client loading many images
+-- is slowed, never refused; past MAX_WAITING (a client has at most 4 downloads going) the rest
+-- are ignored.
+local CHUNK_BURST = 64
+local CHUNK_RATE = 8
+local MAX_WAITING = 8
+
+local type CacheEntry = {
+	-- nil while downloading; false when it can't be had.
+	body: string | false | nil;
+	usedAt: number;
+	waiters: ((body: string | nil) => void)[];
+}
+
+local cache: Table<string, CacheEntry> = {}
+local cachedBytes = 0
+local buckets: Table<Player, { tokens: number; at: number; waiting: number }> = setmetatable({}, { __mode = "k" })
+
+local function evict()
+	while cachedBytes > CACHE_LIMIT do
+		local oldestId: string | nil = nil
+		local oldestBody = ""
+		local oldestAt = math.huge
+		for id, entry in pairs(cache) do
+			local body = entry.body
+			if type(body) == "string" and entry.usedAt < oldestAt then
+				oldestId, oldestBody, oldestAt = id, body, entry.usedAt
+			end
+		end
+		if oldestId == nil then
+			return
+		end
+		cachedBytes = cachedBytes - #oldestBody
+		cache[oldestId] = nil
+	end
+end
+
+-- Calls `ready` with the image `id`'s bytes once downloaded, or nil if it can't be had.
+local function load(id: string, ready: (body: string | nil) => void)
+	local entry = cache[id]
+	if entry ~= nil then
+		entry.usedAt = RealTime()
+		local body = entry.body
+		if body == nil then
+			table.insert(entry.waiters, ready)
+		else
+			ready(body or nil)
+		end
+		return
+	end
+	local created: CacheEntry = { body = nil, usedAt = RealTime(), waiters = { ready } }
+	cache[id] = created
+	local function settle(body: string | nil)
+		if created.body ~= nil then
+			return
+		end
+		local valid = body ~= nil and #body <= MAX_SIZE and isImage(body)
+		created.body = valid and body or false
+		if valid then
+			created.usedAt = RealTime()
+			cachedBytes = cachedBytes + #(body as string)
+			evict()
+		else
+			-- Tried again by the next request.
+			timer.Simple(60, function()
+				if cache[id] == created then
+					cache[id] = nil
+				end
+			end)
+		end
+		for _, waiter in ipairs(created.waiters) do
+			waiter(valid and body or nil)
+		end
+		created.waiters = {}
+	end
+	-- The API request has no timeout of its own.
+	timer.Simple(30, function()
+		settle(nil)
+	end)
+	async.run(suspend function()
+		local data = serverApi.request("server:get-image", { id = id })
+		settle(data and util.Base64Decode(data.data) or nil)
+	end)
+end
+
+-- Runs `serve` for one of `ply`'s chunk requests: now if the bucket allows it, after its turn
+-- otherwise, or never when too many already wait.
+local function whenAllowed(ply: Player, serve: () => void)
+	local now = RealTime()
+	local bucket = buckets[ply]
+	if bucket == nil then
+		bucket = { tokens = CHUNK_BURST, at = now, waiting = 0 }
+		buckets[ply] = bucket
+	end
+	bucket.tokens = math.min(CHUNK_BURST, bucket.tokens + (now - bucket.at) * CHUNK_RATE)
+	bucket.at = now
+	if bucket.tokens < 1 and bucket.waiting >= MAX_WAITING then
+		return
+	end
+	-- Taken ahead when short: the debt makes the next ones wait longer.
+	bucket.tokens = bucket.tokens - 1
+	if bucket.tokens >= 0 then
+		serve()
+		return
+	end
+	local waitingBucket = bucket
+	waitingBucket.waiting = waitingBucket.waiting + 1
+	timer.Simple(-bucket.tokens / CHUNK_RATE, function()
+		waitingBucket.waiting = waitingBucket.waiting - 1
+		if IsValid(ply) then
+			serve()
+		end
+	end)
+end
+
+local function reply(ply: Player, requestId: number, total: number, index: number, chunk: string)
+	if not IsValid(ply) then
+		return
+	end
+	net.Start(NET)
+	net.WriteUInt(requestId, 16)
+	net.WriteUInt(total, 8)
+	net.WriteUInt(index, 8)
+	net.WriteUInt(#chunk, 16)
+	net.WriteData(chunk, #chunk)
+	net.Send(ply)
+end
+
+local function serve(ply: Player, requestId: number, id: string, index: number)
+	load(id, function(body: string | nil)
+		if body == nil then
+			reply(ply, requestId, 0, index, "")
+			return
+		end
+		local total = math.max(math.ceil(#body / CHUNK_SIZE), 1)
+		if index >= total then
+			reply(ply, requestId, 0, index, "")
+			return
+		end
+		reply(ply, requestId, total, index, string.sub(body, index * CHUNK_SIZE + 1, (index + 1) * CHUNK_SIZE))
+	end)
+end
+
+if SERVER then
+	util.AddNetworkString(NET)
+
+	net.Receive(NET, function(len: number, ply: Player)
+		local requestId = net.ReadUInt(16)
+		local id = net.ReadString()
+		local index = net.ReadUInt(8)
+		if #id > MAX_ID_LENGTH then
+			reply(ply, requestId, 0, index, "")
+			return
+		end
+		whenAllowed(ply, function()
+			serve(ply, requestId, id, index)
+		end)
+	end)
+end
+
+------------------------------------------------------------------------------ client
+
+-- A whole transfer that hasn't finished by then fails.
+local TRANSFER_TIMEOUT = 60
+
+local type Transfer = {
+	id: string;
+	chunks: string[];
+	done: (body: string | nil) => void;
+}
+
+local transfers: Table<number, Transfer> = {}
+local nextRequestId = 0
+
+local function ask(requestId: number, transfer: Transfer, index: number)
+	net.Start(NET)
+	net.WriteUInt(requestId, 16)
+	net.WriteString(transfer.id)
+	net.WriteUInt(index, 8)
+	net.SendToServer()
+end
+
+local function finish(requestId: number, body: string | nil)
+	local transfer = transfers[requestId]
+	if transfer == nil then
+		return
+	end
+	transfers[requestId] = nil
+	transfer.done(body)
+end
+
+-- Gets the image `id` (the API's id for it) through the server; `done` gets its bytes, or nil.
+local function fetch(id: string, done: (body: string | nil) => void)
+	nextRequestId = (nextRequestId + 1) % 65536
+	local requestId = nextRequestId
+	local transfer: Transfer = { id = id, chunks = {}, done = done }
+	transfers[requestId] = transfer
+	timer.Simple(TRANSFER_TIMEOUT, function()
+		finish(requestId, nil)
+	end)
+	ask(requestId, transfer, 0)
+end
+
+if CLIENT then
+	net.Receive(NET, function(len: number)
+		local requestId = net.ReadUInt(16)
+		local total = net.ReadUInt(8)
+		local index = net.ReadUInt(8)
+		local chunk = net.ReadData(net.ReadUInt(16))
+		local transfer = transfers[requestId]
+		if transfer == nil then
+			return
+		end
+		if total == 0 or index ~= #transfer.chunks then
+			finish(requestId, nil)
+			return
+		end
+		table.insert(transfer.chunks, chunk)
+		if #transfer.chunks < total then
+			ask(requestId, transfer, #transfer.chunks)
+			return
+		end
+		local body = table.concat(transfer.chunks)
+		finish(requestId, isImage(body) and body or nil)
+	end)
+end
+
+return {
+	isImage = isImage,
+	fetch = fetch,
+}

@@ -2,6 +2,7 @@
 -- states, and the dialogs more than one page opens.
 
 local netMessage = require("donatos.net")
+local images = require("ui.images")
 local theme = require("ui.theme")
 local widgets = require("ui.widgets")
 
@@ -15,8 +16,6 @@ interface DonatosMenuContext {
 	config: () => DonatosRemoteConfig | nil;
 	data: () => NonNullable<DonatosRemoteData> | nil;
 	loaded: () => boolean;
-	-- Opens the pay page with its deposit dialog for `deposit` bonuses.
-	openPayUrl: (deposit: string) => void;
 	canPay: () => boolean;
 	-- Re-renders after a local state change.
 	rerender: () => void;
@@ -176,6 +175,46 @@ local IGS_NOTICE = "Это сторонний сервис, который по�
 
 local type TopUpMethod = "donatos" | "igs"
 
+-- A QR code from the API: modules per side, and the rows' modules ("1" dark).
+local type DonatosQrGrid = { size: number; modules: string; logo?: DonatosLogo }
+
+-- `logo` goes beside the title.
+local type QrSpec = { title: string; text: string; grid: DonatosQrGrid; methods: boolean; logo?: DonatosLogo }
+
+-- The icons a payment method may name.
+local METHOD_ICONS: Table<string, DonatosIcon> = { card = "card", wallet = "wallet" }
+
+-- "#RRGGBB" as a Color; nil when it isn't one.
+local function hexColor(value: string): Color | nil
+	local r, g, b = string.match(value, "^#(%x%x)(%x%x)(%x%x)$")
+	if r == nil or g == nil or b == nil then
+		return nil
+	end
+	return Color(tonumber(r, 16) as number, tonumber(g, 16) as number, tonumber(b, 16) as number)
+end
+
+-- A payment method's button as the API describes it: its brand's colours and logo, or ours.
+local function methodButton(method: DonatosPaymentMethod): DonatosUiButton
+	local options: DonatosUiButton = { size = "lg", variant = "secondary" }
+	local brand = method.colors
+	if brand ~= nil then
+		local fill, hover, ink = hexColor(brand.fill), hexColor(brand.hover), hexColor(brand.ink)
+		if fill ~= nil and hover ~= nil and ink ~= nil then
+			options.brand = { fill = fill, hover = hover, ink = ink }
+		end
+	end
+	local logo = method.logo
+	if logo ~= nil and logo.width > 0 and logo.height > 0 then
+		options.logo = { url = logo.url, id = logo.id, aspect = logo.width / logo.height, fallback = method.name }
+		options.label = method.label
+	else
+		options.label = method.label ~= nil and `${method.label} ${method.name}` or method.name
+	end
+	local icon = method.icon
+	options.icon = icon ~= nil and METHOD_ICONS[icon] or nil
+	return options
+end
+
 -- A centred round badge for the top-up's waiting and done states; `paint` draws its centre.
 local function badge(parent: Panel, background: Color, paint: (cx: number, cy: number) => void): DonatosUiBlock
 	local size = px(56)
@@ -187,8 +226,9 @@ local function badge(parent: Panel, background: Color, paint: (cx: number, cy: n
 end
 
 -- The «Пополнение баланса» dialog: an amount (quick amounts or any in the field), the method
--- when gm-donate is enabled, then the pay page. It stays open while the player pays, waiting
--- for the balance to grow. `preset` is the amount to start with (what an item is short of).
+-- when gm-donate is enabled, the receipt email and terms for our orders; then our order's SBP
+-- QR code (T-Kassa's pay page when there is none) or gm-donate's page. It stays open while the
+-- player pays, waiting for the balance to grow. `preset` is the amount to start with (what an item is short of).
 -- Shown stacked, so closing it returns to the dialog it was opened from.
 local function topUp(ctx: DonatosMenuContext, preset?: number)
 	ctx.dialogs.showCustom(function(parent: Panel, relayout: () => void): DonatosUiFloating
@@ -197,22 +237,45 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 		local method: TopUpMethod = "donatos"
 		local amount: number | nil = preset ~= nil and math.Clamp(math.ceil(preset), TOP_UP_MIN, TOP_UP_MAX) or TOP_UP_AMOUNTS[1]
 		local errorText: string | nil = nil
-		-- The gm-donate page, to open again while waiting.
-		local igsUrl: string | nil = nil
+		-- The page to open again while waiting: gm-donate's, or T-Kassa's for our order.
+		local payUrl: string | nil = nil
 		-- The balance when waiting started; any more than that means the payment arrived.
 		local waitingFrom: number | nil = nil
+		-- The receipt email: the remembered one (masked, from the API) unless the player changes it.
+		local data = ctx.data()
+		local rememberedEmail = data and data.player.receiptEmail
+		local editingEmail = rememberedEmail == nil
+		local email = ""
+		local rememberEmail = true
+		local agreed = false
+		-- Our order, once made: its id and SBP code, and why another way to pay didn't open.
+		local orderId: number | nil = nil
+		local sbpGrid: DonatosQrGrid | nil = nil
+		local paymentMethods: DonatosPaymentMethod[] = {}
+		local methodError: string | nil = nil
+		-- The site, for the terms.
+		local site = config ~= nil and string.match(config.payUrl, "^https?://[^/]+") or nil
 
 		local function balance(): number | nil
-			local data = ctx.data()
-			return data and data.player.balance
+			local current = ctx.data()
+			return current and current.player.balance
 		end
 
-		local function valid(): boolean
+		local function amountValid(): boolean
 			local value = amount
 			if value == nil or value ~= math.floor(value) then
 				return false
 			end
 			return value >= (method == "igs" and 1 or TOP_UP_MIN) and value <= TOP_UP_MAX
+		end
+
+		local function emailValid(): boolean
+			return not editingEmail or string.match(email, "^[^%s@]+@[^%s@]+%.[^%s@]+$") ~= nil
+		end
+
+		-- Everything "Продолжить" needs: our orders also need the receipt email and the terms.
+		local function valid(): boolean
+			return amountValid() and (method == "igs" or emailValid() and agreed)
 		end
 
 		local box = vgui.Create("DPanel", parent)
@@ -269,11 +332,24 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 		------------------------------------------------------------------ waiting
 
 		local function reopen()
-			local url = igsUrl
-			if method == "igs" and url ~= nil then
+			local url = payUrl
+			if url ~= nil then
 				gui.OpenURL(url)
-			elseif amount ~= nil then
-				ctx.openPayUrl(tostring(amount))
+			end
+		end
+
+		-- Shows the done state once the server pushes the grown balance.
+		local function awaitBalance(panel: Panel)
+			panel.Think = function(self: Panel)
+				local current = balance()
+				local from = waitingFrom
+				if current == nil then
+					return
+				elseif from == nil then
+					waitingFrom = current
+				elseif current > from then
+					setBody(doneBlock())
+				end
 			end
 		end
 
@@ -285,8 +361,8 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			add(heading(content.panel, "Ждём оплаты…", "center"))
 			add(widgets.text(content.panel, {
 				text = method == "igs"
-						and "Страница gm-donate открылась в оверлее Steam или в браузере. Бонусы придут сами после оплаты, это может занять несколько минут."
-					or "Страница оплаты открылась в оверлее Steam или в браузере. Баланс обновится сам после оплаты.",
+						and "Страница оплаты открылась в оверлее Steam или в браузере. Бонусы придут сами после оплаты, это может занять несколько минут."
+					or "Страница оплаты открылась в оверлее Steam или в браузере.",
 				font = theme.font("body"),
 				color = colors.muted,
 				lineHeight = 20,
@@ -296,18 +372,7 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 				widgets.button(content.panel, { label = "Открыть страницу ещё раз", variant = "soft", onClick = reopen }),
 				widgets.button(content.panel, { label = "Закрыть", variant = "secondary", onClick = ctx.dialogs.close }),
 			}))
-			-- The server pushes the new balance once the payment is credited.
-			content.panel.Think = function(self: Panel)
-				local current = balance()
-				local from = waitingFrom
-				if current == nil then
-					return
-				elseif from == nil then
-					waitingFrom = current
-				elseif current > from then
-					setBody(doneBlock())
-				end
-			end
+			awaitBalance(content.panel)
 			return content
 		end
 
@@ -317,11 +382,224 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			setBody(waitingBlock())
 		end
 
+		------------------------------------------------------------------ QR codes
+
+		-- One of our order's QR codes: SBP's, with the other ways to pay under it, or the one a
+		-- method's link came with (T-Pay's).
+		local qrBlock: (spec: QrSpec) => DonatosUiBlock
+
+		local function sbpSpec(grid: DonatosQrGrid): QrSpec
+			return {
+				title = "Оплата через СБП",
+				text = "Отсканируйте код камерой телефона или в приложении банка.",
+				grid = grid,
+				methods = true,
+				logo = grid.logo,
+			}
+		end
+
+		local function methodSpec(method: DonatosPaymentMethod, grid: DonatosQrGrid): QrSpec
+			return {
+				title = `Оплата через ${method.name}`,
+				text = method.qrHint or "Отсканируйте код камерой телефона.",
+				grid = grid,
+				methods = false,
+			}
+		end
+
+		qrBlock = function(spec: QrSpec): DonatosUiBlock
+			local content, add = widgets.stack(box, px(12), px(20))
+			local titleLogo = spec.logo
+			if titleLogo ~= nil and titleLogo.width > 0 and titleLogo.height > 0 then
+				-- The title after its logo, centred together; the logo fades in once downloaded.
+				add(widgets.painted(content.panel, px(26), function(w: number, h: number)
+					local font = theme.font("section")
+					local size = px(24)
+					local logoWidth = math.Round(size * titleLogo.width / titleLogo.height)
+					local x = (w - (logoWidth + px(8) + theme.textSize(spec.title, font))) / 2
+					local material, readyAt = images.image(titleLogo.url, titleLogo.id)
+					if material ~= nil then
+						surface.SetMaterial(material)
+						surface.SetDrawColor(255, 255, 255, 255 * images.fadeIn(readyAt))
+						surface.DrawTexturedRect(math.Round(x), math.Round((h - size) / 2), logoWidth, size)
+					end
+					draw.SimpleText(spec.title, font, x + logoWidth + px(8), (h - theme.fontHeight(font)) / 2, colors.text)
+				end))
+			else
+				add(heading(content.panel, spec.title, "center"))
+			end
+			methodError = nil
+
+			-- Each row's dark runs as { first column, length }: one rectangle per run.
+			local grid = spec.grid
+			local runs: { row: number; col: number; len: number }[] = {}
+			for row = 0, grid.size - 1 do
+				local start: number | nil = nil
+				for col = 0, grid.size do
+					local dark = col < grid.size and string.byte(grid.modules, row * grid.size + col + 1) == 49
+					if dark and start == nil then
+						start = col
+					elseif not dark and start ~= nil then
+						table.insert(runs, { row = row, col = start, len = col - start })
+						start = nil
+					end
+				end
+			end
+			-- Whole pixels per module keep the code sharp; four modules of quiet zone around it.
+			local cells = grid.size + 8
+			local module = math.max(math.floor(px(240) / cells), 2)
+			local side = module * cells
+			add(widgets.painted(content.panel, side, function(w: number, h: number)
+				local x = math.floor((w - side) / 2)
+				-- Black on white in every scheme: banking apps read it best.
+				theme.box(px(12), x, 0, side, side, color_white)
+				surface.SetDrawColor(0, 0, 0, 255)
+				for _, run in ipairs(runs) do
+					surface.DrawRect(x + (run.col + 4) * module, (run.row + 4) * module, run.len * module, module)
+				end
+			end))
+
+			add(widgets.text(content.panel, {
+				text = spec.text,
+				font = theme.font("body"),
+				color = colors.muted,
+				lineHeight = 20,
+				align = "center",
+			}))
+
+			-- "Ждём оплаты…", or why a way to pay didn't open.
+			local status = widgets.blankPanel(content.panel)
+			local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger, lineHeight = 18, align = "center" }
+			local errorLine = widgets.text(status, errorOptions)
+			local waitingLine = widgets.painted(status, px(20), function(w: number, h: number)
+				local font = theme.font("small")
+				local label = "Ждём оплаты…"
+				local radius = px(7)
+				local width = radius * 2 + px(8) + theme.textSize(label, font)
+				local x = (w - width) / 2
+				theme.spinner(x + radius, h / 2, radius, colors.muted)
+				draw.SimpleText(label, font, x + radius * 2 + px(8), (h - theme.fontHeight(font)) / 2, colors.muted)
+			end)
+			add({
+				panel = status,
+				layout = function(width: number): number
+					local message = methodError
+					errorLine.panel:SetVisible(message ~= nil)
+					waitingLine.panel:SetVisible(message == nil)
+					local line = waitingLine
+					if message ~= nil then
+						errorOptions.text = message
+						line = errorLine
+					end
+					local h = line.layout(width)
+					line.panel:SetPos(0, 0)
+					line.panel:SetSize(width, h)
+					return h
+				end,
+			})
+
+			if spec.methods then
+				-- The other ways to pay, as the API lists them: two to a row, an odd last one alone.
+				local entries: { method: DonatosPaymentMethod; options: DonatosUiButton; button: DButton }[] = {}
+				local holder = widgets.blankPanel(content.panel)
+				local function open(method: DonatosPaymentMethod, options: DonatosUiButton)
+					local direct = method.url
+					if direct ~= nil then
+						gui.OpenURL(direct)
+						return
+					end
+					local id = orderId
+					if id == nil then
+						return
+					end
+					for _, entry in ipairs(entries) do
+						if entry.options.pending then
+							return
+						end
+					end
+					methodError = nil
+					options.pending = true
+					relayout()
+					netMessage.toServer("paymentMethodLink", { orderId = id, method = method.id }, function(result)
+						options.pending = false
+						-- Closed or moved on meanwhile.
+						if not IsValid(box) or body == nil or body.panel ~= content.panel then
+							return
+						end
+						if not result.success then
+							methodError = result.error ~= "" and result.error or "Не удалось открыть этот способ оплаты"
+							relayout()
+							return
+						end
+						local qr = result.data.qr
+						if qr ~= nil then
+							setBody(qrBlock(methodSpec(method, qr)))
+						else
+							gui.OpenURL(result.data.url)
+						end
+					end)
+				end
+				for _, method in ipairs(paymentMethods) do
+					local options = methodButton(method)
+					options.onClick = function()
+						open(method, options)
+					end
+					table.insert(entries, { method = method, options = options, button = widgets.button(holder, options) })
+				end
+				add({
+					panel = holder,
+					layout = function(width: number): number
+						local gap = px(8)
+						local half = math.floor((width - gap) / 2)
+						local y = 0
+						for i, entry in ipairs(entries) do
+							local h = entry.button:GetTall()
+							local alone = i == #entries and i % 2 == 1
+							entry.button:SetPos(i % 2 == 0 and width - half or 0, y)
+							entry.button:SetSize(alone and width or half, h)
+							if i % 2 == 0 or alone then
+								y = y + h + (i < #entries and gap or 0)
+							end
+						end
+						return y
+					end,
+				})
+				add(widgets.column(content.panel, px(8), {
+					widgets.button(content.panel, { label = "Закрыть", variant = "ghost", onClick = ctx.dialogs.close }),
+				}))
+			else
+				add(widgets.column(content.panel, px(8), {
+					widgets.button(content.panel, {
+						label = "Другие способы оплаты",
+						variant = "secondary",
+						onClick = function()
+							local sbp = sbpGrid
+							if sbp ~= nil then
+								setBody(qrBlock(sbpSpec(sbp)))
+							end
+						end,
+					}),
+					widgets.button(content.panel, { label = "Закрыть", variant = "ghost", onClick = ctx.dialogs.close }),
+				}))
+			end
+			awaitBalance(content.panel)
+			return content
+		end
+
 		------------------------------------------------------------------ form
 
 		local function formBlock(): DonatosUiBlock
-			local content, add = widgets.stack(box, px(16), px(20))
-			add(heading(content.panel, "Пополнение баланса"))
+			local content, add = widgets.stack(box, px(20), px(20))
+			-- The title, and the balance under it while it is known.
+			add(widgets.painted(content.panel, balance() ~= nil and px(48) or px(26), function(w: number, h: number)
+				local titleFont = theme.font("section")
+				draw.SimpleText("Пополнение баланса", titleFont, 0, (px(26) - theme.fontHeight(titleFont)) / 2, colors.text)
+				local current = balance()
+				if current ~= nil then
+					local font = theme.font("small")
+					draw.SimpleText(`На балансе ${formatNumber(current)} ${bonuses(current)}`, font, 0, px(28) + (px(20) - theme.fontHeight(font)) / 2, colors.muted)
+				end
+			end))
 
 			local form = widgets.blankPanel(content.panel)
 			local function caption(label: string): DonatosUiBlock
@@ -331,12 +609,31 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 				end)
 			end
 
-			-- Amount: quick amounts over a field for any other, and the limits under it (red while
-			-- the amount is outside them).
-			local amountCaption = caption("Сумма")
-			local field, entry = widgets.textEntry(form, "Другая сумма", true)
+			-- Amount: a field with the limits beside its caption (red while the amount is outside
+			-- them), and quick amounts under it.
+			local amountCaption = widgets.painted(form, px(20), function(w: number, h: number)
+				local font = theme.font("smallMedium")
+				draw.SimpleText("Сумма", font, 0, (h - theme.fontHeight(font)) / 2, colors.textSoft)
+				local small = theme.font("small")
+				local limits = `от ${method == "igs" and 1 or formatNumber(TOP_UP_MIN)} до ${formatNumber(TOP_UP_MAX)}`
+				draw.SimpleText(limits, small, w, (h - theme.fontHeight(small)) / 2, amountValid() and colors.muted or colors.danger, TEXT_ALIGN_RIGHT)
+			end)
+			local field, entry = widgets.textEntry(form, "Сумма", true)
+			entry:SetFont(theme.font("cardTitle"))
 			if amount ~= nil then
 				entry:SetValue(tostring(amount))
+			end
+			-- "бонусов" inside the field's right end, agreeing with the amount.
+			local paintField = field.Paint as (self: Panel, w: number, h: number) => boolean
+			field.Paint = function(self: Panel, w: number, h: number): boolean
+				paintField(self, w, h)
+				local value = amount
+				draw.SimpleText(value ~= nil and bonuses(value) or "бонусов", theme.font("body"), w - px(14), h / 2, colors.muted, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+				return true
+			end
+			field.PerformLayout = function(self: Panel, w: number, h: number)
+				entry:SetPos(px(14), 0)
+				entry:SetSize(w - px(14) - px(84), h)
 			end
 			local quick: DonatosUiButton[] = {}
 			local quickButtons: DButton[] = {}
@@ -370,11 +667,6 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 				syncQuick()
 				clearError()
 			end
-			local limits = widgets.painted(form, px(18), function(w: number, h: number)
-				local font = theme.font("small")
-				local label = `От ${method == "igs" and 1 or formatNumber(TOP_UP_MIN)} до ${formatNumber(TOP_UP_MAX)} бонусов`
-				draw.SimpleText(label, font, 0, (h - theme.fontHeight(font)) / 2, valid() and colors.muted or colors.danger)
-			end)
 
 			-- Method, when gm-donate is enabled: the pay page or gm-donate, with its notice.
 			local methodCaption: DonatosUiBlock | nil = nil
@@ -384,7 +676,7 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 				methodCaption = caption("Способ оплаты")
 				local methods: { method: TopUpMethod; options: DonatosUiButton }[] = {
 					{ method = "donatos", options = { label = "Карта / СБП", icon = "card" } },
-					{ method = "igs", options = { label = "gm-donate", icon = "wallet" } },
+					{ method = "igs", options = { label = "Другое", icon = "wallet" } },
 				}
 				local function syncMethods()
 					for _, spec in ipairs(methods) do
@@ -404,22 +696,74 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 				notice = widgets.text(form, { text = IGS_NOTICE, font = theme.font("small"), color = colors.muted, lineHeight = 18 })
 			end
 
+			-- Our orders: the receipt email (the remembered one, or a field and "remember") and
+			-- the terms, as on the pay page.
+			local receiptCaption = caption("Почта для чека")
+			local emailField, emailEntry = widgets.textEntry(form, "name@example.com", false)
+			emailEntry:SetValue(email)
+			emailEntry.OnChange = function(self: DTextEntry)
+				email = string.Trim(self:GetValue())
+				clearError()
+			end
+			local rememberBox = widgets.checkbox(form, {
+				on = rememberEmail,
+				label = "Запомнить почту",
+				onChange = function(on: boolean)
+					rememberEmail = on
+				end,
+			})
+			local rememberedLine = widgets.painted(form, px(36), function(w: number, h: number)
+				local font = theme.font("body")
+				local prefix = "Чек придёт на "
+				local y = (h - theme.fontHeight(font)) / 2
+				draw.SimpleText(prefix, font, 0, y, colors.muted)
+				draw.SimpleText(rememberedEmail or "", font, theme.textSize(prefix, font), y, colors.text)
+			end)
+			local changeEmail = widgets.button(form, {
+				label = "Изменить",
+				size = "sm",
+				variant = "ghost",
+				onClick = function()
+					editingEmail = true
+					relayout()
+					emailEntry:RequestFocus()
+				end,
+			})
+			local termsBox = widgets.checkbox(form, {
+				on = agreed,
+				label = "Я соглашаюсь с условиями и политикой конфиденциальности",
+				links = site ~= nil and {
+					{ text = "условиями", url = `${site}/legal/tos` },
+					{ text = "политикой конфиденциальности", url = `${site}/legal/privacy-policy` },
+				} or nil,
+				onChange = function(on: boolean)
+					agreed = on
+				end,
+			})
+
 			-- What the balance comes to; the line is left out while the balance is unknown.
 			local summary: DonatosUiBlock | nil = nil
 			if balance() ~= nil then
 				summary = widgets.painted(form, px(20), function(w: number, h: number)
 					local current = balance()
 					local value = amount
-					if current == nil or value == nil or not valid() then
+					if current == nil or value == nil or not amountValid() then
 						return
 					end
 					local font = theme.font("body")
-					local prefix = "Баланс после пополнения: "
 					local y = (h - theme.fontHeight(font)) / 2
-					draw.SimpleText(prefix, font, 0, y, colors.muted)
-					draw.SimpleText(`${formatNumber(current + value)} ${bonuses(current + value)}`, font, theme.textSize(prefix, font), y, colors.text)
+					draw.SimpleText("Баланс после пополнения", font, 0, y, colors.muted)
+					draw.SimpleText(`${formatNumber(current + value)} ${bonuses(current + value)}`, theme.font("medium"), w, y, colors.text, TEXT_ALIGN_RIGHT)
 				end)
 			end
+
+			local separator = widgets.blankPanel(form)
+			separator.Paint = function(self: Panel, w: number, h: number): boolean
+				surface.SetDrawColor(colors.separator)
+				surface.DrawRect(0, 0, w, h)
+				return true
+			end
+			separator:SetVisible(summary ~= nil)
 
 			local errorOptions: DonatosUiTextOptions = { text = "", font = theme.font("small"), color = colors.danger, lineHeight = 18 }
 			local errorBlock = widgets.text(form, errorOptions)
@@ -435,17 +779,16 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 						y = y + h + gapAfter
 					end
 					place(amountCaption, px(8))
+					field:SetPos(0, y)
+					field:SetSize(width, px(44))
+					y = y + px(44) + px(8)
 					local gap = px(8)
 					local cell = (width - gap * (#quickButtons - 1)) / #quickButtons
 					for i, btn in ipairs(quickButtons) do
 						btn:SetPos(math.floor((i - 1) * (cell + gap)), y)
 						btn:SetSize(math.floor(cell), px(32))
 					end
-					y = y + px(32) + px(8)
-					field:SetPos(0, y)
-					field:SetSize(width, px(36))
-					y = y + px(36) + px(6)
-					place(limits, 0)
+					y = y + px(32)
 
 					local captionBlock = methodCaption
 					if captionBlock ~= nil then
@@ -467,9 +810,39 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 						end
 					end
 
+					local ours = method == "donatos"
+					receiptCaption.panel:SetVisible(ours)
+					emailField:SetVisible(ours and editingEmail)
+					rememberBox.panel:SetVisible(ours and editingEmail)
+					rememberedLine.panel:SetVisible(ours and not editingEmail)
+					changeEmail:SetVisible(ours and not editingEmail)
+					termsBox.panel:SetVisible(ours)
+					if ours then
+						y = y + px(20)
+						place(receiptCaption, px(8))
+						if editingEmail then
+							emailField:SetPos(0, y)
+							emailField:SetSize(width, px(36))
+							y = y + px(36) + px(10)
+							place(rememberBox, 0)
+						else
+							local changeWidth = changeEmail:GetWide()
+							changeEmail:SetPos(width - changeWidth, y + (px(36) - changeEmail:GetTall()) / 2)
+							rememberedLine.panel:SetPos(0, y)
+							rememberedLine.panel:SetSize(width - changeWidth - px(8), px(36))
+							y = y + px(36)
+						end
+						y = y + px(14)
+						place(termsBox, 0)
+					end
+
 					local summaryBlock = summary
 					if summaryBlock ~= nil then
+						-- Set off from the form by a rule.
 						y = y + px(20)
+						separator:SetPos(0, y)
+						separator:SetSize(width, math.max(px(1), 1))
+						y = y + px(16)
 						place(summaryBlock, 0)
 					end
 					local message = errorText
@@ -484,44 +857,93 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			})
 
 			local cancel: DonatosUiButton = { label = "Отмена", variant = "secondary", onClick = ctx.dialogs.close }
-			local proceed: DonatosUiButton = { label = "Продолжить" }
-			local proceedButton = widgets.button(content.panel, proceed)
+			local proceed: DonatosUiButton = { label = "Оплатить" }
+			local footer = widgets.blankPanel(content.panel)
+			local cancelButton = widgets.button(footer, cancel)
+			local proceedButton = widgets.button(footer, proceed)
 			proceedButton.Think = function(self: DButton)
 				proceed.disabled = not valid()
+				-- Our bonuses are a ruble each; gm-donate prices its own.
+				local value = amount
+				if method == "igs" then
+					proceed.label = "Перейти к оплате"
+				else
+					proceed.label = value ~= nil and amountValid() and `Оплатить ${formatNumber(value)} ₽` or "Оплатить"
+				end
 			end
 			proceed.onClick = function()
 				local value = amount
 				if value == nil or not valid() then
 					return
 				end
-				if method == "donatos" then
-					ctx.openPayUrl(tostring(value))
-					wait()
-					return
-				end
 				errorText = nil
 				proceed.pending = true
 				cancel.disabled = true
 				relayout()
-				netMessage.toServer("createIgsPaymentUrl", { sum = value }, function(result)
+				-- False when closed while the order or link was being made: the player changed their mind.
+				local function settled(): boolean
 					proceed.pending = false
 					cancel.disabled = false
-					-- Closed while the link was being made: the player changed their mind.
-					if not IsValid(box) or body == nil or body.panel ~= content.panel then
+					return IsValid(box) and body ~= nil and body.panel == content.panel
+				end
+				local function failed(message: string, fallback: string)
+					errorText = message ~= "" and message or fallback
+					relayout()
+				end
+				if method == "donatos" then
+					netMessage.toServer("createOrder", {
+						amount = value,
+						email = editingEmail and email or nil,
+						rememberEmail = editingEmail and rememberEmail,
+					}, function(result)
+						if not settled() then
+							return
+						end
+						if not result.success then
+							failed(result.error, "Не удалось создать заказ")
+							return
+						end
+						payUrl = result.data.payUrl
+						orderId = result.data.orderId
+						paymentMethods = result.data.methods
+						local sbp = result.data.sbp
+						if sbp ~= nil then
+							errorText = nil
+							waitingFrom = balance()
+							sbpGrid = sbp
+							setBody(qrBlock(sbpSpec(sbp)))
+						else
+							gui.OpenURL(result.data.payUrl)
+							wait()
+						end
+					end)
+					return
+				end
+				netMessage.toServer("createIgsPaymentUrl", { sum = value }, function(result)
+					if not settled() then
 						return
 					end
 					if result.success then
-						method = "igs"
-						igsUrl = result.data.url
+						payUrl = result.data.url
 						gui.OpenURL(result.data.url)
 						wait()
 					else
-						errorText = result.error ~= "" and result.error or "Не удалось создать ссылку на оплату"
-						relayout()
+						failed(result.error, "Не удалось создать ссылку на оплату")
 					end
 				end)
 			end
-			add(widgets.row(content.panel, px(8), { widgets.button(content.panel, cancel), proceedButton }))
+			-- "Отмена" as wide as its label, the payment taking the rest.
+			add({
+				panel = footer,
+				layout = function(width: number): number
+					local h = proceedButton:GetTall()
+					local cancelWidth = cancelButton:GetWide()
+					cancelButton:SetPos(0, 0)
+					proceedButton:SetPos(cancelWidth + px(8), 0)
+					proceedButton:SetSize(width - cancelWidth - px(8), h)
+					return h
+				end,
+			})
 			return content
 		end
 

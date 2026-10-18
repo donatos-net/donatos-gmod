@@ -30,7 +30,7 @@ donatos-gmod/
 │       │   │   ├── views.tlua    # Page context, formatting, empty states, top-up
 │       │   │   ├── shop.tlua     # Shop page: category bar, cards, search; item dialog with its image carousel
 │       │   │   ├── markdown.tlua # Goods descriptions in a Markdown subset: parse, plain text, painted block
-│       │   │   ├── images.tlua   # Goods images: downloaded once into data/donatos/img/, loaded as materials
+│       │   │   ├── images.tlua   # Goods images, payment logos: downloaded once into data/donatos/img/, loaded as materials
 │       │   │   ├── gallery.tlua  # Goods pictures: item dialog carousel and full-screen viewer, with swipe
 │       │   │   ├── items.tlua    # «Мои предметы»: active + inventory items, gift / freeze
 │       │   │   ├── history.tlua  # «История»: balance changes as a HeroUI table, paged
@@ -75,6 +75,13 @@ donatos-gmod/
   - Falls back to `donatos_bundle` net transfer from server (compressed, chunked 32KB, sequential by request id)
   - Stores bundle at `data/donatos/bundle.txt`
 
+Images (goods pictures, payment logos) follow the same idea. The API gives each an `id` beside
+its `url`; `ui/images.tlua` saves files by id, downloads them from the site, and when that fails
+asks the server for the id over `donatos_image` (`donatos/image-relay.tlua`), which gets the file
+from the API (`server:get-image`, which resolves only its own ids) and sends it in 32KB chunks,
+each requested by the client. After one such failure the rest of the
+session goes through the server directly.
+
 The client checks every bundle (cached, downloaded over HTTP, or received from the server) against
 `donatos_bundle_sha256` before running it; an HTTP mismatch falls back to the server transfer.
 The bootstrap ships in the addon zip and is not auto-updated: changes to it only reach servers
@@ -103,8 +110,10 @@ that reinstall the addon.
   `show(dialog, true)` / `showCustom(build, true)` stack a dialog over the current one, which
   comes back as it was when the top one closes (Escape closes the top one).
 - Top-up (`views.topUp(ctx, preset?)`, from the top bar and the item dialog's «Пополнить на N»):
-  a stacked «Пополнение баланса» dialog (amount, pay page or gm-donate), then «Ждём оплату…»
-  until the synced balance grows.
+  a stacked «Пополнение баланса» dialog (amount, method when gm-donate is on, receipt email and
+  terms), then our order's SBP QR code (`createOrder` -> `server:create-order`, drawn from the
+  API's module grid) or gm-donate's page, until the synced balance grows. The API remembers the
+  receipt email when asked and sends game servers only a masked copy (`player.receiptEmail`).
 
 ### 3) State sync model
 - The server pushes state to clients over the `donatos` net message:
@@ -125,7 +134,7 @@ that reinstall the addon.
 - Typed contracts: `DonatosServerActions` in `lua/main/src/donatos.d.tlua`
 - Handlers: `lua/main/src/donatos/net/server.tlua`
 - Used by the menu: `purchaseGoods`, `activateItem`, `giftItem`, `getOnlinePlayers`,
-  `freezeActiveItem`, `unfreezeActiveItem`, `createIgsPaymentUrl`, `getHistory`
+  `freezeActiveItem`, `unfreezeActiveItem`, `createOrder`, `createIgsPaymentUrl`, `getHistory`
 
 ## Colour schemes
 

@@ -629,7 +629,7 @@ local function goodCard(parent: Panel, ctx: DonatosMenuContext, good: Good, sect
 		if cover == nil then
 			return
 		end
-		local material, readyAt = images.image(cover.card)
+		local material, readyAt = images.image(cover.card, cover.ids.card)
 		if material == nil then
 			return
 		end

@@ -269,7 +269,7 @@ local function openViewer(pictures: DonatosGoodsImage[], start: number, link?: V
 		local x = Lerp(t, from[1] - sx, tx)
 		local y = Lerp(t, from[2] - sy, ty)
 		local iw, ih = Lerp(t, from[3], tw), Lerp(t, from[4], th)
-		local material = images.image(entry.full)
+		local material = images.image(entry.full, entry.ids.full)
 		if material == nil then
 			return
 		end
@@ -303,7 +303,7 @@ local function openViewer(pictures: DonatosGoodsImage[], start: number, link?: V
 				local entry = pictureAt(pictures, slot)
 				local x, y, iw, ih = contain(entry.width, entry.height, aw, ah)
 				x, y = x + ax + offset, y + ay
-				local material, readyAt = images.image(entry.full)
+				local material, readyAt = images.image(entry.full, entry.ids.full)
 				if material == nil then
 					theme.spinner(x + iw / 2, y + ih / 2, px(12), colors.muted)
 				else
@@ -319,7 +319,8 @@ local function openViewer(pictures: DonatosGoodsImage[], start: number, link?: V
 			end
 		end
 		if many then
-			images.image(pictureAt(pictures, first + 1).full)
+			local following = pictureAt(pictures, first + 1)
+			images.image(following.full, following.ids.full)
 			local current = math.Round(slide.target()) % count + 1
 			draw.SimpleText(`${current} / ${count}`, theme.font("smallMedium"), w / 2, ay + ah + px(24), shown >= 1 and colors.barText or theme.fade(colors.barText, shown), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
@@ -477,7 +478,7 @@ local function carousel(parent: Panel, pictures: DonatosGoodsImage[]): Panel
 		local entry = pictureAt(pictures, slot)
 		-- The viewer is showing this one; the carousel keeps its place empty meanwhile.
 		local away = lent and slot == math.Round(slide.target())
-		local material, readyAt = images.image(entry.full)
+		local material, readyAt = images.image(entry.full, entry.ids.full)
 		if material == nil then
 			theme.spinner(x + w / 2, h / 2, px(10), colors.muted)
 			return
@@ -524,7 +525,8 @@ local function carousel(parent: Panel, pictures: DonatosGoodsImage[]): Panel
 		end
 		if many then
 			-- The next picture starts loading before it is shown.
-			images.image(pictureAt(pictures, first + 1).full)
+			local following = pictureAt(pictures, first + 1)
+			images.image(following.full, following.ids.full)
 
 			theme.shade(0, h * 0.7, w, h * 0.3, BLACK, "bottom", 0.4)
 			local x, y, size, gap = dotsGeometry(w, h)

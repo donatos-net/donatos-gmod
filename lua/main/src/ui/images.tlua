@@ -1,8 +1,11 @@
--- Client: goods images, downloaded on first use and kept in data/donatos/img/. Image URLs are
--- named by their content's hash, so a saved file never goes stale: later sessions load it
--- from disk without asking the network. Until an image is ready (and for good, if it can't be
--- had) there is no material, and the menu draws as it would without images.
+-- Client: goods images and payment logos, downloaded on first use and kept in data/donatos/img/,
+-- saved by the API's id for the file. An id names one content for good (by its hash), so a saved
+-- file never goes stale: later sessions load it from disk without asking the network. A client
+-- that can't reach the site gets the image by its id through the server
+-- (`donatos.image-relay`). Until an image is ready (and for good, if it can't be had) there is
+-- no material, and the menu draws as it would without images.
 
+local relay = require("donatos.image-relay")
 local theme = require("ui.theme")
 
 local DIRECTORY = "donatos/img"
@@ -18,6 +21,9 @@ local FADE_IN = 0.25
 local type ImageState = "queued" | "downloading" | "saved" | "ready" | "failed"
 
 local type ImageEntry = {
+	url: string;
+	-- The API's id for the file, which the server can fetch it by.
+	id: string;
 	state: ImageState;
 	-- Under data/.
 	path: string;
@@ -38,36 +44,21 @@ end
 
 local pump: () => void = function() end
 
--- Whether `body` starts like a JPEG or a PNG, the formats the API serves.
-local function isImage(body: string): boolean
-	return string.sub(body, 1, 3) == "\xFF\xD8\xFF" or string.sub(body, 1, 8) == "\x89PNG\r\n\x1A\n"
-end
+-- Set once a direct download has failed where the server's got through: the site is blocked
+-- here, so the rest of the session goes through the server without waiting on it first.
+local direct = true
 
-local function download(url: string, entry: ImageEntry)
-	entry.state = "downloading"
-	downloading = downloading + 1
+-- Downloads `url` straight from the site; `done` gets an image's bytes, or nil.
+local function fetchDirect(url: string, done: (body: string | nil) => void)
 	local settled = false
 	local function settle(body: string | nil)
 		if settled then
 			return
 		end
 		settled = true
-		downloading = downloading - 1
-		-- Only an image is saved: a proxy's or captive portal's HTML page would otherwise be
-		-- kept, and loaded, every session.
-		if body ~= nil and not isImage(body) then
-			body = nil
-		end
-		if body ~= nil then
-			file.CreateDir(DIRECTORY)
-			file.Write(entry.path, body)
-		end
-		if body ~= nil and file.Exists(entry.path, "DATA") then
-			entry.state = "saved"
-		else
-			fail(entry)
-		end
-		pump()
+		-- Only an image: a proxy's or captive portal's HTML page would otherwise be saved, and
+		-- loaded, every session.
+		done((body ~= nil and relay.isImage(body)) and body or nil)
 	end
 	timer.Simple(DOWNLOAD_TIMEOUT, function()
 		settle(nil)
@@ -82,12 +73,50 @@ local function download(url: string, entry: ImageEntry)
 	end
 end
 
+local function download(entry: ImageEntry)
+	local url, id = entry.url, entry.id
+	entry.state = "downloading"
+	downloading = downloading + 1
+	local function settle(body: string | nil)
+		downloading = downloading - 1
+		if body ~= nil then
+			file.CreateDir(DIRECTORY)
+			file.Write(entry.path, body)
+		end
+		if body ~= nil and file.Exists(entry.path, "DATA") then
+			entry.state = "saved"
+		else
+			fail(entry)
+		end
+		pump()
+	end
+	local function throughServer(failedDirect: boolean)
+		relay.fetch(id, function(body: string | nil)
+			if body ~= nil and failedDirect then
+				direct = false
+			end
+			settle(body)
+		end)
+	end
+	if not direct then
+		throughServer(false)
+		return
+	end
+	fetchDirect(url, function(body: string | nil)
+		if body ~= nil then
+			settle(body)
+		else
+			throughServer(true)
+		end
+	end)
+end
+
 pump = function()
 	while downloading < MAX_DOWNLOADS and #queue > 0 do
-		local url = table.remove(queue, 1) as string
-		local entry = entries[url]
+		local key = table.remove(queue, 1) as string
+		local entry = entries[key]
 		if entry ~= nil and entry.state == "queued" then
-			download(url, entry)
+			download(entry)
 		end
 	end
 end
@@ -118,18 +147,18 @@ local function load(entry: ImageEntry)
 end
 
 -- The image at `url` (a JPEG, or a PNG when the URL ends in .png), and when it became ready;
--- nil until then. The first call starts loading it.
-local function image(url: string): (IMaterial | nil, number)
-	local entry = entries[url]
+-- nil until then. `id` is the API's id for the file. The first call starts loading it.
+local function image(url: string, id: string): (IMaterial | nil, number)
+	local entry = entries[id]
 	if entry == nil then
 		-- Material() picks the decoder by extension.
 		local extension = string.EndsWith(url, ".png") and "png" or "jpg"
-		local path = `${DIRECTORY}/${util.SHA256(url)}.${extension}`
+		local path = `${DIRECTORY}/${util.SHA256(id)}.${extension}`
 		local saved = file.Exists(path, "DATA")
-		entry = { state = saved and "saved" or "queued", path = path, readyAt = 0 }
-		entries[url] = entry
+		entry = { url = url, id = id, state = saved and "saved" or "queued", path = path, readyAt = 0 }
+		entries[id] = entry
 		if not saved then
-			table.insert(queue, url)
+			table.insert(queue, id)
 			pump()
 		end
 	end

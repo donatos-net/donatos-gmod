@@ -69,15 +69,6 @@ local function canPay(): boolean
 	return state.remoteConfig.value ~= nil and steamID64() ~= nil
 end
 
-local function openPayUrl(deposit: string)
-	local config = state.remoteConfig.value
-	local id = steamID64()
-	if config == nil or id == nil then
-		return
-	end
-	gui.OpenURL(`${string.Replace(config.payUrl, "{id}", id)}&openDeposit=${deposit}`)
-end
-
 -- The window enters and leaves like HeroUI's modal: fading in while settling from 1.05 to 1
 -- over 250ms ease-out-quad, and out to 0.95 over 100ms.
 local windowIn = theme.tween(0)
@@ -401,7 +392,6 @@ local function create(): Panel
 			local ply = LocalPlayer()
 			return IsValid(ply) and ply:Donatos()._remoteData.isLoaded
 		end,
-		openPayUrl = openPayUrl,
 		canPay = canPay,
 		rerender = function()
 			render()

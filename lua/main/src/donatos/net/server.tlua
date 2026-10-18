@@ -162,6 +162,37 @@ local handlers: ServerActionHandlers = {
 		return ok(data)
 	end,
 
+	createOrder = suspend function(ply, input)
+		local data, error = serverApi.request("server:create-order", {
+			playerExternalId = ply:SteamID64(),
+			amount = input.amount,
+			email = input.email,
+			rememberEmail = input.rememberEmail,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		-- A remembered email reaches the menu with the next update: the API marks the player
+		-- changed.
+		return ok(data)
+	end,
+
+	paymentMethodLink = suspend function(ply, input)
+		local data, error = serverApi.request("server:payment-method-link", {
+			playerExternalId = ply:SteamID64(),
+			orderId = input.orderId,
+			method = input.method,
+		})
+
+		if data == nil then
+			return err(error)
+		end
+
+		return ok(data)
+	end,
+
 	purchaseGoods = suspend function(ply, input)
 		local playerId = ply:Donatos():GetID()
 		if not playerId then

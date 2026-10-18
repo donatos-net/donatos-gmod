@@ -3,6 +3,7 @@
 -- Option tables passed to widgets stay live: painting reads them every frame, so changing
 -- `options.pending` or `options.label` updates the widget in place.
 
+local images = require("ui.images")
 local theme = require("ui.theme")
 
 local colors = theme.colors
@@ -383,6 +384,11 @@ interface DonatosUiButton {
 	-- the right.
 	select?: boolean;
 	placeholder?: boolean;
+	-- A brand's own colours instead of the variant's: fill, hovered fill, text.
+	brand?: { fill: Color; hover: Color; ink: Color };
+	-- A logo after the label: a PNG from `url` (downloaded like goods images), `aspect` times as
+	-- wide as high; `fallback` is drawn instead until it is ready, or if it can't be had.
+	logo?: { url: string; id: string; aspect: number; fallback: string };
 	onClick?: (button: DButton) => void;
 }
 
@@ -396,6 +402,9 @@ end
 local function badgeWidth(badgeText: string): number
 	return math.max(theme.textSize(badgeText, theme.font("chip")) + px(12), px(18))
 end
+
+-- A logo's height in its button's.
+local LOGO_SCALE = 0.52
 
 local function buttonMetrics(options: DonatosUiButton): (number, number)
 	local size = options.size or "md"
@@ -411,12 +420,20 @@ local function buttonMetrics(options: DonatosUiButton): (number, number)
 	if options.icon ~= nil then
 		width = width + px(16) + px(8)
 	end
+	local logo = options.logo
+	if logo ~= nil then
+		width = width + math.Round(height * LOGO_SCALE) * logo.aspect + (options.label ~= nil and px(7) or 0)
+	end
 	return width, height
 end
 
 local TAB_HOVER_INK = theme.fade(colors.barText, 0.7)
 
 local function buttonColors(options: DonatosUiButton, hovered: boolean): (Color | nil, Color)
+	local brand = options.brand
+	if brand ~= nil then
+		return hovered and brand.hover or brand.fill, brand.ink
+	end
 	local variant = options.variant or "primary"
 	if variant == "primary" then
 		return hovered and colors.accentHover or colors.accent, colors.accentInk
@@ -469,7 +486,18 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 		local badgeSpace = badgeText ~= nil and px(6) + badgeWidth(badgeText) or 0
 		local iconSize = options.icon ~= nil and (options.label ~= nil and px(16) or math.Round(h * 0.44)) or 0
 		local iconGap = options.icon ~= nil and options.label ~= nil and px(8) or 0
-		local contentWidth = labelWidth + badgeSpace + iconSize + iconGap
+		-- The logo, or its fallback text while there is no material.
+		local logo = options.logo
+		local logoMaterial: IMaterial | nil = nil
+		local logoReadyAt = 0
+		local logoHeight = math.Round(h * LOGO_SCALE)
+		local logoWidth = 0
+		if logo ~= nil then
+			logoMaterial, logoReadyAt = images.image(logo.url, logo.id)
+			logoWidth = logoMaterial ~= nil and math.Round(logoHeight * logo.aspect) or theme.textSize(logo.fallback, font)
+		end
+		local logoGap = logo ~= nil and options.label ~= nil and px(7) or 0
+		local contentWidth = labelWidth + badgeSpace + iconSize + iconGap + logoGap + logoWidth
 		local x = (w - contentWidth) / 2
 
 		if options.icon ~= nil then
@@ -483,6 +511,17 @@ local function button(parent: Panel, options: DonatosUiButton): DButton
 			surface.SetTextPos(x, (h - textHeight) / 2)
 			surface.DrawText(options.label)
 			x = x + labelWidth
+		end
+		if logo ~= nil then
+			x = x + logoGap
+			if logoMaterial ~= nil then
+				surface.SetMaterial(logoMaterial)
+				surface.SetDrawColor(255, 255, 255, ink.a * images.fadeIn(logoReadyAt))
+				surface.DrawTexturedRect(math.Round(x), math.Round((h - logoHeight) / 2), logoWidth, logoHeight)
+			else
+				draw.SimpleText(logo.fallback, font, x, h / 2, ink, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			end
+			x = x + logoWidth
 		end
 		if badgeText ~= nil then
 			local bw, bh = badgeWidth(badgeText), px(18)
@@ -671,6 +710,119 @@ local function switch(parent: Panel, options: DonatosUiSwitch): DonatosUiBlock
 			local hint = options.hint
 			hintLines = hint ~= nil and theme.wrap(hint, theme.font("small"), width - px(52)) or {}
 			return px(24) + (#hintLines > 0 and px(2) + #hintLines * px(16) or 0)
+		end,
+	}
+end
+
+------------------------------------------------------------------------------ checkbox
+
+interface DonatosUiCheckbox {
+	on: boolean;
+	label: string;
+	-- Words of the label that link to web pages (`text` as it appears in it), opened through
+	-- gui.OpenURL (which asks first).
+	links?: { text: string; url: string }[];
+	onChange?: (on: boolean) => void;
+}
+
+-- A HeroUI checkbox with a label wrapped beside it; the whole row toggles it, except its links.
+local function checkbox(parent: Panel, options: DonatosUiCheckbox): DonatosUiBlock
+	local panel = vgui.Create("DButton", parent) as DButton
+	panel:SetText("")
+	-- The label's words where `layout` placed them, each with the page its link opens.
+	local words: { text: string; x: number; y: number; w: number; url: string | nil }[] = {}
+	-- The box fills with the accent over HeroUI's 250ms ease.
+	local fill = theme.tween(options.on and 1 or 0)
+
+	local function linkAt(mx: number, my: number): string | nil
+		for _, word in ipairs(words) do
+			if word.url ~= nil and mx >= word.x and mx < word.x + word.w and my >= word.y and my < word.y + px(22) then
+				return word.url
+			end
+		end
+		return nil
+	end
+
+	panel.Paint = function(self: DButton, w: number, h: number): boolean
+		fill.to(options.on and 1 or 0, 0.25, "smooth")
+		local size = px(20)
+		local top = (px(22) - size) / 2
+		theme.box(px(6), 0, top, size, size, theme.mix(colors.default, colors.accent, fill.value()) or colors.default)
+		if fill.value() > 0 then
+			local icon = px(14)
+			theme.icon("check", (size - icon) / 2, top + (size - icon) / 2, icon, theme.fade(colors.accentInk, fill.value()))
+		end
+
+		local font = theme.font("body")
+		local inset = (px(22) - theme.fontHeight(font)) / 2
+		local hovered = self:IsHovered() and linkAt(self:CursorPos()) or nil
+		for _, word in ipairs(words) do
+			local url = word.url
+			draw.SimpleText(word.text, font, word.x, word.y + inset, url ~= nil and colors.accentText or colors.text)
+			if url ~= nil then
+				surface.SetDrawColor(hovered == url and colors.accentText or theme.fade(colors.accentText, 0.5))
+				surface.DrawRect(word.x, word.y + inset + math.Round(theme.fontHeight(font) * 0.9), word.w, math.max(px(1), 1))
+			end
+		end
+		return true
+	end
+	panel.DoClick = function(self: DButton)
+		local url = linkAt(self:CursorPos())
+		if url ~= nil then
+			gui.OpenURL(url)
+			return
+		end
+		options.on = not options.on
+		local onChange = options.onChange
+		if onChange ~= nil then
+			onChange(options.on)
+		end
+	end
+
+	return {
+		panel = panel,
+		layout = function(width: number): number
+			local font = theme.font("body")
+			local space = theme.textSize(" ", font)
+			local left = px(30)
+			-- Which link each byte of the label belongs to.
+			local linkFrom: { from: number; to: number; url: string }[] = {}
+			for _, link in ipairs(options.links or {}) do
+				local from, to = string.find(options.label, link.text, 1, true)
+				if from ~= nil and to ~= nil then
+					table.insert(linkFrom, { from = from, to = to, url = link.url })
+				end
+			end
+			words = {}
+			local x, y = left, 0
+			local lineCount = 1
+			for position, match in string.gmatch(options.label, "()(%S+)") do
+				-- `()` captures the word's position, a number.
+				local start = tonumber(position) or 0
+				local text = match as string
+				local url: string | nil = nil
+				for _, link in ipairs(linkFrom) do
+					if start >= link.from and start <= link.to then
+						url = link.url
+					end
+				end
+				local tw = theme.textSize(text, font)
+				if x > left and x + space + tw > width then
+					x, y = left, y + px(22)
+					lineCount = lineCount + 1
+				end
+				local previous = words[#words]
+				if x > left then
+					-- A link's underline runs on under the space between its words.
+					if previous ~= nil and url ~= nil and previous.url == url and previous.y == y then
+						previous.w = previous.w + space
+					end
+					x = x + space
+				end
+				table.insert(words, { text = text, x = x, y = y, w = tw, url = url })
+				x = x + tw
+			end
+			return lineCount * px(22)
 		end,
 	}
 end
@@ -1290,6 +1442,7 @@ return {
 	row = row,
 	column = column,
 	switch = switch,
+	checkbox = checkbox,
 	dropdown = dropdown,
 	popover = popover,
 	closeDropdown = closeDropdown,
