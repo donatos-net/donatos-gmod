@@ -59,10 +59,8 @@ interface DonatosPaymentMethod {
 	icon?: string;
 	-- "#RRGGBB"; our own button colours when absent.
 	colors?: { fill: string; hover: string; ink: string };
-	-- Opened as is, without asking for a link.
+	-- Opened as is; without it, the button asks `server:payment-method-link` what to show.
 	url?: string;
-	-- Under the link's QR code.
-	qrHint?: string;
 }
 
 interface DonatosServerApi {
@@ -110,8 +108,9 @@ interface DonatosServerApi {
 	};
 	["server:payment-method-link"]: {
 		input: { playerExternalId: string; orderId: number; method: string };
-		-- `url`: a link into the bank's phone app; `qr`: that link as a QR code, laid out like `sbp`'s.
-		output: { url: string; qr: { size: number; modules: string } };
+		-- The method's screen: `qr` (`url` as a QR code, laid out like `sbp`'s) with `title` and
+		-- `text` when it is there; `url` is opened otherwise.
+		output: { title: string; text: string; url: string; qr?: { size: number; modules: string } };
 	};
 	["server:get-image"]: {
 		-- An image's id from the API (goods images, payment logos).

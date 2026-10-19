@@ -398,15 +398,6 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			}
 		end
 
-		local function methodSpec(method: DonatosPaymentMethod, grid: DonatosQrGrid): QrSpec
-			return {
-				title = `Оплата через ${method.name}`,
-				text = method.qrHint or "Отсканируйте код камерой телефона.",
-				grid = grid,
-				methods = false,
-			}
-		end
-
 		qrBlock = function(spec: QrSpec): DonatosUiBlock
 			local content, add = widgets.stack(box, px(12), px(20))
 			local titleLogo = spec.logo
@@ -531,8 +522,14 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 							relayout()
 							return
 						end
-						-- The link opens the bank's app, so the phone takes it from its QR code.
-						setBody(qrBlock(methodSpec(method, result.data.qr)))
+						-- What the method shows is the API's to say.
+						local screen = result.data
+						local qr = screen.qr
+						if qr ~= nil then
+							setBody(qrBlock({ title = screen.title, text = screen.text, grid = qr, methods = false }))
+						else
+							gui.OpenURL(screen.url)
+						end
 					end)
 				end
 				for _, method in ipairs(paymentMethods) do

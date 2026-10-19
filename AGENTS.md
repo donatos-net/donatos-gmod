@@ -198,11 +198,18 @@ bun run build
 2. A client can run an older bundle while it fetches a new one, so `DonatosClientMessages` only
 gain optional fields; a message's shape never changes.
 
-3. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
+3. The game API (`server:*` in `donatos.d.tlua`) deploys before a bundle that needs it, and
+describes what the menu shows instead of the menu knowing it: payment methods are buttons from
+`server:create-order`'s `methods`, and what one without a `url` shows is the screen
+`server:payment-method-link` returns (a QR code with its title and text, or a URL to open). A new
+method, or a change to what one shows, is an API change only; the menu skips what it doesn't
+recognise (an unknown icon, bad colours) rather than failing.
+
+4. If adding a new menu -> server action, add it to `DonatosServerActions` and to the handler
 map in `lua/main/src/donatos/net/server.tlua`.
 
-4. The menu is client-only; anything it shows must arrive through `syncConfig` / `syncPlayer`
+5. The menu is client-only; anything it shows must arrive through `syncConfig` / `syncPlayer`
 or a net callback.
 
-5. Size things with `theme.px(...)` (scaled from a 900px-high reference) and fonts with
+6. Size things with `theme.px(...)` (scaled from a 900px-high reference) and fonts with
 `theme.font(...)`; both are rebuilt on `OnScreenSizeChanged`.
