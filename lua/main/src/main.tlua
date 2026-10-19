@@ -59,6 +59,7 @@ for _, ply in ipairs(player.GetAll()) do
 	if old ~= nil then
 		local replacement = donatosPlayer(ply)
 		replacement._remoteData = old._remoteData
+		replacement._savedActiveItems = old._savedActiveItems
 		ply._donatos = replacement
 	end
 end

@@ -10,6 +10,9 @@ type DonatosPlayerRemoteData =
 interface DonatosPlayer extends Omit<typeof PLAYER, "__index"> {
 	_ply: Player;
 	_remoteData: DonatosPlayerRemoteData;
+	-- Server: the active items saved at the player's last load, used until one succeeds (the API
+	-- couldn't be reached when they joined).
+	_savedActiveItems?: DonatosActiveItem[];
 }
 
 function PLAYER.IsLoaded(self: DonatosPlayer): boolean
@@ -40,7 +43,7 @@ end
 
 function PLAYER.GetActiveItems(self: DonatosPlayer): DonatosActiveItem[]
 	local data = self._remoteData.data
-	return data and data.activeItems or {}
+	return data and data.activeItems or self._savedActiveItems or {}
 end
 
 function PLAYER.HasActiveItem(self: DonatosPlayer, key: string): boolean

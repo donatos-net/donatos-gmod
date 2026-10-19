@@ -37,6 +37,7 @@ donatos-gmod/
 │       │   │   ├── menu.tlua     # Window, gradient top bar, pages; open / refresh
 │       │   │   └── toast.tlua    # Toasts drawn in DrawOverlay (over HUD and menu, no input)
 │       │   ├── utils/async.tlua  # Coroutine async: run / await (replaces Promises)
+│       │   ├── utils/cache.tlua  # Values kept across restarts in SQLite (`donatos_cache`), by key
 │       │   └── main.tlua, client.tlua, server.tlua  # Entry points
 │       ├── tluaconfig.json
 │       └── build.ts              # tlua -> out/, packs modules into dist/bundle.lua
@@ -131,6 +132,11 @@ that reinstall the addon.
   rule, and the menu only shows the flags. Items registered later (autorefresh, other addons)
   sync every client again.
 - The client sends `requestSync` on load and on `InitPostEntity`.
+- Every load saves the player's active items (`player/saved-items.tlua`, in the `donatos_cache`
+  SQLite table of `utils/cache.tlua`). A player whose load fails, as when they join while the API is
+  down, gets the saved ones that haven't expired (saved up to 30 days ago) until a load succeeds:
+  join handlers, SAM ranks and `GetActiveItems` / `HasActiveItem` work, while `IsLoaded()` stays
+  false, so the menu and every action wait for the API.
 
 ### 4) Menu actions (client -> server)
 - `donatos.NetMessageToServer(action, data, callback)` (`lua/main/src/donatos/net.tlua`)

@@ -3,6 +3,7 @@ local item = require("donatos.item")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
 local serverUtils = require("donatos.server-utils")
+local savedItems = require("player.saved-items")
 local shared = require("player.shared")
 local log = require("utils.log")
 local state = require("utils.state")
@@ -31,6 +32,13 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 
 	if err ~= nil then
 		log.error(`Failed to load data for player ${ply:SteamID()} (${ply:Nick()}): ${err}`)
+		if not self._remoteData.isLoaded and self._savedActiveItems == nil then
+			local items = savedItems.load(ply)
+			self._savedActiveItems = items
+			if items ~= nil then
+				log.info(`Using ${#items} saved active items for player ${ply:SteamID()} until the API answers`)
+			end
+		end
 		return nil, err
 	end
 
@@ -47,6 +55,8 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 	local prevBalance = prevData and prevData.player.balance
 
 	self._remoteData = { isLoaded = true, data = data }
+	self._savedActiveItems = nil
+	savedItems.save(ply, data)
 	netMessage.toClient(ply, "syncPlayer", clientView.player(data))
 
 	if prevBalance and prevBalance < self:GetBalance() then
@@ -81,9 +91,10 @@ function SERVER_PLAYER.print(self: DonatosServerPlayer, ...: string | Player | C
 	serverUtils.sendMessage({ receiver = self._ply, args = { ... } })
 end
 
--- Applies the player's active items: SAM ranks, then each item's join handlers.
+-- Applies the player's active items (saved ones until the first load): SAM ranks, then each
+-- item's join handlers.
 function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
-	if not self:IsLoaded() then
+	if not self:IsLoaded() and self._savedActiveItems == nil then
 		return
 	end
 

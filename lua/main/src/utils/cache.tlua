@@ -1,0 +1,38 @@
+-- Values kept across restarts, for when the API can't be reached: JSON in the local SQLite database
+-- (sv.db on the server), under keys named by what they hold ("player:<steamid64>").
+
+local log = require("utils.log")
+
+local TABLE = "donatos_cache"
+
+if sql.Query(`CREATE TABLE IF NOT EXISTS ${TABLE} (key TEXT PRIMARY KEY, value TEXT NOT NULL, saved_at INTEGER NOT NULL)`) == false then
+	log.error(`Couldn't create the ${TABLE} table: ${sql.LastError()}`)
+end
+
+local function set(key: string, value: table)
+	local query = `REPLACE INTO ${TABLE} (key, value, saved_at) VALUES (${sql.SQLStr(key)}, ${sql.SQLStr(util.TableToJSON(value))}, ${os.time()})`
+	if sql.Query(query) == false then
+		log.error(`Couldn't save ${key}: ${sql.LastError()}`)
+	end
+end
+
+-- The value saved under `key` at most `maxAge` seconds ago, or nil.
+local function get(key: string, maxAge: number): Table<string | number, unknown> | nil
+	local rows = sql.Query(`SELECT value FROM ${TABLE} WHERE key = ${sql.SQLStr(key)} AND saved_at >= ${os.time() - maxAge}`)
+	if type(rows) ~= "table" then
+		return nil
+	end
+	local row = rows[1] as { value: string } | nil
+	return row and util.JSONToTable(row.value)
+end
+
+-- Removes the values under keys starting with `prefix` saved more than `maxAge` seconds ago.
+local function prune(prefix: string, maxAge: number)
+	sql.Query(`DELETE FROM ${TABLE} WHERE substr(key, 1, ${#prefix}) = ${sql.SQLStr(prefix)} AND saved_at < ${os.time() - maxAge}`)
+end
+
+return {
+	set = set,
+	get = get,
+	prune = prune,
+}

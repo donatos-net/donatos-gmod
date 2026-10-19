@@ -1,0 +1,50 @@
+-- Server: each player's active items, saved at every load, for when they join while the API can't
+-- be reached (`player.server` uses them until a load succeeds).
+
+local cache = require("utils.cache")
+
+-- Ones saved this long ago are not trusted.
+local MAX_AGE = 30 * 24 * 60 * 60
+
+cache.prune("player:", MAX_AGE)
+
+local function key(ply: Player): string
+	return `player:${ply:SteamID64()}`
+end
+
+local function save(ply: Player, data: DonatosRemoteData)
+	local items: DonatosActiveItem[] = {}
+	for _, itm in ipairs(data and data.activeItems or {}) do
+		-- A frozen item gives nothing, and its expiry moves when it thaws.
+		if not itm.isFrozen then
+			table.insert(items, itm)
+		end
+	end
+	cache.set(key(ply), items)
+end
+
+-- The player's saved active items that haven't expired since, or nil when none were saved (not
+-- loaded in MAX_AGE): then nothing is known about them, not even that they have none.
+local function load(ply: Player): DonatosActiveItem[] | nil
+	local saved = cache.get(key(ply), MAX_AGE) as DonatosActiveItem[] | nil
+	if saved == nil then
+		return nil
+	end
+	local now = os.time()
+	local items: DonatosActiveItem[] = {}
+	for _, itm in ipairs(saved) do
+		local expires = itm.expires
+		if expires == nil or expires.at > now then
+			if expires ~= nil then
+				expires.inS = expires.at - now
+			end
+			table.insert(items, itm)
+		end
+	end
+	return items
+end
+
+return {
+	save = save,
+	load = load,
+}
