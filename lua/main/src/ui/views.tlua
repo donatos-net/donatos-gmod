@@ -274,9 +274,14 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			return not editingEmail or string.match(email, "^[^%s@]+@[^%s@]+%.[^%s@]+$") ~= nil
 		end
 
-		-- Everything "Продолжить" needs: our orders also need the receipt email and the terms.
+		-- Everything "Оплатить" needs but the terms: our orders also need the receipt email.
+		local function filled(): boolean
+			return amountValid() and (method == "igs" or emailValid())
+		end
+
+		-- Everything it needs: our orders need the terms agreed to as well.
 		local function valid(): boolean
-			return amountValid() and (method == "igs" or emailValid() and agreed)
+			return filled() and (method == "igs" or agreed)
 		end
 
 		local box = vgui.Create("DPanel", parent)
@@ -723,16 +728,29 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 					emailEntry:RequestFocus()
 				end,
 			})
-			local termsBox = widgets.checkbox(form, {
+			-- "Оплатить" stays enabled without the terms: a click then marks the box and says why,
+			-- rather than a disabled button doing nothing.
+			local terms: DonatosUiCheckbox = {
 				on = agreed,
 				label = "Я соглашаюсь с условиями и политикой конфиденциальности",
 				links = site ~= nil and {
 					{ text = "условиями", url = `${site}/legal/tos` },
 					{ text = "политикой конфиденциальности", url = `${site}/legal/privacy-policy` },
 				} or nil,
-				onChange = function(on: boolean)
-					agreed = on
-				end,
+			}
+			terms.onChange = function(on: boolean)
+				agreed = on
+				if on and terms.invalidAt ~= nil then
+					terms.invalidAt = nil
+					relayout()
+				end
+			end
+			local termsBox = widgets.checkbox(form, terms)
+			local termsHint = widgets.text(form, {
+				text = "Подтвердите согласие с условиями",
+				font = theme.font("small"),
+				color = colors.danger,
+				lineHeight = 18,
 			})
 
 			-- What the balance comes to; the line is left out while the balance is unknown.
@@ -811,6 +829,7 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 					rememberedLine.panel:SetVisible(ours and not editingEmail)
 					changeEmail:SetVisible(ours and not editingEmail)
 					termsBox.panel:SetVisible(ours)
+					termsHint.panel:SetVisible(ours and terms.invalidAt ~= nil)
 					if ours then
 						y = y + px(20)
 						place(receiptCaption, px(8))
@@ -828,6 +847,14 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 						end
 						y = y + px(14)
 						place(termsBox, 0)
+						if terms.invalidAt ~= nil then
+							y = y + px(6)
+							-- Under the label, past the box.
+							local h = termsHint.layout(width - px(30))
+							termsHint.panel:SetPos(px(30), y)
+							termsHint.panel:SetSize(width - px(30), h)
+							y = y + h
+						end
 					end
 
 					local summaryBlock = summary
@@ -856,7 +883,7 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			local cancelButton = widgets.button(footer, cancel)
 			local proceedButton = widgets.button(footer, proceed)
 			proceedButton.Think = function(self: DButton)
-				proceed.disabled = not valid()
+				proceed.disabled = not filled()
 				-- Our bonuses are a ruble each; gm-donate prices its own.
 				local value = amount
 				if method == "igs" then
@@ -867,6 +894,11 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 			end
 			proceed.onClick = function()
 				local value = amount
+				if value ~= nil and filled() and not valid() then
+					terms.invalidAt = RealTime()
+					relayout()
+					return
+				end
 				if value == nil or not valid() then
 					return
 				end

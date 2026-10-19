@@ -723,7 +723,12 @@ interface DonatosUiCheckbox {
 	-- gui.OpenURL (which asks first).
 	links?: { text: string; url: string }[];
 	onChange?: (on: boolean) => void;
+	-- RealTime() when a submit found it unticked though it has to be: the box gets a danger
+	-- border, and the row shakes for a moment from then. nil when it's fine.
+	invalidAt?: number;
 }
+
+local SHAKE_TIME = 0.4
 
 -- A HeroUI checkbox with a label wrapped beside it; the whole row toggles it, except its links.
 local function checkbox(parent: Panel, options: DonatosUiCheckbox): DonatosUiBlock
@@ -747,10 +752,21 @@ local function checkbox(parent: Panel, options: DonatosUiCheckbox): DonatosUiBlo
 		fill.to(options.on and 1 or 0, 0.25, "smooth")
 		local size = px(20)
 		local top = (px(22) - size) / 2
-		theme.box(px(6), 0, top, size, size, theme.mix(colors.default, colors.accent, fill.value()) or colors.default)
+		local invalidAt = options.invalidAt
+		-- A shake that dies down: a few swings either way.
+		local since = invalidAt ~= nil and RealTime() - invalidAt or SHAKE_TIME
+		local dx = since < SHAKE_TIME and math.Round(math.sin(since * 40) * px(4) * (1 - since / SHAKE_TIME)) or 0
+		local boxColor = theme.mix(colors.default, colors.accent, fill.value()) or colors.default
+		if invalidAt ~= nil and not options.on then
+			local border = math.max(px(2), 2)
+			theme.box(px(6), dx, top, size, size, colors.danger)
+			theme.box(px(6) - border, dx + border, top + border, size - border * 2, size - border * 2, boxColor)
+		else
+			theme.box(px(6), dx, top, size, size, boxColor)
+		end
 		if fill.value() > 0 then
 			local icon = px(14)
-			theme.icon("check", (size - icon) / 2, top + (size - icon) / 2, icon, theme.fade(colors.accentInk, fill.value()))
+			theme.icon("check", dx + (size - icon) / 2, top + (size - icon) / 2, icon, theme.fade(colors.accentInk, fill.value()))
 		end
 
 		local font = theme.font("body")
@@ -758,10 +774,10 @@ local function checkbox(parent: Panel, options: DonatosUiCheckbox): DonatosUiBlo
 		local hovered = self:IsHovered() and linkAt(self:CursorPos()) or nil
 		for _, word in ipairs(words) do
 			local url = word.url
-			draw.SimpleText(word.text, font, word.x, word.y + inset, url ~= nil and colors.accentText or colors.text)
+			draw.SimpleText(word.text, font, word.x + dx, word.y + inset, url ~= nil and colors.accentText or colors.text)
 			if url ~= nil then
 				surface.SetDrawColor(hovered == url and colors.accentText or theme.fade(colors.accentText, 0.5))
-				surface.DrawRect(word.x, word.y + inset + math.Round(theme.fontHeight(font) * 0.9), word.w, math.max(px(1), 1))
+				surface.DrawRect(word.x + dx, word.y + inset + math.Round(theme.fontHeight(font) * 0.9), word.w, math.max(px(1), 1))
 			end
 		end
 		return true
