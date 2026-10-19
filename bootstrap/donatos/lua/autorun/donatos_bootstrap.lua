@@ -20,7 +20,7 @@ if !donatosBootstrap then
 	donatosBootstrap = {}
 end
 
-donatosBootstrap.version = 4
+donatosBootstrap.version = 5
 donatosBootstrap.addonVersionConVar = CreateConVar("donatos_version", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.bundleSha256ConVar = CreateConVar("donatos_bundle_sha256", "", {FCVAR_REPLICATED, FCVAR_SERVER_CAN_EXECUTE})
 donatosBootstrap.addonApiUrl = "https://donatos.net/api/game-server/gmod/addon"
@@ -65,6 +65,20 @@ local function asyncDelay(delay)
 	return coroutine.yield()
 end
 
+-- Серверы, чей HTTP не достаёт до API, часто ставят модуль с теми же аргументами, что у HTTP:
+-- reqwest (gmsv_reqwest) или CHTTP (gmsv_chttp). Берём первый установленный, иначе HTTP.
+local function pickHttp()
+	for _, module in ipairs({ { name = "reqwest", global = "reqwest" }, { name = "chttp", global = "CHTTP" } }) do
+		if util.IsBinaryModuleInstalled(module.name) && pcall(require, module.name) && isfunction(_G[module.global]) then
+			log("HTTP через %s", module.global)
+			return _G[module.global]
+		end
+	end
+	return HTTP
+end
+
+local sendHttp = pickHttp()
+
 local function asyncHttp(opts)
 	local running = coroutine.running()
 
@@ -93,7 +107,7 @@ local function asyncHttp(opts)
 
 	log("HTTP %s %s", opts.method || "GET", opts.url)
 
-	HTTP({
+	sendHttp({
 		failed = onFailure,
 		success = onSuccess,
 		method = opts.method || "GET",

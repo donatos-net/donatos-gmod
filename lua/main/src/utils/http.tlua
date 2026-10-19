@@ -1,4 +1,5 @@
 local async = require("utils.async")
+local log = require("utils.log")
 
 local interface HttpRequest {
 	url: string;
@@ -17,10 +18,28 @@ local type HttpOutcome =
 	| { ok: true; response: HttpResponse }
 	| { ok: false; reason: string }
 
+-- Servers whose own HTTP fails to reach the API (GMod's goes through Steam's) often install a
+-- module that sends requests itself, with HTTP's arguments: reqwest (gmsv_reqwest) or CHTTP
+-- (gmsv_chttp). The first one installed is used, GMod's HTTP otherwise.
+local function pickSend(): (parameters: HTTPRequest) => boolean
+	for _, module in ipairs({ { name = "reqwest", global = "reqwest" }, { name = "chttp", global = "CHTTP" } }) do
+		if util.IsBinaryModuleInstalled(module.name) and pcall(require, module.name) then
+			local send = (_G as Table<string, unknown>)[module.global]
+			if type(send) == "function" then
+				log.info(`Sending HTTP requests with ${module.global}`)
+				return send as (parameters: HTTPRequest) => boolean
+			end
+		end
+	end
+	return HTTP
+end
+
+local send = pickSend()
+
 -- TODO: timeouts
 local request = suspend function(parameters: HttpRequest): (HttpResponse, nil) | (nil, string)
 	local outcome = async.await(function(resolve: (value: HttpOutcome) => void)
-		HTTP({
+		send({
 			url = parameters.url,
 			method = parameters.method or "GET",
 			headers = parameters.headers,

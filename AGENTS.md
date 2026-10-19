@@ -50,6 +50,9 @@ donatos-gmod/
 - Source: tlua (`@tlua/cli`), GMod typings from `@tlua/gmod`
 - Async: coroutines (`suspend` functions, `utils/async.tlua`)
 - Transport: GMod `net` messages
+- HTTP: `utils/http.tlua` (and the bootstrap) send with the reqwest or CHTTP binary module when
+  the server has one installed (servers add them when GMod's own HTTP can't reach the API), with
+  GMod's `HTTP` otherwise; all three take `HTTP`'s arguments
 
 ### Menu
 - GMod VGUI: `EditablePanel` / `DPanel` / `DButton` / `DMenu` / `DTextEntry`,
