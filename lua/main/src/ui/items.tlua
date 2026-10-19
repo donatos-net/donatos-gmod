@@ -402,13 +402,8 @@ end
 
 local function items(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScroll | nil
 	local body = widgets.blankPanel(parent)
+	body:Dock(FILL)
 	local area: DonatosUiScroll | nil = nil
-
-	parent.PerformLayout = function(self: Panel, w: number, h: number)
-		local y = px(20)
-		body:SetPos(0, y)
-		body:SetSize(w, h - y)
-	end
 
 	local data = ctx.data()
 	if not ctx.loaded() then
@@ -444,7 +439,7 @@ local function items(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScr
 		end)
 
 		local scrollArea = widgets.scroll(body, function(canvas: Panel): DonatosUiBlock
-			local content, add = widgets.stack(canvas, px(16), px(24), 0)
+			local content, add = widgets.stack(canvas, px(16), px(24), px(20))
 			if #active > 0 then
 				local rows: ((parent: Panel) => DonatosUiBlock)[] = {}
 				for _, item in ipairs(active) do
@@ -463,8 +458,6 @@ local function items(parent: Panel, ctx: DonatosMenuContext): () => DonatosUiScr
 				end
 				add(section(content.panel, "Не активированы", rows))
 			end
-			-- Room below the last section.
-			add(widgets.painted(content.panel, px(4), function() end))
 			return content
 		end)
 		scrollArea.panel:Dock(FILL)
