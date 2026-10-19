@@ -47,8 +47,9 @@ local request = suspend function(parameters: HttpRequest): (HttpResponse, nil) |
 			success = function(code: number, body: string, headers: Table<string, string>)
 				resolve({ ok = true, response = { code = code, body = body, headers = headers } })
 			end,
-			failed = function(reason: string)
-				resolve({ ok = false, reason = reason })
+			-- reqwest's reason is HTTP's "unsuccessful"; the actual error comes after it.
+			failed = function(reason: string, detail?: string)
+				resolve({ ok = false, reason = detail ~= nil and `${reason}: ${detail}` or reason })
 			end,
 		})
 	end)
