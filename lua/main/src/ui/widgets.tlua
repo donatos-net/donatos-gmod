@@ -845,6 +845,31 @@ end
 
 ------------------------------------------------------------------------------ menus
 
+-- A circular Steam avatar of a player or a SteamID64. `behind` returns the colours under it,
+-- bottom layer first; they are painted back over the image's corners.
+local function avatar(parent: Panel, size: number, target: Player | string, behind: () => Color[]): Panel
+	local holder = vgui.Create("DPanel", parent)
+	holder:SetSize(size, size)
+	holder:SetMouseInputEnabled(false)
+	local image = vgui.Create("AvatarImage", holder)
+	image:SetSize(size, size)
+	if type(target) == "string" then
+		image:SetSteamID(target, 64)
+	else
+		image:SetPlayer(target, 64)
+	end
+	image:SetPaintedManually(true)
+	image:SetMouseInputEnabled(false)
+	holder.Paint = function(self: Panel, w: number, h: number): boolean
+		image:PaintManual()
+		for _, color in ipairs(behind()) do
+			theme.circleCutout(0, 0, w, color)
+		end
+		return true
+	end
+	return holder
+end
+
 interface DonatosUiMenuItem {
 	label: string;
 	disabled?: boolean;
@@ -866,9 +891,11 @@ local function closeDropdown(): boolean
 end
 
 -- A popover's frame: a DMenu, so it closes on a click outside it like any menu (and on Escape,
--- through closeDropdown), drawn as HeroUI's popover.
+-- through closeDropdown), drawn as HeroUI's popover. DMenu is a DScrollPanel: it is left
+-- uncapped so it never scrolls (or shows DVScrollBar), and a long body scrolls in `scroll`.
 local function popoverShell(): DMenu
 	local menu = DermaMenu(false, nil)
+	menu:SetMaxHeight(math.huge)
 	-- HeroUI's popover entrance: 150ms ease, fading in and growing from 0.9 at its top edge.
 	local enter = theme.tween(0)
 	enter.to(1, 0.15, "smooth")
@@ -898,68 +925,81 @@ local function openUnder(menu: DMenu, anchor: Panel, width: number, alignLeft?: 
 	openDropdown = menu
 end
 
--- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`).
+-- A dropdown under `anchor`, aligned to its right edge (or left with `alignLeft`). A long list
+-- scrolls in our own scroll area rather than DMenu's, inset so its grip stays inside the
+-- rounded border.
 local function dropdown(anchor: Panel, items: DonatosUiMenuItem[], minWidth?: number, alignLeft?: boolean): DMenu
 	local menu = popoverShell()
 	local font = theme.font("body")
 	local itemHeight = px(32)
 	local avatarSize = px(20)
+	local pad = px(6)
+	local listHeight = #items * itemHeight
+	local scrolls = listHeight > px(280) - pad * 2
+	local barRoom = scrolls and px(12) or 0
 	local width = math.max(minWidth or 0, px(160))
 	for _, item in ipairs(items) do
 		local textWidth = theme.textSize(item.label, font)
-		width = math.max(width, textWidth + px(32) + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
+		width = math.max(width, textWidth + px(32) + barRoom + (item.steamID64 ~= nil and avatarSize + px(8) or 0))
 	end
+
+	local body = blankPanel(menu)
+	body:SetSize(width, math.min(listHeight, px(280) - pad * 2) + pad * 2)
+	local area = scroll(body, function(canvas: Panel): DonatosUiBlock
+		local list = blankPanel(canvas)
+		local options: Panel[] = {}
+		for _, item in ipairs(items) do
+			local option = vgui.Create("DButton", list) as DButton
+			option:SetText("")
+			option.DoClick = function(self: DButton)
+				if not item.disabled then
+					closeDropdown()
+					item.onClick()
+				end
+			end
+			-- Menu items: background 150ms ease, pressed scale 0.98.
+			local hover = theme.tween(0)
+			local press = theme.tween(1)
+			local textX = px(16)
+			local steamID64 = item.steamID64
+			if steamID64 ~= nil then
+				local face = avatar(option, avatarSize, steamID64, function(): Color[]
+					local fill = theme.mix(nil, colors.default, hover.value())
+					return fill ~= nil and { colors.surface, fill } or { colors.surface }
+				end)
+				face:SetPos(px(16), (itemHeight - avatarSize) / 2)
+				textX = px(16) + avatarSize + px(8)
+			end
+			option.Paint = function(self: Panel, w: number, h: number): boolean
+				hover.to((self:IsHovered() and not item.disabled) and 1 or 0, 0.15, "smooth")
+				press.to(((self as DButton):IsDown() and not item.disabled) and 0.98 or 1, 0.25, "smooth")
+				local fill = theme.mix(nil, colors.default, hover.value())
+				if fill ~= nil then
+					theme.box(px(10), px(6), 0, w - px(12), h, fill)
+				end
+				local color = item.disabled and colors.muted or colors.text
+				local itemScaled = theme.pushScale(self, press.value(), w / 2, h / 2)
+				draw.SimpleText(item.label, font, textX, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+				theme.popScale(itemScaled)
+				return true
+			end
+			table.insert(options, option)
+		end
+		return {
+			panel = list,
+			layout = function(w: number): number
+				for i, option in ipairs(options) do
+					option:SetPos(0, (i - 1) * itemHeight)
+					option:SetSize(w, itemHeight)
+				end
+				return listHeight
+			end,
+		}
+	end)
+	area.panel:SetPos(0, pad)
+	area.panel:SetSize(width - (scrolls and px(4) or 0), body:GetTall() - pad * 2)
 	menu:SetMinimumWidth(width)
-	menu:SetMaxHeight(px(280))
-
-	-- DMenu stacks its items edge to edge; spacers pad it above and below, so a hovered item's
-	-- highlight stays inside the rounded border.
-	local function spacer()
-		local panel = blankPanel(menu)
-		panel:SetTall(px(6))
-		panel:SetMouseInputEnabled(false)
-		menu:AddPanel(panel)
-	end
-
-	spacer()
-	for _, item in ipairs(items) do
-		local option = menu:AddOption("", function()
-			if not item.disabled then
-				item.onClick()
-			end
-		end)
-		option:SetText("")
-		option.PerformLayout = function(self: Panel, w: number, h: number)
-			self:SetTall(itemHeight)
-		end
-		local textX = px(16)
-		if item.steamID64 ~= nil then
-			local avatar = vgui.Create("AvatarImage", option)
-			avatar:SetSize(avatarSize, avatarSize)
-			avatar:SetPos(px(16), (itemHeight - avatarSize) / 2)
-			avatar:SetSteamID(item.steamID64, 32)
-			avatar:SetMouseInputEnabled(false)
-			textX = px(16) + avatarSize + px(8)
-		end
-		-- Menu items: background 150ms ease, pressed scale 0.98.
-		local hover = theme.tween(0)
-		local press = theme.tween(1)
-		option.Paint = function(self: Panel, w: number, h: number): boolean
-			hover.to((self:IsHovered() and not item.disabled) and 1 or 0, 0.15, "smooth")
-			press.to(((self as DButton):IsDown() and not item.disabled) and 0.98 or 1, 0.25, "smooth")
-			local fill = theme.mix(nil, colors.default, hover.value())
-			if fill ~= nil then
-				theme.box(px(10), px(6), 0, w - px(12), h, fill)
-			end
-			local color = item.disabled and colors.muted or colors.text
-			local itemScaled = theme.pushScale(self, press.value(), w / 2, h / 2)
-			draw.SimpleText(item.label, font, textX, h / 2, color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-			theme.popScale(itemScaled)
-			return true
-		end
-	end
-
-	spacer()
+	menu:AddPanel(body)
 
 	openUnder(menu, anchor, width, alignLeft)
 	return menu
@@ -1089,26 +1129,6 @@ local function searchField(parent: Panel, placeholder: string, onChange: (value:
 		return true
 	end
 	return field, entry
-end
-
--- A circular Steam avatar. `behind` returns the colours under it, bottom layer first; they
--- are painted back over the image's corners.
-local function avatar(parent: Panel, size: number, target: Player, behind: () => Color[]): Panel
-	local holder = vgui.Create("DPanel", parent)
-	holder:SetSize(size, size)
-	local image = vgui.Create("AvatarImage", holder)
-	image:SetSize(size, size)
-	image:SetPlayer(target, 64)
-	image:SetPaintedManually(true)
-	image:SetMouseInputEnabled(false)
-	holder.Paint = function(self: Panel, w: number, h: number): boolean
-		image:PaintManual()
-		for _, color in ipairs(behind()) do
-			theme.circleCutout(0, 0, w, color)
-		end
-		return true
-	end
-	return holder
 end
 
 ------------------------------------------------------------------------------ dialogs

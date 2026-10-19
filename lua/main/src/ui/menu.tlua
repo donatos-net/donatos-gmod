@@ -269,7 +269,6 @@ local function buildTopBar(frame: Panel, ctx: DonatosMenuContext): Panel
 			return behind
 		end)
 		avatar:SetPos(px(4), px(4))
-		avatar:SetMouseInputEnabled(false)
 	end
 	local textX = avatar ~= nil and px(4) + face + px(10) or px(14)
 	account.Paint = function(self: DButton, w: number, h: number): boolean
