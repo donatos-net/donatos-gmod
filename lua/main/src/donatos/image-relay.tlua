@@ -101,13 +101,13 @@ local function load(id: string, ready: (body: string | nil) => void)
 		end
 		created.waiters = {}
 	end
-	-- The API request has no timeout of its own.
-	timer.Simple(30, function()
-		settle(nil)
-	end)
 	async.run(suspend function()
-		local data = serverApi.request("server:get-image", { id = id })
-		settle(data and util.Base64Decode(data.data) or nil)
+		-- Protected, so a bad answer settles the entry rather than leaving it waiting forever.
+		local ok, body = pcall(suspend function(): string | nil
+			local data = serverApi.request("server:get-image", { id = id })
+			return data and util.Base64Decode(data.data) or nil
+		end)
+		settle(ok and body or nil)
 	end)
 end
 

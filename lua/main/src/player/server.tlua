@@ -31,11 +31,16 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 	})
 
 	if err ~= nil then
-		log.error(`Failed to load data for player ${ply:SteamID()} (${ply:Nick()}): ${err}`)
-		if not self._remoteData.isLoaded and self._savedActiveItems == nil then
+		-- An outage is logged once, by the API client; only it brings in the saved items (an API
+		-- answering with an error, or a missing token, is no reason to trust them).
+		if err ~= serverApi.UNAVAILABLE then
+			log.error(`Failed to load data for player ${ply:SteamID()} (${ply:Nick()}): ${err}`)
+		elseif not self._remoteData.isLoaded and self._savedActiveItems == nil then
 			local items = savedItems.load(ply)
 			self._savedActiveItems = items
 			if items ~= nil then
+				self._itemsLoadedAt = SysTime()
+				self:scheduleExpiry()
 				log.info(`Using ${#items} saved active items for player ${ply:SteamID()} until the API answers`)
 			end
 		end
@@ -56,6 +61,8 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 
 	self._remoteData = { isLoaded = true, data = data }
 	self._savedActiveItems = nil
+	self._itemsLoadedAt = SysTime()
+	self:scheduleExpiry()
 	savedItems.save(ply, data)
 	netMessage.toClient(ply, "syncPlayer", clientView.player(data))
 
@@ -91,13 +98,79 @@ function SERVER_PLAYER.print(self: DonatosServerPlayer, ...: string | Player | C
 	serverUtils.sendMessage({ receiver = self._ply, args = { ... } })
 end
 
--- Applies the player's active items (saved ones until the first load): SAM ranks, then each
--- item's join handlers.
-function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
-	if not self:IsLoaded() and self._savedActiveItems == nil then
+-- `items` without the ones that ran out `elapsed` seconds after they were had, or nil when none did.
+local function unexpired(items: DonatosActiveItem[], elapsed: number): DonatosActiveItem[] | nil
+	local kept: DonatosActiveItem[] = {}
+	for _, itm in ipairs(items) do
+		local expires = itm.expires
+		-- A frozen item's expiry moves when it thaws.
+		if itm.isFrozen or expires == nil or expires.inS > elapsed then
+			table.insert(kept, itm)
+		end
+	end
+	return #kept < #items and kept or nil
+end
+
+-- Drops the active items (loaded or saved) that have run out since they were had, as the API
+-- does at the player's next load (an expiry isn't a change it reloads them for), and takes back
+-- a SAM rank one gave. Join handlers don't run again: the player hasn't joined. Run by the timer
+-- `scheduleExpiry` sets.
+function SERVER_PLAYER.dropExpiredItems(self: DonatosServerPlayer)
+	local loadedAt = self._itemsLoadedAt
+	if loadedAt == nil then
 		return
 	end
+	local kept = unexpired(self:GetActiveItems(), SysTime() - loadedAt)
+	if kept ~= nil then
+		local data = self._remoteData.data
+		if data ~= nil then
+			data.activeItems = kept
+			self:sync()
+		else
+			self._savedActiveItems = kept
+		end
+		log.info(`Active items of player ${self._ply:SteamID()} ran out`)
+		self:applySamRanks()
+	end
+	self:scheduleExpiry()
+end
 
+-- Further off than this, an expiry gets no timer: a rejoin, map change or purchase loads the
+-- player first (and the API drops the item at that load if it has run out).
+local EXPIRY_HORIZON = 24 * 60 * 60
+
+-- Sets the player's expiry timer for when the first of their active items runs out, replacing
+-- the one set before; called whenever the items change. `expires.inS` counts from when they
+-- were had, so the server's clock doesn't matter.
+function SERVER_PLAYER.scheduleExpiry(self: DonatosServerPlayer)
+	local ply = self._ply
+	local name = state.hookId(`expiry_${ply:SteamID64()}`)
+	-- Had by an older bundle's run, which didn't note when: counted from now.
+	local loadedAt = self._itemsLoadedAt or SysTime()
+	self._itemsLoadedAt = loadedAt
+	local soonest: number | nil = nil
+	for _, itm in ipairs(self:GetActiveItems()) do
+		local expires = itm.expires
+		if not itm.isFrozen and expires ~= nil and (soonest == nil or expires.inS < soonest) then
+			soonest = expires.inS
+		end
+	end
+	local delay = soonest and math.max(loadedAt + soonest - SysTime(), 0)
+	if delay == nil or delay > EXPIRY_HORIZON then
+		timer.Remove(name)
+		return
+	end
+	timer.Create(name, delay, 1, function()
+		-- A newer bundle sets its own timers for the same players.
+		if not state.hasInstanceChanged() and IsValid(ply) then
+			(ply:Donatos() as DonatosServerPlayer):dropExpiredItems()
+		end
+	end)
+end
+
+-- Gives the player the SAM rank of their newest active rank item when they have none of their
+-- own, and takes back a donated rank no active item gives any more.
+function SERVER_PLAYER.applySamRanks(self: DonatosServerPlayer)
 	local ply = self._ply
 
 	local setRank = ply.sam_set_rank
@@ -130,6 +203,8 @@ function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
 		if state.knownSamRanks[plySamRank] and not purchasedSamRanks[plySamRank] then
 			log.info(`Removing expired SAM rank ${plySamRank} from user ${ply:SteamID()}`)
 			setRank(ply, "user")
+			-- Free for another rank item's rank, below.
+			plySamRank = "user"
 		end
 
 		-- dont override currently assigned custom rank
@@ -141,7 +216,17 @@ function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
 			end
 		end
 	end
+end
 
+-- Applies the player's active items (saved ones until the first load): SAM ranks, then each
+-- item's join handlers.
+function SERVER_PLAYER.onPlayerJoined(self: DonatosServerPlayer)
+	if not self:IsLoaded() and self._savedActiveItems == nil then
+		return
+	end
+	self:applySamRanks()
+
+	local ply = self._ply
 	for _, itm in ipairs(self:GetActiveItems()) do
 		if not itm.isFrozen then
 			item.invoke(itm.goods.key, "_onPlayerJoin", ply, { goods = itm.goods })

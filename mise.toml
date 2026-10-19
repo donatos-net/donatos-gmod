@@ -1,0 +1,5 @@
+[tools]
+bun = "1.4.2"
+# The tests run the compiled modules on LuaJIT (GMod's Lua) with sql on SQLite.
+luajit = "2.1.1744318430"
+sqlite = "3.54.1"

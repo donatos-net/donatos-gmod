@@ -1,9 +1,25 @@
 local clientView = require("donatos.client-view")
 local netMessage = require("donatos.net")
 local serverApi = require("donatos.server-api")
+local meta = require("meta")
 local async = require("utils.async")
+local cache = require("utils.cache")
 local log = require("utils.log")
 local state = require("utils.state")
+
+-- Each load saves the config, for a server that starts while the API can't be reached: the shop
+-- shows, and buying waits for the API. Used only by the bundle version that saved it, as
+-- `state.remoteConfig` is per run: an older bundle's may have come from an older API, without
+-- the fields this one reads.
+local SAVED_KEY = "config"
+local SAVED_MAX_AGE = 30 * 24 * 60 * 60
+
+local type SavedConfig = { version: string; config: DonatosRemoteConfig }
+
+local function savedConfig(): DonatosRemoteConfig | nil
+	local saved = cache.get(SAVED_KEY, SAVED_MAX_AGE) as SavedConfig | nil
+	return saved ~= nil and saved.version == meta.VERSION and saved.config or nil
+end
 
 -- Callers waiting on the load in flight, or nil when none is.
 local waiting: ((loaded: boolean) => void)[] | nil = nil
@@ -25,7 +41,7 @@ local loadRemoteConfig = suspend function(): boolean
 
 	log.info("Loading remote config...")
 	-- Protected, so a malformed response cannot leave the waiters hanging.
-	local succeeded, data = pcall(serverApi.request, "server:get-config", nil)
+	local succeeded, data, err = pcall(serverApi.request, "server:get-config", nil)
 	if not succeeded then
 		log.error(`Failed to load remote config: ${data}`)
 		data = nil
@@ -34,7 +50,15 @@ local loadRemoteConfig = suspend function(): boolean
 	if data ~= nil then
 		state.remoteConfig.value = data
 		netMessage.toClient(nil, "syncConfig", clientView.config(data))
+		cache.set(SAVED_KEY, { version = meta.VERSION, config = data })
 		log.info("Received new remote config")
+	elseif state.remoteConfig.value == nil and err == serverApi.UNAVAILABLE then
+		local saved = savedConfig()
+		if saved ~= nil then
+			state.remoteConfig.value = saved
+			netMessage.toClient(nil, "syncConfig", clientView.config(saved))
+			log.info("Using the saved remote config until the API answers")
+		end
 	end
 
 	local loaded = data ~= nil

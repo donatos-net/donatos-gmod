@@ -59,6 +59,11 @@ item.onItemsChanged(function()
 	end
 end)
 
+-- Players a previous bundle run had: their items' expiry timers are this run's to set.
+for _, ply in ipairs(player.GetHumans()) do
+	serverPlayer.of(ply):scheduleExpiry()
+end
+
 hook.Add("PlayerInitialSpawn", state.hookId("player_initial_spawn"), function(ply: Player)
 	if ply:IsBot() then
 		return

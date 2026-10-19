@@ -1,9 +1,44 @@
+local apiStatus = require("donatos.api-status")
 local http = require("utils.http")
 local log = require("utils.log")
 
 local type ApiResponse<T> =
 	| { success: false; error: string }
 	| { success: true; data: T }
+
+-- What callers get (and players see) when the API can't be reached; the details are logged.
+local UNAVAILABLE = "Сервис доната временно недоступен, попробуйте позже"
+
+-- Reads a join or the update poll waits on fail sooner when the API hangs, so a joining player
+-- gets their saved items. Other actions keep HTTP's default: a purchase or an activation the API
+-- may still finish must not be reported as failed (and tried again) too early.
+local QUICK_ACTIONS: Table<string, true> = {
+	["server:get-player"] = true,
+	["server:get-config"] = true,
+	["server:get-updates:v2"] = true,
+}
+local QUICK_TIMEOUT = 15
+
+-- When requests stopped reaching the API, nil while they reach it: an outage is logged once
+-- when it starts and once when it ends, not with every request.
+local unreachableSince: number | nil = nil
+
+local function unreachable(detail: string)
+	if unreachableSince == nil then
+		unreachableSince = os.time()
+		log.warn(`Server API is unreachable: ${detail}`)
+		apiStatus.setDown(true)
+	end
+end
+
+local function reached()
+	if unreachableSince ~= nil then
+		log.info(`Server API is reachable again, after ${math.ceil((os.time() - unreachableSince) / 60)} min`)
+		unreachableSince = nil
+	end
+	-- Also clears what an older bundle's run set.
+	apiStatus.setDown(false)
+end
 
 local request = suspend function<K extends keyof DonatosServerApi>(
 	action: K,
@@ -22,26 +57,37 @@ local request = suspend function<K extends keyof DonatosServerApi>(
 			Authorization = `Bearer ${token}`,
 		},
 		body = util.TableToJSON({ action = action, input = input }),
+		timeout = QUICK_ACTIONS[action] and QUICK_TIMEOUT or nil,
 	})
 
 	if response == nil then
-		log.warn(`Server API request failed with error ${err}`)
-		return nil, err
+		unreachable(`"${action}" failed with error ${err}`)
+		return nil, UNAVAILABLE
+	end
+	-- What a proxy in front of the API answers while it is down.
+	local code = response.code
+	if code == 502 or code == 503 or code == 504 then
+		unreachable(`"${action}" failed with code ${code}`)
+		return nil, UNAVAILABLE
+	end
+	reached()
+
+	-- 400 carries the API's own errors, in the usual body. Anything else (a bad token's 401, one
+	-- action's 500) is that request's failure, not an outage.
+	local body = (code == 200 or code == 400) and util.JSONToTable(response.body) or nil
+	if body == nil or type(body.success) ~= "boolean" then
+		log.warn(`Server API request "${action}" failed with code ${code}: ${response.body}`)
+		return nil, `HTTP error ${code}`
 	end
 
-	if response.code ~= 200 and response.code ~= 400 then
-		log.warn(`Server API request "${action}" failed with code ${response.code}: ${response.body} `)
-		return nil, `HTTP error ${response.code}`
+	local answer = body as ApiResponse<DonatosServerApi[K]["output"]>
+	if answer.success then
+		return answer.data, nil
 	end
-
-	local body = util.JSONToTable(response.body) as ApiResponse<DonatosServerApi[K]["output"]>
-
-	if body.success then
-		return body.data, nil
-	end
-	return nil, body.error
+	return nil, answer.error
 end
 
 return {
+	UNAVAILABLE = UNAVAILABLE,
 	request = request,
 }

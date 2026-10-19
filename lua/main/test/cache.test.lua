@@ -1,0 +1,37 @@
+local t = require("harness")
+local cache = require("utils.cache")
+
+t.test("a value comes back as it was saved", function()
+	cache.set("player:1", { { goods = { key = "it's quoted" }, n = 5 } })
+	t.eq(cache.get("player:1", 60), { { goods = { key = "it's quoted" }, n = 5 } })
+end)
+
+t.test("saving again replaces the value", function()
+	cache.set("player:1", { 1 })
+	cache.set("player:1", { 2 })
+	t.eq(cache.get("player:1", 60), { 2 })
+end)
+
+t.test("a key never saved gives nil", function()
+	t.eq(cache.get("player:missing", 60), nil)
+end)
+
+t.test("a value older than maxAge gives nil", function()
+	cache.set("player:2", { 1 })
+	t.advance(120)
+	t.eq(cache.get("player:2", 60), nil)
+	t.eq(cache.get("player:2", 180), { 1 })
+end)
+
+t.test("prune removes old values under its prefix only", function()
+	cache.set("player:old", { 1 })
+	cache.set("config:old", { 1 })
+	t.advance(100)
+	cache.set("player:new", { 1 })
+	cache.prune("player:", 50)
+	t.eq(cache.get("player:old", 1000), nil, "old player")
+	t.eq(cache.get("player:new", 1000), { 1 }, "new player")
+	t.eq(cache.get("config:old", 1000), { 1 }, "other prefix")
+end)
+
+t.finish()

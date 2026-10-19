@@ -3,7 +3,8 @@
 	"scripts": {
 		"build": "bun run build.ts",
 		"check": "tlua --noEmit",
-		"dev": "tlua --watch"
+		"dev": "tlua --watch",
+		"test": "bun test/run.ts"
 	},
 	"devDependencies": {
 		"@tlua/cli": "^0.0.57",

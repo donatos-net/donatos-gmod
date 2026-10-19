@@ -13,6 +13,9 @@ interface DonatosPlayer extends Omit<typeof PLAYER, "__index"> {
 	-- Server: the active items saved at the player's last load, used until one succeeds (the API
 	-- couldn't be reached when they joined).
 	_savedActiveItems?: DonatosActiveItem[];
+	-- Server: SysTime() when the active items (loaded or saved) were had; their `expires.inS`
+	-- counts from it.
+	_itemsLoadedAt?: number;
 }
 
 function PLAYER.IsLoaded(self: DonatosPlayer): boolean

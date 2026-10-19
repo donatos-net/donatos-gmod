@@ -60,6 +60,7 @@ for _, ply in ipairs(player.GetAll()) do
 		local replacement = donatosPlayer(ply)
 		replacement._remoteData = old._remoteData
 		replacement._savedActiveItems = old._savedActiveItems
+		replacement._itemsLoadedAt = old._itemsLoadedAt
 		ply._donatos = replacement
 	end
 end

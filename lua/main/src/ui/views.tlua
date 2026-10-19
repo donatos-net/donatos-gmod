@@ -1,6 +1,7 @@
 -- Client: what the menu's pages share: the context they render from, formatting, empty
 -- states, and the dialogs more than one page opens.
 
+local apiStatus = require("donatos.api-status")
 local netMessage = require("donatos.net")
 local images = require("ui.images")
 local theme = require("ui.theme")
@@ -1004,10 +1005,30 @@ local function emptyState(parent: Panel, spec: DonatosEmptyState): Panel
 	return panel
 end
 
+-- A spinner; while the server can't reach the API, which what it waits for comes from, a note
+-- saying so instead.
 local function loading(parent: Panel): Panel
 	local panel = widgets.blankPanel(parent)
+	local note: Panel | nil = nil
+	panel.Think = function(self: Panel)
+		local down = apiStatus.isDown()
+		if down and note == nil then
+			local shown = emptyState(panel, {
+				icon = "clock",
+				title = "Сервис временно недоступен",
+				text = "Всё загрузится само, когда связь восстановится.",
+			})
+			shown:Dock(FILL)
+			note = shown
+		elseif not down and note ~= nil then
+			note:Remove()
+			note = nil
+		end
+	end
 	panel.Paint = function(self: Panel, w: number, h: number): boolean
-		theme.spinner(w / 2, h / 2, px(10), colors.muted)
+		if note == nil then
+			theme.spinner(w / 2, h / 2, px(10), colors.muted)
+		end
 		return true
 	end
 	return panel

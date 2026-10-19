@@ -6,6 +6,8 @@ local interface HttpRequest {
 	method?: string;
 	headers?: Table<string, string>;
 	body?: string;
+	-- Seconds until the request counts as failed; DEFAULT_TIMEOUT when not given.
+	timeout?: number;
 }
 
 local interface HttpResponse {
@@ -36,14 +38,23 @@ end
 
 local send = pickSend()
 
--- TODO: timeouts
+-- GMod's own default. Our timer enforces it for backends that don't.
+local DEFAULT_TIMEOUT = 60
+
 local request = suspend function(parameters: HttpRequest): (HttpResponse, nil) | (nil, string)
+	local timeout = parameters.timeout or DEFAULT_TIMEOUT
 	local outcome = async.await(function(resolve: (value: HttpOutcome) => void)
-		send({
+		-- Our own timer too: not every backend honours `timeout`. Whichever comes first counts.
+		timer.Simple(timeout, function()
+			resolve({ ok = false, reason = `timed out after ${timeout}s` })
+		end)
+		-- false when the backend couldn't start the request; it calls neither callback then.
+		local started = send({
 			url = parameters.url,
 			method = parameters.method or "GET",
 			headers = parameters.headers,
 			body = parameters.body,
+			timeout = timeout,
 			success = function(code: number, body: string, headers: Table<string, string>)
 				resolve({ ok = true, response = { code = code, body = body, headers = headers } })
 			end,
@@ -52,6 +63,9 @@ local request = suspend function(parameters: HttpRequest): (HttpResponse, nil) |
 				resolve({ ok = false, reason = detail ~= nil and `${reason}: ${detail}` or reason })
 			end,
 		})
+		if started == false then
+			resolve({ ok = false, reason = "the request couldn't be started" })
+		end
 	end)
 
 	if outcome.ok then
