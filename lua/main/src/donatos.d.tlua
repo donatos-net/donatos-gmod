@@ -61,7 +61,7 @@ interface DonatosPaymentMethod {
 	colors?: { fill: string; hover: string; ink: string };
 	-- Opened as is, without asking for a link.
 	url?: string;
-	-- Under the QR code when the link comes with one.
+	-- Under the link's QR code.
 	qrHint?: string;
 }
 
@@ -110,8 +110,8 @@ interface DonatosServerApi {
 	};
 	["server:payment-method-link"]: {
 		input: { playerExternalId: string; orderId: number; method: string };
-		-- `qr`: T-Pay's link as a QR code, laid out like `sbp`'s.
-		output: { url: string; qr?: { size: number; modules: string } };
+		-- `url`: a link into the bank's phone app; `qr`: that link as a QR code, laid out like `sbp`'s.
+		output: { url: string; qr: { size: number; modules: string } };
 	};
 	["server:get-image"]: {
 		-- An image's id from the API (goods images, payment logos).

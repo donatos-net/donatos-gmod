@@ -531,12 +531,8 @@ local function topUp(ctx: DonatosMenuContext, preset?: number)
 							relayout()
 							return
 						end
-						local qr = result.data.qr
-						if qr ~= nil then
-							setBody(qrBlock(methodSpec(method, qr)))
-						else
-							gui.OpenURL(result.data.url)
-						end
+						-- The link opens the bank's app, so the phone takes it from its QR code.
+						setBody(qrBlock(methodSpec(method, result.data.qr)))
 					end)
 				end
 				for _, method in ipairs(paymentMethods) do
