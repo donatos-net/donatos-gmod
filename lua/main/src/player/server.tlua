@@ -63,6 +63,9 @@ suspend function SERVER_PLAYER.loadRemoteData(self: DonatosServerPlayer): (Donat
 	self._savedActiveItems = nil
 	self._itemsLoadedAt = SysTime()
 	self:scheduleExpiry()
+	if wasLoaded and prevData and data then
+		self:applyFreezes(prevData.activeItems, data.activeItems)
+	end
 	savedItems.save(ply, data)
 	netMessage.toClient(ply, "syncPlayer", clientView.player(data))
 
@@ -215,6 +218,34 @@ function SERVER_PLAYER.applySamRanks(self: DonatosServerPlayer)
 				setRank(ply, samRank)
 			end
 		end
+	end
+end
+
+-- Applies what freezing or thawing items (in the menu or on the site) changed between two loads:
+-- SAM ranks follow the unfrozen items, and a thawed item's join handlers run. A frozen item's
+-- other effects last until the player rejoins, as an expired one's do.
+function SERVER_PLAYER.applyFreezes(self: DonatosServerPlayer, before: DonatosActiveItem[], after: DonatosActiveItem[])
+	local wasFrozen: Table<number, boolean> = {}
+	for _, itm in ipairs(before) do
+		wasFrozen[itm.id] = itm.isFrozen
+	end
+	local thawed: DonatosActiveItem[] = {}
+	local changed = false
+	for _, itm in ipairs(after) do
+		local was = wasFrozen[itm.id]
+		if was ~= nil and was ~= itm.isFrozen then
+			changed = true
+			if was then
+				table.insert(thawed, itm)
+			end
+		end
+	end
+	if not changed then
+		return
+	end
+	self:applySamRanks()
+	for _, itm in ipairs(thawed) do
+		item.invoke(itm.goods.key, "_onPlayerJoin", self._ply, { goods = itm.goods })
 	end
 end
 

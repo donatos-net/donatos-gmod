@@ -355,9 +355,8 @@ local handlers: ServerActionHandlers = {
 			return err(error)
 		end
 
-		local dp = serverPlayer.of(ply)
-		dp:loadRemoteData()
-		dp:onPlayerJoined()
+		-- The load applies the change (`applyFreezes`).
+		serverPlayer.of(ply):loadRemoteData()
 
 		return ok(true)
 	end,
@@ -377,9 +376,8 @@ local handlers: ServerActionHandlers = {
 			return err(error)
 		end
 
-		local dp = serverPlayer.of(ply)
-		dp:loadRemoteData()
-		dp:onPlayerJoined()
+		-- The load applies the change (`applyFreezes`).
+		serverPlayer.of(ply):loadRemoteData()
 
 		return ok(true)
 	end,

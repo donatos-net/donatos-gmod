@@ -180,13 +180,18 @@ end
 local function activeRow(parent: Panel, ctx: DonatosMenuContext, item: DonatosActiveItem): DonatosUiBlock
 	local panel = widgets.blankPanel(parent)
 	local expires = item.expires
-	local fraction = expires ~= nil and expires.durationS > 0 and expires.inS / expires.durationS or 1
+	-- A frozen item keeps what it had left when frozen (its `inS` still counts down to the old
+	-- expiry, which moves when it thaws).
+	local frozenAt = item.frozenAt
+	local secondsLeft = expires and (item.isFrozen and frozenAt ~= nil and expires.at - frozenAt or expires.inS)
+	local fraction = expires ~= nil and secondsLeft ~= nil and expires.durationS > 0 and secondsLeft / expires.durationS or 1
 
 	local chipText, chipBackground, chipForeground = "Активен", colors.successSoft, colors.success
 	local subtitle = "Без срока"
 	if item.isFrozen then
 		chipText, chipBackground, chipForeground = "Заморожен", colors.default, colors.textSoft
-		subtitle = "Срок не идёт, пока предмет заморожен"
+		subtitle = secondsLeft ~= nil and `Срок не идёт, осталось ${views.formatRemaining(secondsLeft)}`
+			or "Срок не идёт, пока предмет заморожен"
 	elseif expires ~= nil and expires.inS <= 0 then
 		-- Ran out before the server removed it.
 		chipText, chipBackground, chipForeground = "Истёк", colors.default, colors.textSoft

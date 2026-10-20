@@ -218,4 +218,29 @@ t.test("a player had by an older bundle's run counts from when this run sets its
 	t.eq(keys(ply), {}, "dropped")
 end)
 
+t.test("freezing a rank item takes back its rank, and thawing it runs its join handlers once", function()
+	local joins = 0
+	item.create("pet"):OnPlayerJoin(function() joins = joins + 1 end)
+	apiPlayer = data({ activeItem("vip", 3600, { id = 1 }), activeItem("pet", 3600, { id = 2 }) })
+	local ply = join(newSteamID())
+	t.eq(joins, 1, "pet joins at join")
+	local function load(vipFrozen, petFrozen)
+		apiPlayer = data({
+			activeItem("vip", 3600, { id = 1, isFrozen = vipFrozen }),
+			activeItem("pet", 3600, { id = 2, isFrozen = petFrozen }),
+		})
+		async.run(function() ply:Donatos():loadRemoteData() end)
+	end
+	load(true, false)
+	t.eq(ply.rank, "user", "rank once frozen")
+	t.eq(joins, 1, "other items' handlers don't run again")
+	load(true, false)
+	t.eq(joins, 1, "a load with nothing thawed runs nothing")
+	load(false, true)
+	t.eq(ply.rank, "vip", "rank once thawed")
+	t.eq(joins, 1, "freezing runs nothing")
+	load(false, false)
+	t.eq(joins, 2, "the thawed item's handlers")
+end)
+
 t.finish()

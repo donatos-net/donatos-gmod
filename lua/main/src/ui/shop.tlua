@@ -121,17 +121,22 @@ end
 local function goodStatus(ctx: DonatosMenuContext, good: Good): (string | nil, Color)
 	local data = ctx.data()
 	if data ~= nil then
+		local frozen = false
 		for _, active in ipairs(data.activeItems) do
 			if active.goods.key == good.key then
 				if active.isFrozen then
-					return "Заморожено", colors.muted
+					frozen = true
+				else
+					local expires = active.expires
+					if expires ~= nil then
+						return `Активно · ${views.formatRemaining(expires.inS)}`, colors.success
+					end
+					return "Активно", colors.success
 				end
-				local expires = active.expires
-				if expires ~= nil then
-					return `Активно · ${views.formatRemaining(expires.inS)}`, colors.success
-				end
-				return "Активно", colors.success
 			end
+		end
+		if frozen then
+			return "Заморожено", colors.muted
 		end
 		for _, owned in ipairs(data.inventoryItems) do
 			if owned.goodsId == good.id then
